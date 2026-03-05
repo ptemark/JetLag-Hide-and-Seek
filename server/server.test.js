@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GameLoop, GameLoopStatus } from './gameLoop.js';
 import { WsHandler } from './wsHandler.js';
 import { GameStateManager } from './gameState.js';
+import { HeartbeatManager } from './heartbeat.js';
 import { createServer } from './index.js';
 
 // ---------------------------------------------------------------------------
@@ -450,10 +451,20 @@ describe('createServer', () => {
     expect(body).toEqual({ status: 'ok' });
   });
 
-  it('exposes gameLoop, wsHandler, and gameStateManager', () => {
+  it('exposes gameLoop, wsHandler, gameStateManager, and heartbeatManager', () => {
     const s = createServer();
     expect(s.gameLoop).toBeInstanceOf(GameLoop);
     expect(s.wsHandler).toBeInstanceOf(WsHandler);
     expect(s.gameStateManager).toBeInstanceOf(GameStateManager);
+    expect(s.heartbeatManager).toBeInstanceOf(HeartbeatManager);
+  });
+
+  it('heartbeatManager starts on server start and stops on server stop', async () => {
+    server = createServer({ tickInterval: 5000, heartbeatInterval: 60_000 });
+    await server.start(0);
+    expect(server.heartbeatManager._timer).not.toBeNull();
+    await server.stop();
+    expect(server.heartbeatManager._timer).toBeNull();
+    server = null; // already stopped — prevent afterEach double-stop
   });
 });

@@ -2,21 +2,34 @@ import { createServer as createHttpServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { GameLoop } from './gameLoop.js';
+import { GameLoopManager } from './gameLoopManager.js';
 import { WsHandler } from './wsHandler.js';
 import { GameStateManager } from './gameState.js';
 import { HeartbeatManager } from './heartbeat.js';
 
-export function createServer({ tickInterval = 1000, heartbeatInterval = 30_000 } = {}) {
+export function createServer({
+  tickInterval = 1000,
+  heartbeatInterval = 30_000,
+  hidingDuration = 120_000,
+  seekingDuration = 600_000,
+} = {}) {
   const httpServer = createHttpServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok' }));
   });
 
   const gameLoop = new GameLoop(tickInterval);
+  const gameLoopManager = new GameLoopManager({ tickInterval, hidingDuration, seekingDuration });
   const gameStateManager = new GameStateManager();
   const wss = new WebSocketServer({ server: httpServer });
   const wsHandler = new WsHandler(gameLoop, gameStateManager);
   const heartbeatManager = new HeartbeatManager(wss, { interval: heartbeatInterval });
+
+  // Broadcast phase changes to all players in the affected game
+  gameLoopManager.onPhaseChange = (gameId, oldPhase, newPhase) => {
+    gameStateManager.setGameStatus(gameId, newPhase);
+    wsHandler.broadcastToGame(gameId, { type: 'phase_change', gameId, oldPhase, newPhase });
+  };
 
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -38,6 +51,10 @@ export function createServer({ tickInterval = 1000, heartbeatInterval = 30_000 }
       return new Promise((resolve, reject) => {
         heartbeatManager.stop();
         gameLoop.stop();
+        // Stop all active per-game loops
+        for (const gameId of [...gameLoopManager._games.keys()]) {
+          gameLoopManager.stopGame(gameId);
+        }
         wss.close((err) => {
           if (err) { reject(err); return; }
           httpServer.close((err2) => (err2 ? reject(err2) : resolve()));
@@ -45,6 +62,7 @@ export function createServer({ tickInterval = 1000, heartbeatInterval = 30_000 }
       });
     },
     gameLoop,
+    gameLoopManager,
     gameStateManager,
     wsHandler,
     heartbeatManager,

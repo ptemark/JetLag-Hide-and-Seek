@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 21._
+_None in progress. Last completed: Task 22._
 
 ---
 
@@ -35,6 +35,7 @@ _None in progress. Last completed: Task 21._
 | 19 | 2026-03-05 | Create logging mechanism to track loop iterations, errors, and performance metrics | server/logger.js, server/logger.test.js, server/gameLoopManager.js, server/stateDispatcher.js, server/index.js, server/server.test.js | Logger class with level filtering and injectable sink; nullLogger no-op; startTimer perf helper; wired into GameLoopManager (tick/phase/start/stop) and StateDispatcher (task errors + dispatch perf); server lifecycle logs (start/stop/active/idle); 23 new tests; 330 total pass; build clean |
 | 20 | 2026-03-05 | Implement serverless API endpoints for retrieving live game state | functions/liveState.js, functions/liveState.test.js, functions/router.js, server/index.js, server/server.test.js | GET /live/:gameId serverless handler (gsm or serverUrl proxy); GET /internal/state/:gameId HTTP endpoint on managed server; router updated with new route and async-aware dispatch; 15 new tests; 345 total pass; build clean |
 | 21 | 2026-03-05 | Build basic admin dashboard to view active sessions, connected players, and loop health | functions/admin.js, functions/admin.test.js, functions/router.js, server/index.js, server/server.test.js | GET /admin serverless handler (in-process or serverUrl proxy); GET /internal/admin HTTP endpoint on managed server returns connectedPlayers, activeGameCount, uptimeMs, games[]; router updated; 18 new tests; 363 total pass; build clean |
+| 22 | 2026-03-05 | Add authentication/authorization for admin access | functions/auth.js, functions/auth.test.js, functions/admin.js, functions/admin.test.js, functions/router.js, config/env.js, .env.example | Bearer token auth via Authorization header; constant-time comparison (timingSafeEqual); ADMIN_API_KEY env var; 401 for missing/wrong token, 503 if unconfigured; router passes headers to handlers; 23 new tests; 386 total pass; build clean |
 
 ---
 
@@ -80,7 +81,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **20** — Implement serverless API endpoints for retrieving live game state.
 - [x] **21** — Build basic admin dashboard to view active sessions, connected players, and loop health.
-- [ ] **22** — Add authentication/authorization for admin access.
+- [x] **22** — Add authentication/authorization for admin access.
 - [ ] **23** — Add rate limiting and error handling for API endpoints.
 
 ### Phase 7 — Analytics & Monitoring

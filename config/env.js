@@ -51,6 +51,13 @@ const ENV = {
     url: getEnvVar('DATABASE_URL', ''),
   },
 
+  /**
+   * Secret bearer token required to access the admin dashboard endpoint.
+   * Server-side only — never exposed to the browser bundle.
+   * Must be set in production; if empty, the admin endpoint returns 503.
+   */
+  adminApiKey: getEnvVar('ADMIN_API_KEY', ''),
+
   features: {
     /** Enable experimental two-team seeker mode */
     twoTeams: parseBool(getEnvVar('VITE_FEATURE_TWO_TEAMS', 'false')),

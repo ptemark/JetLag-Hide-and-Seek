@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getAdminStatus } from './admin.js';
 
+const ADMIN_KEY = 'test-admin-key-abc123';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeReq(method = 'GET') {
-  return { method };
+function makeReq(method = 'GET', headers = {}) {
+  return { method, headers };
+}
+
+function authedReq(method = 'GET') {
+  return makeReq(method, { authorization: `Bearer ${ADMIN_KEY}` });
 }
 
 /** Minimal GameLoopManager stub */
@@ -35,40 +41,83 @@ function makeWsHandler(connectedCount = 0, gamePlayerCounts = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Method validation
+// Method validation (auth checked before method — 405 only for authed requests)
 // ---------------------------------------------------------------------------
 
 describe('getAdminStatus — method validation', () => {
-  it('returns 405 for POST', async () => {
-    const res = await getAdminStatus(makeReq('POST'));
+  it('returns 405 for POST with valid auth', async () => {
+    const res = await getAdminStatus(authedReq('POST'), { adminApiKey: ADMIN_KEY });
     expect(res.status).toBe(405);
     expect(res.body.error).toMatch(/Method Not Allowed/i);
   });
 
-  it('returns 405 for DELETE', async () => {
-    const res = await getAdminStatus(makeReq('DELETE'));
+  it('returns 405 for DELETE with valid auth', async () => {
+    const res = await getAdminStatus(authedReq('DELETE'), { adminApiKey: ADMIN_KEY });
     expect(res.status).toBe(405);
   });
 });
 
 // ---------------------------------------------------------------------------
-// No configuration — 503
+// Authentication
 // ---------------------------------------------------------------------------
 
-describe('getAdminStatus — no configuration', () => {
-  it('returns 503 when no options provided', async () => {
-    const res = await getAdminStatus(makeReq());
+describe('getAdminStatus — authentication', () => {
+  it('returns 503 when adminApiKey is not configured', async () => {
+    const res = await getAdminStatus(authedReq(), { adminApiKey: '' });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/not configured/i);
+  });
+
+  it('returns 401 when Authorization header is missing', async () => {
+    const res = await getAdminStatus(makeReq(), { adminApiKey: ADMIN_KEY });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Unauthorized');
+  });
+
+  it('returns 401 when token is wrong', async () => {
+    const res = await getAdminStatus(
+      makeReq('GET', { authorization: 'Bearer wrong-token' }),
+      { adminApiKey: ADMIN_KEY },
+    );
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Unauthorized');
+  });
+
+  it('returns 401 when scheme is not Bearer', async () => {
+    const res = await getAdminStatus(
+      makeReq('GET', { authorization: 'Basic dXNlcjpwYXNz' }),
+      { adminApiKey: ADMIN_KEY },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('accepts token in capitalized Authorization header', async () => {
+    const res = await getAdminStatus(
+      makeReq('GET', { Authorization: `Bearer ${ADMIN_KEY}` }),
+      { adminApiKey: ADMIN_KEY, gsm: makeGsm(), glm: makeGlm([]), wsHandler: makeWsHandler(0) },
+    );
+    expect(res.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No server configuration — 503 (requires valid auth first)
+// ---------------------------------------------------------------------------
+
+describe('getAdminStatus — no server configuration', () => {
+  it('returns 503 when no server options provided (auth ok)', async () => {
+    const res = await getAdminStatus(authedReq(), { adminApiKey: ADMIN_KEY });
     expect(res.status).toBe(503);
     expect(res.body.error).toMatch(/no server configured/i);
   });
 
   it('returns 503 when only gsm is provided (missing glm and wsHandler)', async () => {
-    const res = await getAdminStatus(makeReq(), { gsm: makeGsm() });
+    const res = await getAdminStatus(authedReq(), { adminApiKey: ADMIN_KEY, gsm: makeGsm() });
     expect(res.status).toBe(503);
   });
 
   it('returns 503 when gsm and glm are provided but wsHandler is missing', async () => {
-    const res = await getAdminStatus(makeReq(), { gsm: makeGsm(), glm: makeGlm() });
+    const res = await getAdminStatus(authedReq(), { adminApiKey: ADMIN_KEY, gsm: makeGsm(), glm: makeGlm() });
     expect(res.status).toBe(503);
   });
 });
@@ -79,7 +128,8 @@ describe('getAdminStatus — no configuration', () => {
 
 describe('getAdminStatus — in-process instances', () => {
   it('returns 200 with empty games when no active games', async () => {
-    const res = await getAdminStatus(makeReq(), {
+    const res = await getAdminStatus(authedReq(), {
+      adminApiKey: ADMIN_KEY,
       gsm: makeGsm(),
       glm: makeGlm([]),
       wsHandler: makeWsHandler(0),
@@ -91,7 +141,8 @@ describe('getAdminStatus — in-process instances', () => {
   });
 
   it('returns correct connected player count', async () => {
-    const res = await getAdminStatus(makeReq(), {
+    const res = await getAdminStatus(authedReq(), {
+      adminApiKey: ADMIN_KEY,
       gsm: makeGsm(),
       glm: makeGlm([]),
       wsHandler: makeWsHandler(5),
@@ -105,7 +156,8 @@ describe('getAdminStatus — in-process instances', () => {
       { gameId: 'g1', phase: 'hiding', phaseElapsedMs: 12000 },
       { gameId: 'g2', phase: 'seeking', phaseElapsedMs: 45000 },
     ];
-    const res = await getAdminStatus(makeReq(), {
+    const res = await getAdminStatus(authedReq(), {
+      adminApiKey: ADMIN_KEY,
       gsm: makeGsm(),
       glm: makeGlm(games),
       wsHandler: makeWsHandler(3, { g1: 2, g2: 1 }),
@@ -123,13 +175,13 @@ describe('getAdminStatus — in-process instances', () => {
 
   it('calls wsHandler.getConnectedCount once', async () => {
     const wsHandler = makeWsHandler(2);
-    await getAdminStatus(makeReq(), { gsm: makeGsm(), glm: makeGlm([]), wsHandler });
+    await getAdminStatus(authedReq(), { adminApiKey: ADMIN_KEY, gsm: makeGsm(), glm: makeGlm([]), wsHandler });
     expect(wsHandler.getConnectedCount).toHaveBeenCalledTimes(1);
   });
 
   it('calls glm.getActiveGameCount once', async () => {
     const glm = makeGlm([]);
-    await getAdminStatus(makeReq(), { gsm: makeGsm(), glm, wsHandler: makeWsHandler() });
+    await getAdminStatus(authedReq(), { adminApiKey: ADMIN_KEY, gsm: makeGsm(), glm, wsHandler: makeWsHandler() });
     expect(glm.getActiveGameCount).toHaveBeenCalledTimes(1);
   });
 });
@@ -159,7 +211,7 @@ describe('getAdminStatus — remote serverUrl', () => {
       json: async () => samplePayload,
     }));
 
-    const res = await getAdminStatus(makeReq(), { serverUrl: 'http://game-server:3001' });
+    const res = await getAdminStatus(authedReq(), { adminApiKey: ADMIN_KEY, serverUrl: 'http://game-server:3001' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual(samplePayload);
   });
@@ -172,7 +224,7 @@ describe('getAdminStatus — remote serverUrl', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await getAdminStatus(makeReq(), { serverUrl: 'http://srv:3000' });
+    await getAdminStatus(authedReq(), { adminApiKey: ADMIN_KEY, serverUrl: 'http://srv:3000' });
     expect(fetchMock).toHaveBeenCalledWith('http://srv:3000/internal/admin');
   });
 
@@ -182,7 +234,7 @@ describe('getAdminStatus — remote serverUrl', () => {
       status: 500,
     }));
 
-    const res = await getAdminStatus(makeReq(), { serverUrl: 'http://srv:3000' });
+    const res = await getAdminStatus(authedReq(), { adminApiKey: ADMIN_KEY, serverUrl: 'http://srv:3000' });
     expect(res.status).toBe(502);
     expect(res.body.error).toMatch(/upstream error/i);
   });
@@ -190,7 +242,7 @@ describe('getAdminStatus — remote serverUrl', () => {
   it('returns 503 when fetch throws (network error)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
 
-    const res = await getAdminStatus(makeReq(), { serverUrl: 'http://srv:3000' });
+    const res = await getAdminStatus(authedReq(), { adminApiKey: ADMIN_KEY, serverUrl: 'http://srv:3000' });
     expect(res.status).toBe(503);
     expect(res.body.error).toMatch(/unavailable/i);
   });
@@ -199,7 +251,8 @@ describe('getAdminStatus — remote serverUrl', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    const res = await getAdminStatus(makeReq(), {
+    const res = await getAdminStatus(authedReq(), {
+      adminApiKey: ADMIN_KEY,
       serverUrl: 'http://srv:3000',
       gsm: makeGsm(),
       glm: makeGlm([]),
@@ -208,5 +261,10 @@ describe('getAdminStatus — remote serverUrl', () => {
 
     expect(res.status).toBe(200);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 when making remote request without valid token', async () => {
+    const res = await getAdminStatus(makeReq(), { adminApiKey: ADMIN_KEY, serverUrl: 'http://srv:3000' });
+    expect(res.status).toBe(401);
   });
 });

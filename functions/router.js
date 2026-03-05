@@ -76,7 +76,7 @@ export async function handleRequest(httpReq, httpRes) {
   for (const route of ROUTES) {
     const match = urlPath.match(route.pattern);
     if (match && method === route.method) {
-      const req = { method, path: urlPath, params: match.groups ?? {}, body };
+      const req = { method, path: urlPath, params: match.groups ?? {}, body, headers: httpReq.headers ?? {} };
       const { status, body: resBody } = await route.handler(req);
       httpRes.writeHead(status, { 'Content-Type': 'application/json' });
       httpRes.end(JSON.stringify(resBody));

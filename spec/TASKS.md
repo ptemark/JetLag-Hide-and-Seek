@@ -47,7 +47,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **8** — Choose database(s) for game state: e.g., DynamoDB or PostgreSQL.
 - [x] **9** — Implement basic schema or table structure for players, sessions, and game states.
-- [ ] **10** — Add serverless functions to read/write game state to the database.
+- [~] **10** — Add serverless functions to read/write game state to the database.
 - [ ] **11** — Add automated tests for database interactions, verifying correct read/write.
 
 ### Phase 4 — WebSocket & Real-Time Tracking

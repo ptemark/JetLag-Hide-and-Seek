@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 11._
+_None in progress. Last completed: Task 12._
 
 ---
 
@@ -25,6 +25,7 @@ _None in progress. Last completed: Task 11._
 | 9 | 2026-03-05 | Implement database schema | db/schema.sql, db/db.js, db/db.test.js, package.json | Tables: players, games, game_players, scores; pg driver installed; createPool + createTables module; 23 new tests; 95 total pass; build clean |
 | 10 | 2026-03-05 | Add serverless functions for DB read/write | db/gameStore.js, db/gameStore.test.js, functions/players.js, functions/games.js, functions/scores.js | DB CRUD layer (dbCreatePlayer, dbGetPlayer, dbCreateGame, dbGetGame, dbUpdateGameStatus, dbJoinGame, dbSubmitScore, dbGetGameScores); handlers accept optional pool; 32 new tests; 127 total pass; build clean |
 | 11 | 2026-03-05 | Add automated tests for database interactions | db/lifecycle.test.js | Lifecycle tests: player create→get, game full lifecycle (join/status transitions), score submit→retrieve/upsert, full round workflow, error propagation, SQL structure verification; 27 new tests; 154 total pass; build clean |
+| 12 | 2026-03-05 | Implement WebSocket server for real-time game state updates | server/gameState.js, server/wsHandler.js, server/index.js, server/gameState.test.js, server/server.test.js | GameStateManager (in-memory per-game state); WsHandler extended with join_game, leave_game, location_update, request_state handlers; broadcastToGame routing; 36 new tests; 190 total pass; build clean |
 
 ---
 
@@ -54,7 +55,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 ### Phase 4 — WebSocket & Real-Time Tracking
 
-- [ ] **12** — Implement WebSocket server on managed backend for real-time game state updates.
+- [x] **12** — Implement WebSocket server on managed backend for real-time game state updates.
 - [ ] **13** — Add serverless endpoints to initiate/terminate WebSocket sessions.
 - [ ] **14** — Implement basic heartbeat/ping system to keep connections alive and detect disconnects.
 - [ ] **15** — Write tests for connection reliability and message delivery.

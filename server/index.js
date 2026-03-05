@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { GameLoop } from './gameLoop.js';
 import { WsHandler } from './wsHandler.js';
+import { GameStateManager } from './gameState.js';
 
 export function createServer({ tickInterval = 1000 } = {}) {
   const httpServer = createHttpServer((req, res) => {
@@ -11,8 +12,9 @@ export function createServer({ tickInterval = 1000 } = {}) {
   });
 
   const gameLoop = new GameLoop(tickInterval);
+  const gameStateManager = new GameStateManager();
   const wss = new WebSocketServer({ server: httpServer });
-  const wsHandler = new WsHandler(gameLoop);
+  const wsHandler = new WsHandler(gameLoop, gameStateManager);
 
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -34,6 +36,7 @@ export function createServer({ tickInterval = 1000 } = {}) {
       });
     },
     gameLoop,
+    gameStateManager,
     wsHandler,
     httpServer,
     wss,

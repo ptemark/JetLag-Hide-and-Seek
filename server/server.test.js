@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GameLoop, GameLoopStatus } from './gameLoop.js';
 import { WsHandler } from './wsHandler.js';
+import { GameStateManager } from './gameState.js';
 import { createServer } from './index.js';
 
 // ---------------------------------------------------------------------------
@@ -217,6 +218,214 @@ describe('WsHandler', () => {
 });
 
 // ---------------------------------------------------------------------------
+// WsHandler — game routing
+// ---------------------------------------------------------------------------
+
+describe('WsHandler — game routing', () => {
+  let loop;
+  let gsm;
+  let handler;
+
+  beforeEach(() => {
+    loop = new GameLoop(1000);
+    gsm = new GameStateManager();
+    handler = new WsHandler(loop, gsm);
+  });
+
+  afterEach(() => {
+    loop.stop();
+  });
+
+  it('join_game sends joined_game confirmation to joiner', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.send.mockClear();
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'joined_game', gameId: 'g1', playerId: 'p1', role: 'seeker' })
+    );
+  });
+
+  it('join_game sends error when gameId missing', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.send.mockClear();
+    ws.emit('message', JSON.stringify({ type: 'join_game' }));
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'error', message: 'gameId required' })
+    );
+  });
+
+  it('join_game notifies existing players in game', () => {
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+    handler.handleConnection(ws1, 'p1');
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws1.send.mockClear();
+
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+
+    expect(ws1.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'player_joined', gameId: 'g1', playerId: 'p2' })
+    );
+  });
+
+  it('join_game does not send player_joined to the joining player themselves', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.send.mockClear();
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const calls = ws.send.mock.calls.map((c) => JSON.parse(c[0]));
+    expect(calls.find((m) => m.type === 'player_joined')).toBeUndefined();
+  });
+
+  it('join_game registers player in GameStateManager', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    const state = gsm.getGameState('g1');
+    expect(state.players['p1']).toBeDefined();
+    expect(state.players['p1'].role).toBe('hider');
+  });
+
+  it('getGamePlayerCount reflects joined players', () => {
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+    handler.handleConnection(ws1, 'p1');
+    handler.handleConnection(ws2, 'p2');
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    expect(handler.getGamePlayerCount('g1')).toBe(2);
+  });
+
+  it('leave_game sends left_game confirmation', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws.send.mockClear();
+    ws.emit('message', JSON.stringify({ type: 'leave_game', gameId: 'g1' }));
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'left_game', gameId: 'g1', playerId: 'p1' })
+    );
+  });
+
+  it('leave_game removes player from game routing', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws.emit('message', JSON.stringify({ type: 'leave_game', gameId: 'g1' }));
+    expect(handler.getGamePlayerCount('g1')).toBe(0);
+  });
+
+  it('leave_game sends error when gameId missing', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.send.mockClear();
+    ws.emit('message', JSON.stringify({ type: 'leave_game' }));
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'error', message: 'gameId required' })
+    );
+  });
+
+  it('leave_game broadcasts player_left to remaining players', () => {
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+    handler.handleConnection(ws1, 'p1');
+    handler.handleConnection(ws2, 'p2');
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws1.send.mockClear();
+    ws2.emit('message', JSON.stringify({ type: 'leave_game', gameId: 'g1' }));
+    expect(ws1.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'player_left', gameId: 'g1', playerId: 'p2' })
+    );
+  });
+
+  it('disconnect removes player from all joined games', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g2' }));
+    ws.emit('close');
+    expect(handler.getGamePlayerCount('g1')).toBe(0);
+    expect(handler.getGamePlayerCount('g2')).toBe(0);
+    expect(handler.getConnectedCount()).toBe(0);
+  });
+
+  it('location_update broadcasts to game players', () => {
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+    handler.handleConnection(ws1, 'p1');
+    handler.handleConnection(ws2, 'p2');
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws1.send.mockClear();
+    ws2.send.mockClear();
+    ws1.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 51.5, lon: -0.12 }));
+    const expected = JSON.stringify({ type: 'location_update', gameId: 'g1', playerId: 'p1', lat: 51.5, lon: -0.12 });
+    expect(ws1.send).toHaveBeenCalledWith(expected);
+    expect(ws2.send).toHaveBeenCalledWith(expected);
+  });
+
+  it('location_update updates GameStateManager', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 48.85, lon: 2.35 }));
+    const state = gsm.getGameState('g1');
+    expect(state.players['p1'].lat).toBe(48.85);
+    expect(state.players['p1'].lon).toBe(2.35);
+  });
+
+  it('location_update ignores messages missing required fields', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws.send.mockClear();
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 1 })); // missing lon
+    expect(ws.send).not.toHaveBeenCalled(); // silently ignored
+  });
+
+  it('request_state returns game state', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws.send.mockClear();
+    ws.emit('message', JSON.stringify({ type: 'request_state', gameId: 'g1' }));
+    const call = JSON.parse(ws.send.mock.calls[0][0]);
+    expect(call.type).toBe('game_state');
+    expect(call.gameId).toBe('g1');
+    expect(call.state).not.toBeNull();
+    expect(call.state.players).toHaveProperty('p1');
+  });
+
+  it('request_state sends error when gameId missing', () => {
+    const ws = createMockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.send.mockClear();
+    ws.emit('message', JSON.stringify({ type: 'request_state' }));
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'error', message: 'gameId required' })
+    );
+  });
+
+  it('broadcastToGame only reaches players in the target game', () => {
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+    handler.handleConnection(ws1, 'p1');
+    handler.handleConnection(ws2, 'p2');
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g2' }));
+    ws1.send.mockClear();
+    ws2.send.mockClear();
+    handler.broadcastToGame('g1', { type: 'test' });
+    expect(ws1.send).toHaveBeenCalledWith(JSON.stringify({ type: 'test' }));
+    expect(ws2.send).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Server integration — HTTP health check
 // ---------------------------------------------------------------------------
 
@@ -241,9 +450,10 @@ describe('createServer', () => {
     expect(body).toEqual({ status: 'ok' });
   });
 
-  it('exposes gameLoop and wsHandler', () => {
+  it('exposes gameLoop, wsHandler, and gameStateManager', () => {
     const s = createServer();
     expect(s.gameLoop).toBeInstanceOf(GameLoop);
     expect(s.wsHandler).toBeInstanceOf(WsHandler);
+    expect(s.gameStateManager).toBeInstanceOf(GameStateManager);
   });
 });

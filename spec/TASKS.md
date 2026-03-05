@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 8._
+_None in progress. Last completed: Task 9._
 
 ---
 
@@ -22,6 +22,7 @@ _None in progress. Last completed: Task 8._
 | 6 | 2026-03-05 | Implement serverless endpoints | functions/players.js, functions/games.js, functions/scores.js, functions/router.js, functions/functions.test.js | Pure handler functions for player registration, game queries, score submission; 30 new tests; build clean |
 | 7 | 2026-03-05 | Establish hybrid architecture documentation | docs/ARCHITECTURE.md | Documents serverless vs managed tiers, lifecycle, message flows, config, and decision rationale; build clean; 70 tests pass |
 | 8 | 2026-03-05 | Choose database for game state | docs/DATABASE.md, config/env.js, config/env.test.js | Chose Neon serverless Postgres ($0 idle, autoscales to zero); documented rationale; DATABASE_URL config added; 72 tests pass |
+| 9 | 2026-03-05 | Implement database schema | db/schema.sql, db/db.js, db/db.test.js, package.json | Tables: players, games, game_players, scores; pg driver installed; createPool + createTables module; 23 new tests; 95 total pass; build clean |
 
 ---
 
@@ -45,7 +46,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 ### Phase 3 — Persistence Layer
 
 - [x] **8** — Choose database(s) for game state: e.g., DynamoDB or PostgreSQL.
-- [ ] **9** — Implement basic schema or table structure for players, sessions, and game states.
+- [x] **9** — Implement basic schema or table structure for players, sessions, and game states.
 - [ ] **10** — Add serverless functions to read/write game state to the database.
 - [ ] **11** — Add automated tests for database interactions, verifying correct read/write.
 

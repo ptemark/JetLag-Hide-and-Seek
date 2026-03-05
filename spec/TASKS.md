@@ -36,7 +36,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **4** — Define environment configuration: dev, staging, prod with environment variables for API keys, DB endpoints, and feature toggles.
 - [x] **5** — Set up managed server instances for persistent components (game loop, WebSocket handling).
-- [ ] **6** — Implement serverless endpoints for short-lived tasks (player registration, score submission, basic queries).
+- [~] **6** — Implement serverless endpoints for short-lived tasks (player registration, score submission, basic queries).
 - [ ] **7** — Establish hybrid architecture documentation showing which services are serverless and which are managed.
 
 ### Phase 3 — Persistence Layer

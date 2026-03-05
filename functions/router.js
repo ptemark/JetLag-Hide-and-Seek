@@ -5,14 +5,17 @@
  * appropriate handler, and writes the response.
  *
  * Route table:
- *   POST /players      → registerPlayer
- *   GET  /games/:id    → getGame
- *   POST /scores       → submitScore
+ *   POST   /players              → registerPlayer
+ *   GET    /games/:id            → getGame
+ *   POST   /scores               → submitScore
+ *   POST   /sessions             → initiateSession
+ *   DELETE /sessions/:sessionId  → terminateSession
  */
 
 import { registerPlayer } from './players.js';
 import { getGame } from './games.js';
 import { submitScore } from './scores.js';
+import { initiateSession, terminateSession } from './sessions.js';
 
 /**
  * Parse the JSON request body from an http.IncomingMessage.
@@ -38,9 +41,11 @@ function readBody(httpReq) {
  * pattern is a regex; named groups become req.params.
  */
 const ROUTES = [
-  { method: 'POST', pattern: /^\/players$/, handler: registerPlayer },
-  { method: 'GET',  pattern: /^\/games\/(?<id>[^/]+)$/, handler: getGame },
-  { method: 'POST', pattern: /^\/scores$/, handler: submitScore },
+  { method: 'POST',   pattern: /^\/players$/, handler: registerPlayer },
+  { method: 'GET',    pattern: /^\/games\/(?<id>[^/]+)$/, handler: getGame },
+  { method: 'POST',   pattern: /^\/scores$/, handler: submitScore },
+  { method: 'POST',   pattern: /^\/sessions$/, handler: initiateSession },
+  { method: 'DELETE', pattern: /^\/sessions\/(?<sessionId>[^/]+)$/, handler: terminateSession },
 ];
 
 /**

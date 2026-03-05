@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 14._
+_None in progress. Last completed: Task 15._
 
 ---
 
@@ -28,6 +28,7 @@ _None in progress. Last completed: Task 14._
 | 12 | 2026-03-05 | Implement WebSocket server for real-time game state updates | server/gameState.js, server/wsHandler.js, server/index.js, server/gameState.test.js, server/server.test.js | GameStateManager (in-memory per-game state); WsHandler extended with join_game, leave_game, location_update, request_state handlers; broadcastToGame routing; 36 new tests; 190 total pass; build clean |
 | 13 | 2026-03-05 | Add serverless endpoints to initiate/terminate WebSocket sessions | functions/sessions.js, functions/sessions.test.js, functions/router.js | POST /sessions (initiateSession) and DELETE /sessions/:sessionId (terminateSession); in-process Map store with injectable store for testing; router updated; 14 new tests; 204 total pass; build clean |
 | 14 | 2026-03-05 | Implement basic heartbeat/ping system to keep connections alive and detect disconnects | server/heartbeat.js, server/heartbeat.test.js, server/index.js, server/server.test.js | HeartbeatManager using native WS ping/pong frames; track(), start(), stop(); auto-terminates unresponsive clients; wired into createServer with heartbeatInterval option; 14 new tests; 218 total pass; build clean |
+| 15 | 2026-03-05 | Write tests for connection reliability and message delivery | server/connection.test.js | 8 describe blocks covering reconnection, closed-client safety, multi-game cleanup, message ordering, broadcast isolation, GSM-less degradation, concurrent players, heartbeat integration; 23 new tests; 241 total pass; build clean |
 
 ---
 
@@ -60,7 +61,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 - [x] **12** — Implement WebSocket server on managed backend for real-time game state updates.
 - [x] **13** — Add serverless endpoints to initiate/terminate WebSocket sessions.
 - [x] **14** — Implement basic heartbeat/ping system to keep connections alive and detect disconnects.
-- [ ] **15** — Write tests for connection reliability and message delivery.
+- [x] **15** — Write tests for connection reliability and message delivery.
 
 ### Phase 5 — Game Loop Infrastructure
 

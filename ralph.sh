@@ -121,6 +121,43 @@ check_prerequisites() {
     success "Prerequisites ok"
 }
 
+commit_and_push() {
+    local iteration=$1
+    log "Checking for changes to commit..."
+
+    cd "$SCRIPT_DIR"
+
+    # Stage all tracked modifications and new files (excluding .env files)
+    git add --all -- ':!*.env' ':!.env*' 2>/dev/null || true
+
+    if git diff --cached --quiet; then
+        warn "No staged changes — skipping commit"
+        return 0
+    fi
+
+    scan_for_secrets
+
+    local task_line
+    task_line=$(grep -m1 '^\- \[~\]' spec/TASKS.md 2>/dev/null || grep -m1 '^\- \[x\]' spec/TASKS.md 2>/dev/null || echo "")
+    local task_desc
+    task_desc=$(echo "$task_line" | sed 's/^.*\*\*[0-9]*\*\* — //' | cut -c1-72)
+    local commit_msg
+    if [[ -n "$task_desc" ]]; then
+        commit_msg="feat: ${task_desc}"
+    else
+        commit_msg="chore: RALPH iteration ${iteration} changes"
+    fi
+
+    git commit -m "$(cat <<EOF
+${commit_msg}
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+EOF
+)"
+    git push -u origin main
+    success "Changes committed and pushed"
+}
+
 run_iteration() {
     local iteration=$1
     local log_file="$LOG_DIR/ralph_${TIMESTAMP}_iter${iteration}.log"
@@ -137,9 +174,13 @@ run_iteration() {
         claude --dangerously-skip-permissions -p "$(cat "$RALPH_PROMPT")" 2>&1 | tee "$log_file"
     else
         claude --dangerously-skip-permissions -p "$(cat "$RALPH_PROMPT")" > "$log_file" 2>&1
+        log "--- Iteration $iteration output ---"
+        cat "$log_file"
+        log "--- End of iteration $iteration output ---"
     fi
 
     success "Iteration $iteration completed"
+    commit_and_push "$iteration"
 }
 
 handle_interrupt() {
@@ -157,13 +198,11 @@ main() {
     check_prerequisites
 
     if [[ "$SINGLE_RUN" == "true" ]]; then
-        scan_for_secrets
         run_iteration 1
         exit 0
     fi
 
     for ((i=1;i<=MAX_ITERATIONS;i++)); do
-        scan_for_secrets
         run_iteration $i
         if [[ $i -lt $MAX_ITERATIONS ]]; then
             log "Waiting $ITERATION_DELAY seconds before next iteration..."

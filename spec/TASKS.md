@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 6._
+_None in progress. Last completed: Task 7._
 
 ---
 
@@ -20,6 +20,7 @@ _None in progress. Last completed: Task 6._
 | 4 | 2026-03-05 | Define environment configuration | .env.example, config/env.js, config/env.test.js | Typed ENV config module; 16 new tests; build clean; no secrets committed |
 | 5 | 2026-03-05 | Set up managed server instances | server/index.js, server/gameLoop.js, server/wsHandler.js, server/server.test.js | HTTP+WebSocket server; GameLoop auto-start/stop on player lifecycle; 22 new tests; build clean |
 | 6 | 2026-03-05 | Implement serverless endpoints | functions/players.js, functions/games.js, functions/scores.js, functions/router.js, functions/functions.test.js | Pure handler functions for player registration, game queries, score submission; 30 new tests; build clean |
+| 7 | 2026-03-05 | Establish hybrid architecture documentation | docs/ARCHITECTURE.md | Documents serverless vs managed tiers, lifecycle, message flows, config, and decision rationale; build clean; 70 tests pass |
 
 ---
 
@@ -38,7 +39,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 - [x] **4** — Define environment configuration: dev, staging, prod with environment variables for API keys, DB endpoints, and feature toggles.
 - [x] **5** — Set up managed server instances for persistent components (game loop, WebSocket handling).
 - [x] **6** — Implement serverless endpoints for short-lived tasks (player registration, score submission, basic queries).
-- [ ] **7** — Establish hybrid architecture documentation showing which services are serverless and which are managed.
+- [x] **7** — Establish hybrid architecture documentation showing which services are serverless and which are managed.
 
 ### Phase 3 — Persistence Layer
 

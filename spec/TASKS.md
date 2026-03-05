@@ -1,0 +1,92 @@
+# TASKS
+
+Track implementation progress for the Jet Lag project. Each task is one RALPH loop iteration.
+See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
+
+---
+
+## Current Task
+
+_None in progress. Last completed: Task 1._
+
+---
+
+## Completed Tasks Log
+
+| # | Date | Task | Files | Notes |
+|---|------|------|-------|-------|
+| 1 | 2026-03-05 | Initialize project repository | README.md, LICENSE, src/, functions/, docs/, config/ | Git initialized; MIT license; placeholder dirs with .gitkeep |
+
+---
+
+## Next Up
+
+Tasks are ordered by dependency. Complete them top to bottom.
+
+### Phase 1 — Project Scaffolding
+
+- [x] **1** — Initialize project repository: set up Git, README, LICENSE, and basic folder structure (`src/`, `functions/`, `docs/`, `config/`).
+- [ ] **2** — Set up project build and deployment tools (Node.js, npm scripts, CI/CD placeholder).
+- [x] **3** — Create `DESIGN.md` and `TASKS.md` files to track design decisions and tasks.
+
+### Phase 2 — Core Infrastructure
+
+- [ ] **4** — Define environment configuration: dev, staging, prod with environment variables for API keys, DB endpoints, and feature toggles.
+- [ ] **5** — Set up managed server instances for persistent components (game loop, WebSocket handling).
+- [ ] **6** — Implement serverless endpoints for short-lived tasks (player registration, score submission, basic queries).
+- [ ] **7** — Establish hybrid architecture documentation showing which services are serverless and which are managed.
+
+### Phase 3 — Persistence Layer
+
+- [ ] **8** — Choose database(s) for game state: e.g., DynamoDB or PostgreSQL.
+- [ ] **9** — Implement basic schema or table structure for players, sessions, and game states.
+- [ ] **10** — Add serverless functions to read/write game state to the database.
+- [ ] **11** — Add automated tests for database interactions, verifying correct read/write.
+
+### Phase 4 — WebSocket & Real-Time Tracking
+
+- [ ] **12** — Implement WebSocket server on managed backend for real-time game state updates.
+- [ ] **13** — Add serverless endpoints to initiate/terminate WebSocket sessions.
+- [ ] **14** — Implement basic heartbeat/ping system to keep connections alive and detect disconnects.
+- [ ] **15** — Write tests for connection reliability and message delivery.
+
+### Phase 5 — Game Loop Infrastructure
+
+- [ ] **16** — Implement skeleton game loop logic on managed servers (without specific rules yet).
+- [ ] **17** — Add state update dispatcher: takes current game state and triggers serverless tasks for computation.
+- [ ] **18** — Implement start/stop hooks for game loop to spin down managed servers when idle.
+- [ ] **19** — Create logging mechanism to track loop iterations, errors, and performance metrics.
+
+### Phase 6 — API & Admin Tools
+
+- [ ] **20** — Implement serverless API endpoints for retrieving live game state.
+- [ ] **21** — Build basic admin dashboard to view active sessions, connected players, and loop health.
+- [ ] **22** — Add authentication/authorization for admin access.
+- [ ] **23** — Add rate limiting and error handling for API endpoints.
+
+### Phase 7 — Analytics & Monitoring
+
+- [ ] **24** — Integrate logging/monitoring services (CloudWatch, Datadog, or equivalent) for both serverless and managed components.
+- [ ] **25** — Track metrics like active connections, loop iterations per minute, and database reads/writes.
+- [ ] **26** — Implement alerting for failure scenarios (server crashes, DB errors, connection drops).
+
+### Phase 8 — Testing & CI/CD
+
+- [ ] **27** — Add unit tests for serverless functions and managed game loop logic.
+- [ ] **28** — Add integration tests to simulate multiple players connecting, updating state, and disconnecting.
+- [ ] **29** — Set up CI/CD pipeline to run tests and deploy both serverless and managed components.
+- [ ] **30** — Add staging environment to validate system behavior before production deployment.
+
+### Phase 9 — Optimization & Cost Management
+
+- [ ] **31** — Implement auto-scaling for managed servers based on activity.
+- [ ] **32** — Optimize serverless functions to reduce invocation costs (minimal memory, short execution).
+- [ ] **33** — Implement full shutdown option to reduce idle costs to zero.
+- [ ] **34** — Document cost-saving strategies in `DESIGN.md` for future reference.
+
+### Phase 10 — Documentation & Knowledge Transfer
+
+- [ ] **35** — Finalize `DESIGN.md` with architecture diagrams and explanations.
+- [ ] **36** — Update `README.md` with setup instructions, API endpoints, and deployment notes.
+- [x] **37** — Create `RALPH.md` instructions for future task execution using RALPH loops.
+- [ ] **38** — Write onboarding guide for new developers to run and extend the project.

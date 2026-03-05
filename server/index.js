@@ -71,6 +71,22 @@ export function createServer({
         });
       });
     },
+    /**
+     * Register a callback invoked when the first game becomes active.
+     * Use to spin up resources (DB pool, scaling) on demand.
+     * @param {() => void} fn
+     */
+    onActive(fn) {
+      gameLoopManager.onActive = fn;
+    },
+    /**
+     * Register a callback invoked when the last game finishes and the server is idle.
+     * Use to spin down resources (close DB pool, scale to zero) to save cost.
+     * @param {() => void} fn
+     */
+    onIdle(fn) {
+      gameLoopManager.onIdle = fn;
+    },
     gameLoop,
     gameLoopManager,
     gameStateManager,

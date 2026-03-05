@@ -467,4 +467,29 @@ describe('createServer', () => {
     expect(server.heartbeatManager._timer).toBeNull();
     server = null; // already stopped — prevent afterEach double-stop
   });
+
+  it('onActive callback fires when first game starts', () => {
+    const s = createServer({ tickInterval: 5000 });
+    const onActive = vi.fn();
+    s.onActive(onActive);
+    s.gameLoopManager.startGame('g1');
+    expect(onActive).toHaveBeenCalledTimes(1);
+    s.gameLoopManager.stopGame('g1');
+  });
+
+  it('onIdle callback fires when last game stops', () => {
+    const s = createServer({ tickInterval: 5000 });
+    const onIdle = vi.fn();
+    s.onIdle(onIdle);
+    s.gameLoopManager.startGame('g1');
+    s.gameLoopManager.stopGame('g1');
+    expect(onIdle).toHaveBeenCalledTimes(1);
+  });
+
+  it('onActive and onIdle are wired to gameLoopManager', () => {
+    const s = createServer({ tickInterval: 5000 });
+    const fn = vi.fn();
+    s.onActive(fn);
+    expect(s.gameLoopManager.onActive).toBe(fn);
+  });
 });

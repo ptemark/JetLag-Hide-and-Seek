@@ -48,6 +48,20 @@ export class GameLoopManager {
      * Signature: (gameId: string, phase: string) => void
      */
     this.onTick = null;
+
+    /**
+     * Called when the first game becomes active (transition from 0 → 1 active games).
+     * Use this hook to spin up resources (e.g., open DB connections, scale containers).
+     * Signature: () => void
+     */
+    this.onActive = null;
+
+    /**
+     * Called when the last game finishes and the manager becomes idle (transition from 1 → 0 active games).
+     * Use this hook to spin down resources (e.g., close DB connections, scale to zero).
+     * Signature: () => void
+     */
+    this.onIdle = null;
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -59,6 +73,7 @@ export class GameLoopManager {
   startGame(gameId) {
     if (this._games.has(gameId)) return;
 
+    const wasIdle = this._games.size === 0;
     const entry = {
       phase: GamePhase.WAITING,
       phaseStartedAt: Date.now(),
@@ -66,6 +81,8 @@ export class GameLoopManager {
     };
     this._games.set(gameId, entry);
     entry.timer = setInterval(() => this._tick(gameId), this.tickInterval);
+
+    if (wasIdle && this.onActive) this.onActive();
   }
 
   /**
@@ -93,6 +110,7 @@ export class GameLoopManager {
     this._transition(gameId, GamePhase.FINISHED);
     this._clearTimer(gameId);
     this._games.delete(gameId);
+    if (this._games.size === 0 && this.onIdle) this.onIdle();
   }
 
   /**
@@ -102,6 +120,7 @@ export class GameLoopManager {
   stopGame(gameId) {
     this._clearTimer(gameId);
     this._games.delete(gameId);
+    if (this._games.size === 0 && this.onIdle) this.onIdle();
   }
 
   /** Return the current phase for a game, or null if not registered. */

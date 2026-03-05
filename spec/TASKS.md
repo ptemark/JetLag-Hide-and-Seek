@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 17._
+_None in progress. Last completed: Task 18._
 
 ---
 
@@ -31,6 +31,7 @@ _None in progress. Last completed: Task 17._
 | 15 | 2026-03-05 | Write tests for connection reliability and message delivery | server/connection.test.js | 8 describe blocks covering reconnection, closed-client safety, multi-game cleanup, message ordering, broadcast isolation, GSM-less degradation, concurrent players, heartbeat integration; 23 new tests; 241 total pass; build clean |
 | 16 | 2026-03-05 | Implement skeleton game loop logic on managed servers | server/gameLoopManager.js, server/index.js | GameLoopManager: per-game phase lifecycle (waiting→hiding→seeking→finished); auto-advances on timers; onPhaseChange/onTick hooks; wired into createServer with phase broadcast + GSM sync; 31 new tests; 272 total pass; build clean |
 | 17 | 2026-03-05 | Add state update dispatcher | server/stateDispatcher.js, server/stateDispatcher.test.js, server/index.js | StateDispatcher: phase-keyed task registry ('*' global + per-phase); async concurrent dispatch; isolated error handling; onDispatch callback; wired to gameLoopManager.onTick; 23 new tests; 295 total pass; build clean |
+| 18 | 2026-03-05 | Implement start/stop hooks for game loop to spin down managed servers when idle | server/gameLoopManager.js, server/index.js, server/gameLoopManager.test.js, server/server.test.js | onActive/onIdle callbacks on GameLoopManager; fire on 0→1 and 1→0 active game transitions; server.onActive(fn)/server.onIdle(fn) registration API; 12 new tests; 307 total pass; build clean |
 
 ---
 
@@ -69,7 +70,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **16** — Implement skeleton game loop logic on managed servers (without specific rules yet).
 - [x] **17** — Add state update dispatcher: takes current game state and triggers serverless tasks for computation.
-- [ ] **18** — Implement start/stop hooks for game loop to spin down managed servers when idle.
+- [x] **18** — Implement start/stop hooks for game loop to spin down managed servers when idle.
 - [ ] **19** — Create logging mechanism to track loop iterations, errors, and performance metrics.
 
 ### Phase 6 — API & Admin Tools

@@ -329,6 +329,106 @@ describe('GameLoopManager — getPhaseElapsed', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GameLoopManager — onActive / onIdle lifecycle hooks
+// ---------------------------------------------------------------------------
+
+describe('GameLoopManager — onActive / onIdle hooks', () => {
+  let mgr;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mgr = new GameLoopManager({ tickInterval: 100, hidingDuration: 500, seekingDuration: 1000 });
+  });
+
+  afterEach(() => {
+    for (const gameId of [...mgr._games.keys()]) mgr.stopGame(gameId);
+    vi.useRealTimers();
+  });
+
+  it('fires onActive when first game starts', () => {
+    const onActive = vi.fn();
+    mgr.onActive = onActive;
+    mgr.startGame('g1');
+    expect(onActive).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fire onActive for subsequent games while already active', () => {
+    const onActive = vi.fn();
+    mgr.onActive = onActive;
+    mgr.startGame('g1');
+    mgr.startGame('g2');
+    expect(onActive).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires onActive again after returning to idle', () => {
+    const onActive = vi.fn();
+    mgr.onActive = onActive;
+    mgr.startGame('g1');
+    mgr.stopGame('g1');
+    mgr.startGame('g2');
+    expect(onActive).toHaveBeenCalledTimes(2);
+  });
+
+  it('fires onIdle when last game is stopped', () => {
+    const onIdle = vi.fn();
+    mgr.onIdle = onIdle;
+    mgr.startGame('g1');
+    mgr.stopGame('g1');
+    expect(onIdle).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fire onIdle when a second game stops but others remain', () => {
+    const onIdle = vi.fn();
+    mgr.onIdle = onIdle;
+    mgr.startGame('g1');
+    mgr.startGame('g2');
+    mgr.stopGame('g1');
+    expect(onIdle).not.toHaveBeenCalled();
+    mgr.stopGame('g2'); // cleanup
+  });
+
+  it('fires onIdle when last game finishes', () => {
+    const onIdle = vi.fn();
+    mgr.onIdle = onIdle;
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    mgr.beginSeeking('g1');
+    mgr.finishGame('g1');
+    expect(onIdle).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires onIdle when last game auto-finishes after seeking duration', () => {
+    const onIdle = vi.fn();
+    mgr.onIdle = onIdle;
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    vi.advanceTimersByTime(600); // → SEEKING
+    vi.advanceTimersByTime(1100); // → FINISHED, game removed
+    expect(onIdle).toHaveBeenCalledTimes(1);
+  });
+
+  it('works without onActive or onIdle set (no crash)', () => {
+    expect(() => {
+      mgr.startGame('g1');
+      mgr.stopGame('g1');
+    }).not.toThrow();
+  });
+
+  it('fires both onActive and onIdle in correct sequence across multiple cycles', () => {
+    const calls = [];
+    mgr.onActive = () => calls.push('active');
+    mgr.onIdle = () => calls.push('idle');
+
+    mgr.startGame('g1');
+    mgr.stopGame('g1');
+    mgr.startGame('g2');
+    mgr.stopGame('g2');
+
+    expect(calls).toEqual(['active', 'idle', 'active', 'idle']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GameLoopManager — integration with GameStateManager
 // ---------------------------------------------------------------------------
 

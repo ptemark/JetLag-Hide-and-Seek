@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 10._
+_None in progress. Last completed: Task 11._
 
 ---
 
@@ -24,6 +24,7 @@ _None in progress. Last completed: Task 10._
 | 8 | 2026-03-05 | Choose database for game state | docs/DATABASE.md, config/env.js, config/env.test.js | Chose Neon serverless Postgres ($0 idle, autoscales to zero); documented rationale; DATABASE_URL config added; 72 tests pass |
 | 9 | 2026-03-05 | Implement database schema | db/schema.sql, db/db.js, db/db.test.js, package.json | Tables: players, games, game_players, scores; pg driver installed; createPool + createTables module; 23 new tests; 95 total pass; build clean |
 | 10 | 2026-03-05 | Add serverless functions for DB read/write | db/gameStore.js, db/gameStore.test.js, functions/players.js, functions/games.js, functions/scores.js | DB CRUD layer (dbCreatePlayer, dbGetPlayer, dbCreateGame, dbGetGame, dbUpdateGameStatus, dbJoinGame, dbSubmitScore, dbGetGameScores); handlers accept optional pool; 32 new tests; 127 total pass; build clean |
+| 11 | 2026-03-05 | Add automated tests for database interactions | db/lifecycle.test.js | Lifecycle tests: player create→get, game full lifecycle (join/status transitions), score submit→retrieve/upsert, full round workflow, error propagation, SQL structure verification; 27 new tests; 154 total pass; build clean |
 
 ---
 
@@ -49,7 +50,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 - [x] **8** — Choose database(s) for game state: e.g., DynamoDB or PostgreSQL.
 - [x] **9** — Implement basic schema or table structure for players, sessions, and game states.
 - [x] **10** — Add serverless functions to read/write game state to the database.
-- [ ] **11** — Add automated tests for database interactions, verifying correct read/write.
+- [x] **11** — Add automated tests for database interactions, verifying correct read/write.
 
 ### Phase 4 — WebSocket & Real-Time Tracking
 

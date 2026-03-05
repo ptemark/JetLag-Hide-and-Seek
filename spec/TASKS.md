@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 22._
+_None in progress. Last completed: Task 23._
 
 ---
 
@@ -36,6 +36,7 @@ _None in progress. Last completed: Task 22._
 | 20 | 2026-03-05 | Implement serverless API endpoints for retrieving live game state | functions/liveState.js, functions/liveState.test.js, functions/router.js, server/index.js, server/server.test.js | GET /live/:gameId serverless handler (gsm or serverUrl proxy); GET /internal/state/:gameId HTTP endpoint on managed server; router updated with new route and async-aware dispatch; 15 new tests; 345 total pass; build clean |
 | 21 | 2026-03-05 | Build basic admin dashboard to view active sessions, connected players, and loop health | functions/admin.js, functions/admin.test.js, functions/router.js, server/index.js, server/server.test.js | GET /admin serverless handler (in-process or serverUrl proxy); GET /internal/admin HTTP endpoint on managed server returns connectedPlayers, activeGameCount, uptimeMs, games[]; router updated; 18 new tests; 363 total pass; build clean |
 | 22 | 2026-03-05 | Add authentication/authorization for admin access | functions/auth.js, functions/auth.test.js, functions/admin.js, functions/admin.test.js, functions/router.js, config/env.js, .env.example | Bearer token auth via Authorization header; constant-time comparison (timingSafeEqual); ADMIN_API_KEY env var; 401 for missing/wrong token, 503 if unconfigured; router passes headers to handlers; 23 new tests; 386 total pass; build clean |
+| 23 | 2026-03-05 | Add rate limiting and error handling for API endpoints | functions/rateLimiter.js, functions/rateLimiter.test.js, functions/router.test.js, functions/router.js | Fixed-window rate limiter (100 req/60s per client IP); X-Forwarded-For extraction; 429 with Retry-After + X-RateLimit-Remaining headers; try/catch in router → 500 on handler throw; injectable limiter for test isolation; 31 new tests; 417 total pass; build clean |
 
 ---
 
@@ -82,7 +83,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 - [x] **20** — Implement serverless API endpoints for retrieving live game state.
 - [x] **21** — Build basic admin dashboard to view active sessions, connected players, and loop health.
 - [x] **22** — Add authentication/authorization for admin access.
-- [ ] **23** — Add rate limiting and error handling for API endpoints.
+- [x] **23** — Add rate limiting and error handling for API endpoints.
 
 ### Phase 7 — Analytics & Monitoring
 

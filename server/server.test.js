@@ -494,4 +494,44 @@ describe('createServer', () => {
     expect(fn).toHaveBeenCalledOnce();
     s.gameLoopManager.stopGame('g1');
   });
+
+  it('GET /internal/state/:gameId returns 200 with live game state', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('live-game', { status: 'hiding' });
+    server.gameStateManager.addPlayerToGame('live-game', 'p1', 'hider');
+    server.gameStateManager.updatePlayerLocation('live-game', 'p1', 51.5, -0.1);
+
+    const res = await fetch(`http://localhost:${port}/internal/state/live-game`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.gameId).toBe('live-game');
+    expect(body.status).toBe('hiding');
+    expect(body.players.p1.lat).toBe(51.5);
+    expect(body.players.p1.lon).toBe(-0.1);
+  });
+
+  it('GET /internal/state/:gameId returns 404 for unknown game', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/state/no-such-game`);
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/game not found/i);
+  });
+
+  it('GET / still returns health check after state endpoint added', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ status: 'ok' });
+  });
 });

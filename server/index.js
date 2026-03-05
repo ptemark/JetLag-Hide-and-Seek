@@ -16,14 +16,39 @@ export function createServer({
   seekingDuration = 600_000,
   logger = new Logger({ level: LogLevel.INFO }),
 } = {}) {
+  // Declare gameStateManager before using it in the HTTP handler below.
+  // The variable is assigned immediately after; the handler is only invoked
+  // at request time, so the reference is always valid.
+  let gameStateManager;
+
   const httpServer = createHttpServer((req, res) => {
+    const urlPath = new URL(
+      req.url ?? '/',
+      `http://${req.headers.host ?? 'localhost'}`,
+    ).pathname;
+
+    const stateMatch = req.method === 'GET'
+      && urlPath.match(/^\/internal\/state\/(?<gameId>[^/]+)$/);
+
+    if (stateMatch) {
+      const state = gameStateManager.getGameState(stateMatch.groups.gameId);
+      if (!state) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'game not found' }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(state));
+      }
+      return;
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok' }));
   });
 
   const gameLoop = new GameLoop(tickInterval);
   const gameLoopManager = new GameLoopManager({ tickInterval, hidingDuration, seekingDuration, logger });
-  const gameStateManager = new GameStateManager();
+  gameStateManager = new GameStateManager();
   const stateDispatcher = new StateDispatcher({ logger });
   const wss = new WebSocketServer({ server: httpServer });
   const wsHandler = new WsHandler(gameLoop, gameStateManager);

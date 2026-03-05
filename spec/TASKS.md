@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 19._
+_None in progress. Last completed: Task 20._
 
 ---
 
@@ -33,6 +33,7 @@ _None in progress. Last completed: Task 19._
 | 17 | 2026-03-05 | Add state update dispatcher | server/stateDispatcher.js, server/stateDispatcher.test.js, server/index.js | StateDispatcher: phase-keyed task registry ('*' global + per-phase); async concurrent dispatch; isolated error handling; onDispatch callback; wired to gameLoopManager.onTick; 23 new tests; 295 total pass; build clean |
 | 18 | 2026-03-05 | Implement start/stop hooks for game loop to spin down managed servers when idle | server/gameLoopManager.js, server/index.js, server/gameLoopManager.test.js, server/server.test.js | onActive/onIdle callbacks on GameLoopManager; fire on 0→1 and 1→0 active game transitions; server.onActive(fn)/server.onIdle(fn) registration API; 12 new tests; 307 total pass; build clean |
 | 19 | 2026-03-05 | Create logging mechanism to track loop iterations, errors, and performance metrics | server/logger.js, server/logger.test.js, server/gameLoopManager.js, server/stateDispatcher.js, server/index.js, server/server.test.js | Logger class with level filtering and injectable sink; nullLogger no-op; startTimer perf helper; wired into GameLoopManager (tick/phase/start/stop) and StateDispatcher (task errors + dispatch perf); server lifecycle logs (start/stop/active/idle); 23 new tests; 330 total pass; build clean |
+| 20 | 2026-03-05 | Implement serverless API endpoints for retrieving live game state | functions/liveState.js, functions/liveState.test.js, functions/router.js, server/index.js, server/server.test.js | GET /live/:gameId serverless handler (gsm or serverUrl proxy); GET /internal/state/:gameId HTTP endpoint on managed server; router updated with new route and async-aware dispatch; 15 new tests; 345 total pass; build clean |
 
 ---
 
@@ -76,7 +77,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 ### Phase 6 — API & Admin Tools
 
-- [ ] **20** — Implement serverless API endpoints for retrieving live game state.
+- [x] **20** — Implement serverless API endpoints for retrieving live game state.
 - [ ] **21** — Build basic admin dashboard to view active sessions, connected players, and loop health.
 - [ ] **22** — Add authentication/authorization for admin access.
 - [ ] **23** — Add rate limiting and error handling for API endpoints.

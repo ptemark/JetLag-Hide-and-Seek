@@ -10,12 +10,14 @@
  *   POST   /scores               → submitScore
  *   POST   /sessions             → initiateSession
  *   DELETE /sessions/:sessionId  → terminateSession
+ *   GET    /live/:gameId         → getLiveState
  */
 
 import { registerPlayer } from './players.js';
 import { getGame } from './games.js';
 import { submitScore } from './scores.js';
 import { initiateSession, terminateSession } from './sessions.js';
+import { getLiveState } from './liveState.js';
 
 /**
  * Parse the JSON request body from an http.IncomingMessage.
@@ -46,6 +48,7 @@ const ROUTES = [
   { method: 'POST',   pattern: /^\/scores$/, handler: submitScore },
   { method: 'POST',   pattern: /^\/sessions$/, handler: initiateSession },
   { method: 'DELETE', pattern: /^\/sessions\/(?<sessionId>[^/]+)$/, handler: terminateSession },
+  { method: 'GET',    pattern: /^\/live\/(?<gameId>[^/]+)$/, handler: getLiveState },
 ];
 
 /**
@@ -71,7 +74,7 @@ export async function handleRequest(httpReq, httpRes) {
     const match = urlPath.match(route.pattern);
     if (match && method === route.method) {
       const req = { method, path: urlPath, params: match.groups ?? {}, body };
-      const { status, body: resBody } = route.handler(req);
+      const { status, body: resBody } = await route.handler(req);
       httpRes.writeHead(status, { 'Content-Type': 'application/json' });
       httpRes.end(JSON.stringify(resBody));
       return;

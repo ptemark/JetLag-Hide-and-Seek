@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 1._
+_None in progress. Last completed: Task 2._
 
 ---
 
@@ -16,6 +16,7 @@ _None in progress. Last completed: Task 1._
 | # | Date | Task | Files | Notes |
 |---|------|------|-------|-------|
 | 1 | 2026-03-05 | Initialize project repository | README.md, LICENSE, src/, functions/, docs/, config/ | Git initialized; MIT license; placeholder dirs with .gitkeep |
+| 2 | 2026-03-05 | Set up build and deployment tools | package.json, vite.config.js, index.html, src/main.jsx, src/App.jsx, src/App.test.jsx, .gitignore, .github/workflows/ci.yml | React+Vite+Vitest; build and 2 tests pass; CI placeholder added |
 
 ---
 
@@ -26,7 +27,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 ### Phase 1 — Project Scaffolding
 
 - [x] **1** — Initialize project repository: set up Git, README, LICENSE, and basic folder structure (`src/`, `functions/`, `docs/`, `config/`).
-- [ ] **2** — Set up project build and deployment tools (Node.js, npm scripts, CI/CD placeholder).
+- [x] **2** — Set up project build and deployment tools (Node.js, npm scripts, CI/CD placeholder).
 - [x] **3** — Create `DESIGN.md` and `TASKS.md` files to track design decisions and tasks.
 
 ### Phase 2 — Core Infrastructure

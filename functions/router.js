@@ -11,6 +11,7 @@
  *   POST   /sessions             → initiateSession
  *   DELETE /sessions/:sessionId  → terminateSession
  *   GET    /live/:gameId         → getLiveState
+ *   GET    /admin                → getAdminStatus
  */
 
 import { registerPlayer } from './players.js';
@@ -18,6 +19,7 @@ import { getGame } from './games.js';
 import { submitScore } from './scores.js';
 import { initiateSession, terminateSession } from './sessions.js';
 import { getLiveState } from './liveState.js';
+import { getAdminStatus } from './admin.js';
 
 /**
  * Parse the JSON request body from an http.IncomingMessage.
@@ -49,6 +51,7 @@ const ROUTES = [
   { method: 'POST',   pattern: /^\/sessions$/, handler: initiateSession },
   { method: 'DELETE', pattern: /^\/sessions\/(?<sessionId>[^/]+)$/, handler: terminateSession },
   { method: 'GET',    pattern: /^\/live\/(?<gameId>[^/]+)$/, handler: getLiveState },
+  { method: 'GET',    pattern: /^\/admin$/, handler: getAdminStatus },
 ];
 
 /**

@@ -534,4 +534,55 @@ describe('createServer', () => {
     const body = await res.json();
     expect(body).toEqual({ status: 'ok' });
   });
+
+  it('GET /internal/admin returns 200 with empty games when no active games', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/admin`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.connectedPlayers).toBe(0);
+    expect(body.activeGameCount).toBe(0);
+    expect(body.games).toEqual([]);
+    expect(typeof body.uptimeMs).toBe('number');
+  });
+
+  it('GET /internal/admin reflects active games and connected player counts', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameLoopManager.startGame('admin-game');
+    server.gameStateManager.createGame('admin-game', { status: 'hiding' });
+    server.gameStateManager.addPlayerToGame('admin-game', 'p1', 'hider');
+
+    const res = await fetch(`http://localhost:${port}/internal/admin`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.activeGameCount).toBe(1);
+    const gameEntry = body.games.find((g) => g.gameId === 'admin-game');
+    expect(gameEntry).toBeDefined();
+    expect(gameEntry.phase).toBe('waiting');
+    expect(typeof gameEntry.phaseElapsedMs).toBe('number');
+
+    server.gameLoopManager.stopGame('admin-game');
+  });
+
+  it('GET /internal/admin uptimeMs increases over time', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res1 = await fetch(`http://localhost:${port}/internal/admin`);
+    const body1 = await res1.json();
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    const res2 = await fetch(`http://localhost:${port}/internal/admin`);
+    const body2 = await res2.json();
+
+    expect(body2.uptimeMs).toBeGreaterThanOrEqual(body1.uptimeMs);
+  });
 });

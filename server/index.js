@@ -16,10 +16,13 @@ export function createServer({
   seekingDuration = 600_000,
   logger = new Logger({ level: LogLevel.INFO }),
 } = {}) {
-  // Declare gameStateManager before using it in the HTTP handler below.
-  // The variable is assigned immediately after; the handler is only invoked
-  // at request time, so the reference is always valid.
+  // Declare gameStateManager/gameLoopManager/wsHandler before using them in
+  // the HTTP handler below. Variables are assigned immediately after; the
+  // handler is only invoked at request time so references are always valid.
   let gameStateManager;
+  let gameLoopManager;
+  let wsHandler;
+  const startedAt = Date.now();
 
   const httpServer = createHttpServer((req, res) => {
     const urlPath = new URL(
@@ -42,16 +45,37 @@ export function createServer({
       return;
     }
 
+    if (req.method === 'GET' && urlPath === '/internal/admin') {
+      const games = [];
+      for (const [gameId] of gameLoopManager._games) {
+        games.push({
+          gameId,
+          phase: gameLoopManager.getPhase(gameId),
+          phaseElapsedMs: gameLoopManager.getPhaseElapsed(gameId),
+          playerCount: wsHandler.getGamePlayerCount(gameId),
+        });
+      }
+      const payload = {
+        connectedPlayers: wsHandler.getConnectedCount(),
+        activeGameCount: gameLoopManager.getActiveGameCount(),
+        uptimeMs: Date.now() - startedAt,
+        games,
+      };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(payload));
+      return;
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok' }));
   });
 
   const gameLoop = new GameLoop(tickInterval);
-  const gameLoopManager = new GameLoopManager({ tickInterval, hidingDuration, seekingDuration, logger });
+  gameLoopManager = new GameLoopManager({ tickInterval, hidingDuration, seekingDuration, logger });
   gameStateManager = new GameStateManager();
   const stateDispatcher = new StateDispatcher({ logger });
   const wss = new WebSocketServer({ server: httpServer });
-  const wsHandler = new WsHandler(gameLoop, gameStateManager);
+  wsHandler = new WsHandler(gameLoop, gameStateManager);
   const heartbeatManager = new HeartbeatManager(wss, { interval: heartbeatInterval });
 
   // Broadcast phase changes to all players in the affected game

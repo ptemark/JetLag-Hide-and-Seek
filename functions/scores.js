@@ -4,21 +4,32 @@
  * POST /scores  { playerId, gameId, hidingTimeMs, captured }
  *            →  { scoreId, playerId, gameId, hidingTimeMs, captured, submittedAt }
  *
- * Storage is in-memory (placeholder). Task 9–10 will wire this to the DB.
+ * Pass a pg Pool as the second argument to persist to the database.
+ * Omit the pool to use the in-process Map (tests / local dev).
+ *
+ * DB mapping:
+ *   hidingTimeMs  → score_seconds (rounded to nearest second)
+ *   captured=true → captured_at = NOW(); false → captured_at = null
  */
 
 import { randomUUID } from 'node:crypto';
+import { dbSubmitScore } from '../db/gameStore.js';
 
-// In-process store — replaced by DB in Task 9.
+// In-process store — used when no DB pool is provided (tests / local dev).
 const _scores = new Map();
 
 /**
  * Submit a score for a completed game.
  *
+ * When `pool` is supplied the score is persisted to the database and a
+ * Promise is returned.  Without a pool the operation is synchronous and
+ * uses the in-process Map.
+ *
  * @param {{ method: string, body: unknown }} req
- * @returns {{ status: number, body: object }}
+ * @param {import('pg').Pool|null} [pool]
+ * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
  */
-export function submitScore(req) {
+export function submitScore(req, pool = null) {
   if (req.method !== 'POST') {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
@@ -36,6 +47,22 @@ export function submitScore(req) {
   }
   if (typeof captured !== 'boolean') {
     return { status: 400, body: { error: 'captured must be a boolean' } };
+  }
+
+  if (pool) {
+    const scoreSeconds = Math.round(hidingTimeMs / 1000);
+    const capturedAt = captured ? new Date().toISOString() : null;
+    return dbSubmitScore(pool, { gameId, playerId, scoreSeconds, capturedAt }).then(row => ({
+      status: 201,
+      body: {
+        scoreId: row.scoreId,
+        playerId: row.playerId,
+        gameId: row.gameId,
+        hidingTimeMs,
+        captured,
+        submittedAt: row.createdAt,
+      },
+    }));
   }
 
   const score = {

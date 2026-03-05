@@ -3,25 +3,31 @@
  *
  * POST /players  { name, role }  → { playerId, name, role, createdAt }
  *
- * Storage is in-memory (placeholder). Task 9–10 will wire this to the DB.
- * Each serverless invocation gets a fresh module scope, so this Map is
- * only useful for same-process unit tests. Real persistence requires DB.
+ * Pass a pg Pool as the second argument to persist to the database.
+ * Omit the pool (or pass null) to use the in-memory store — useful for
+ * same-process unit tests. Real persistence requires a pool.
  */
 
 import { randomUUID } from 'node:crypto';
+import { dbCreatePlayer } from '../db/gameStore.js';
 
 export const VALID_ROLES = Object.freeze(['hider', 'seeker']);
 
-// In-process store — replaced by DB in Task 9.
+// In-process store — used when no DB pool is provided (tests / local dev).
 const _players = new Map();
 
 /**
  * Register a new player.
  *
+ * When `pool` is supplied the player is persisted to the database and a
+ * Promise is returned.  Without a pool the operation is synchronous and
+ * uses the in-process Map.
+ *
  * @param {{ method: string, body: unknown }} req
- * @returns {{ status: number, body: object }}
+ * @param {import('pg').Pool|null} [pool]
+ * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
  */
-export function registerPlayer(req) {
+export function registerPlayer(req, pool = null) {
   if (req.method !== 'POST') {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
@@ -35,9 +41,18 @@ export function registerPlayer(req) {
     return { status: 400, body: { error: `role must be one of: ${VALID_ROLES.join(', ')}` } };
   }
 
+  const trimmedName = name.trim();
+
+  if (pool) {
+    return dbCreatePlayer(pool, { name: trimmedName }).then(player => ({
+      status: 201,
+      body: { ...player, role },
+    }));
+  }
+
   const player = {
     playerId: randomUUID(),
-    name: name.trim(),
+    name: trimmedName,
     role,
     createdAt: new Date().toISOString(),
   };

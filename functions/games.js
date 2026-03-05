@@ -1,28 +1,40 @@
 /**
- * games.js — Serverless handler for basic game state queries.
+ * games.js — Serverless handler for game creation and state queries.
  *
- * GET /games/:id  → game state snapshot
+ * POST /games      { size }      → new game record
+ * GET  /games/:id               → game state snapshot
  *
- * Storage is in-memory (placeholder). Task 9–10 will wire this to the DB.
+ * Pass a pg Pool as the second argument to persist to / read from the
+ * database.  Omit the pool to use the in-process Map (tests / local dev).
  */
 
 import { randomUUID } from 'node:crypto';
+import { dbCreateGame, dbGetGame } from '../db/gameStore.js';
 
 export const VALID_SIZES = Object.freeze(['small', 'medium', 'large']);
 export const VALID_STATUSES = Object.freeze(['waiting', 'hiding', 'seeking', 'finished']);
 
-// In-process store — replaced by DB in Task 9.
+// In-process store — used when no DB pool is provided (tests / local dev).
 const _games = new Map();
 
 /**
- * Create a new game (used internally and by tests).
+ * Create a new game.
  *
- * @param {{ size: string }} options
- * @returns {object} game record
+ * When `pool` is supplied the game is persisted to the database and a
+ * Promise is returned.  Without a pool the operation is synchronous and
+ * uses the in-process Map.
+ *
+ * @param {{ size?: string, bounds?: object }} options
+ * @param {import('pg').Pool|null} [pool]
+ * @returns {object | Promise<object>} game record
  */
-export function createGame({ size = 'medium' } = {}) {
+export function createGame({ size = 'medium', bounds = {} } = {}, pool = null) {
   if (!VALID_SIZES.includes(size)) {
     throw new Error(`size must be one of: ${VALID_SIZES.join(', ')}`);
+  }
+
+  if (pool) {
+    return dbCreateGame(pool, { size, bounds });
   }
 
   const game = {
@@ -43,10 +55,14 @@ export function createGame({ size = 'medium' } = {}) {
 /**
  * Retrieve a game by ID.
  *
+ * When `pool` is supplied the game is fetched from the database and a
+ * Promise is returned.  Without a pool the in-process Map is queried.
+ *
  * @param {{ method: string, params: { id: string } }} req
- * @returns {{ status: number, body: object }}
+ * @param {import('pg').Pool|null} [pool]
+ * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
  */
-export function getGame(req) {
+export function getGame(req, pool = null) {
   if (req.method !== 'GET') {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
@@ -54,6 +70,13 @@ export function getGame(req) {
   const { id } = req.params ?? {};
   if (!id) {
     return { status: 400, body: { error: 'game id is required' } };
+  }
+
+  if (pool) {
+    return dbGetGame(pool, id).then(game => {
+      if (!game) return { status: 404, body: { error: 'game not found' } };
+      return { status: 200, body: game };
+    });
   }
 
   const game = _games.get(id);

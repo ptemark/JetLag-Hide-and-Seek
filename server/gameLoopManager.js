@@ -11,6 +11,8 @@
  * transitions, and callback hooks that future rule modules will plug into.
  */
 
+import { nullLogger, LogCategory } from './logger.js';
+
 export const GamePhase = Object.freeze({
   WAITING: 'waiting',
   HIDING: 'hiding',
@@ -29,10 +31,12 @@ export class GameLoopManager {
     tickInterval = 1_000,
     hidingDuration = 120_000,
     seekingDuration = 600_000,
+    logger = nullLogger,
   } = {}) {
     this.tickInterval = tickInterval;
     this.hidingDuration = hidingDuration;
     this.seekingDuration = seekingDuration;
+    this._logger = logger;
 
     // gameId -> { phase: GamePhase, phaseStartedAt: number, timer: NodeJS.Timeout|null }
     this._games = new Map();
@@ -82,6 +86,8 @@ export class GameLoopManager {
     this._games.set(gameId, entry);
     entry.timer = setInterval(() => this._tick(gameId), this.tickInterval);
 
+    this._logger.info(LogCategory.LOOP, 'game_started', { gameId, phase: GamePhase.WAITING });
+
     if (wasIdle && this.onActive) this.onActive();
   }
 
@@ -110,6 +116,7 @@ export class GameLoopManager {
     this._transition(gameId, GamePhase.FINISHED);
     this._clearTimer(gameId);
     this._games.delete(gameId);
+    this._logger.info(LogCategory.LOOP, 'game_finished', { gameId });
     if (this._games.size === 0 && this.onIdle) this.onIdle();
   }
 
@@ -120,6 +127,7 @@ export class GameLoopManager {
   stopGame(gameId) {
     this._clearTimer(gameId);
     this._games.delete(gameId);
+    this._logger.info(LogCategory.LOOP, 'game_stopped', { gameId });
     if (this._games.size === 0 && this.onIdle) this.onIdle();
   }
 
@@ -146,6 +154,8 @@ export class GameLoopManager {
     const entry = this._games.get(gameId);
     if (!entry) return;
 
+    this._logger.debug(LogCategory.LOOP, 'tick', { gameId, phase: entry.phase });
+
     if (this.onTick) this.onTick(gameId, entry.phase);
 
     const elapsed = Date.now() - entry.phaseStartedAt;
@@ -166,6 +176,8 @@ export class GameLoopManager {
 
     entry.phase = newPhase;
     entry.phaseStartedAt = Date.now();
+
+    this._logger.info(LogCategory.LOOP, 'phase_change', { gameId, oldPhase, newPhase });
 
     if (this.onPhaseChange) this.onPhaseChange(gameId, oldPhase, newPhase);
   }

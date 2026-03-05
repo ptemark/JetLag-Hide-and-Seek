@@ -7,12 +7,14 @@ import { WsHandler } from './wsHandler.js';
 import { GameStateManager } from './gameState.js';
 import { HeartbeatManager } from './heartbeat.js';
 import { StateDispatcher } from './stateDispatcher.js';
+import { Logger, LogCategory, LogLevel } from './logger.js';
 
 export function createServer({
   tickInterval = 1000,
   heartbeatInterval = 30_000,
   hidingDuration = 120_000,
   seekingDuration = 600_000,
+  logger = new Logger({ level: LogLevel.INFO }),
 } = {}) {
   const httpServer = createHttpServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -20,9 +22,9 @@ export function createServer({
   });
 
   const gameLoop = new GameLoop(tickInterval);
-  const gameLoopManager = new GameLoopManager({ tickInterval, hidingDuration, seekingDuration });
+  const gameLoopManager = new GameLoopManager({ tickInterval, hidingDuration, seekingDuration, logger });
   const gameStateManager = new GameStateManager();
-  const stateDispatcher = new StateDispatcher();
+  const stateDispatcher = new StateDispatcher({ logger });
   const wss = new WebSocketServer({ server: httpServer });
   const wsHandler = new WsHandler(gameLoop, gameStateManager);
   const heartbeatManager = new HeartbeatManager(wss, { interval: heartbeatInterval });
@@ -53,6 +55,7 @@ export function createServer({
       return new Promise((resolve) => {
         httpServer.listen(port, () => {
           heartbeatManager.start();
+          logger.info(LogCategory.SERVER, 'server_started', { port });
           resolve();
         });
       });
@@ -67,7 +70,11 @@ export function createServer({
         }
         wss.close((err) => {
           if (err) { reject(err); return; }
-          httpServer.close((err2) => (err2 ? reject(err2) : resolve()));
+          httpServer.close((err2) => {
+            if (err2) { reject(err2); return; }
+            logger.info(LogCategory.SERVER, 'server_stopped');
+            resolve();
+          });
         });
       });
     },
@@ -77,7 +84,10 @@ export function createServer({
      * @param {() => void} fn
      */
     onActive(fn) {
-      gameLoopManager.onActive = fn;
+      gameLoopManager.onActive = () => {
+        logger.info(LogCategory.SERVER, 'server_active');
+        fn();
+      };
     },
     /**
      * Register a callback invoked when the last game finishes and the server is idle.
@@ -85,8 +95,12 @@ export function createServer({
      * @param {() => void} fn
      */
     onIdle(fn) {
-      gameLoopManager.onIdle = fn;
+      gameLoopManager.onIdle = () => {
+        logger.info(LogCategory.SERVER, 'server_idle');
+        fn();
+      };
     },
+    logger,
     gameLoop,
     gameLoopManager,
     gameStateManager,

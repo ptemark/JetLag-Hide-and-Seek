@@ -13,10 +13,16 @@
  * Task errors are isolated — one failing task does not abort others.
  * Results include both successful return values and caught errors.
  */
+import { nullLogger, LogCategory } from './logger.js';
+
 export class StateDispatcher {
-  constructor() {
-    // phase -> Array<{ name: string, fn: Function }>
-    // '*' means the task runs on every phase
+  /**
+   * @param {object} opts
+   * @param {import('./logger.js').Logger} opts.logger  Injected logger instance.
+   */
+  constructor({ logger = nullLogger } = {}) {
+    this._logger = logger;
+    // phase -> Array<{ name: string, fn: Function }>  // '*' means the task runs on every phase
     this._tasks = new Map();
 
     /**
@@ -78,9 +84,13 @@ export class StateDispatcher {
       ...(this._tasks.get(phase) ?? []),
     ];
 
+    const timer = this._logger.startTimer();
+
     const results = await Promise.all(
       bucket.map(({ name, fn }) => this._run(name, fn, gameState))
     );
+
+    timer.end(LogCategory.PERF, 'dispatch_complete', { gameId, phase, taskCount: bucket.length });
 
     if (this.onDispatch) {
       this.onDispatch(gameId, phase, results);
@@ -96,6 +106,11 @@ export class StateDispatcher {
       const value = await fn(gameState);
       return { name, status: 'ok', value };
     } catch (error) {
+      this._logger.error(LogCategory.ERROR, 'task_error', {
+        gameId: gameState.gameId,
+        taskName: name,
+        errorMessage: error?.message ?? String(error),
+      });
       return { name, status: 'error', error };
     }
   }

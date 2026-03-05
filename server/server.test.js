@@ -486,10 +486,12 @@ describe('createServer', () => {
     expect(onIdle).toHaveBeenCalledTimes(1);
   });
 
-  it('onActive and onIdle are wired to gameLoopManager', () => {
+  it('onActive fires the registered callback when the first game starts', () => {
     const s = createServer({ tickInterval: 5000 });
     const fn = vi.fn();
     s.onActive(fn);
-    expect(s.gameLoopManager.onActive).toBe(fn);
+    s.gameLoopManager.startGame('g1');
+    expect(fn).toHaveBeenCalledOnce();
+    s.gameLoopManager.stopGame('g1');
   });
 });

@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 2._
+_None in progress. Last completed: Task 4._
 
 ---
 
@@ -17,6 +17,7 @@ _None in progress. Last completed: Task 2._
 |---|------|------|-------|-------|
 | 1 | 2026-03-05 | Initialize project repository | README.md, LICENSE, src/, functions/, docs/, config/ | Git initialized; MIT license; placeholder dirs with .gitkeep |
 | 2 | 2026-03-05 | Set up build and deployment tools | package.json, vite.config.js, index.html, src/main.jsx, src/App.jsx, src/App.test.jsx, .gitignore, .github/workflows/ci.yml | React+Vite+Vitest; build and 2 tests pass; CI placeholder added |
+| 4 | 2026-03-05 | Define environment configuration | .env.example, config/env.js, config/env.test.js | Typed ENV config module; 16 new tests; build clean; no secrets committed |
 
 ---
 
@@ -32,7 +33,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 ### Phase 2 — Core Infrastructure
 
-- [ ] **4** — Define environment configuration: dev, staging, prod with environment variables for API keys, DB endpoints, and feature toggles.
+- [x] **4** — Define environment configuration: dev, staging, prod with environment variables for API keys, DB endpoints, and feature toggles.
 - [ ] **5** — Set up managed server instances for persistent components (game loop, WebSocket handling).
 - [ ] **6** — Implement serverless endpoints for short-lived tasks (player registration, score submission, basic queries).
 - [ ] **7** — Establish hybrid architecture documentation showing which services are serverless and which are managed.

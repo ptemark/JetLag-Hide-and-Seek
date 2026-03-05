@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_None in progress. Last completed: Task 5._
+_None in progress. Last completed: Task 6._
 
 ---
 
@@ -19,6 +19,7 @@ _None in progress. Last completed: Task 5._
 | 2 | 2026-03-05 | Set up build and deployment tools | package.json, vite.config.js, index.html, src/main.jsx, src/App.jsx, src/App.test.jsx, .gitignore, .github/workflows/ci.yml | React+Vite+Vitest; build and 2 tests pass; CI placeholder added |
 | 4 | 2026-03-05 | Define environment configuration | .env.example, config/env.js, config/env.test.js | Typed ENV config module; 16 new tests; build clean; no secrets committed |
 | 5 | 2026-03-05 | Set up managed server instances | server/index.js, server/gameLoop.js, server/wsHandler.js, server/server.test.js | HTTP+WebSocket server; GameLoop auto-start/stop on player lifecycle; 22 new tests; build clean |
+| 6 | 2026-03-05 | Implement serverless endpoints | functions/players.js, functions/games.js, functions/scores.js, functions/router.js, functions/functions.test.js | Pure handler functions for player registration, game queries, score submission; 30 new tests; build clean |
 
 ---
 
@@ -36,7 +37,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **4** — Define environment configuration: dev, staging, prod with environment variables for API keys, DB endpoints, and feature toggles.
 - [x] **5** — Set up managed server instances for persistent components (game loop, WebSocket handling).
-- [~] **6** — Implement serverless endpoints for short-lived tasks (player registration, score submission, basic queries).
+- [x] **6** — Implement serverless endpoints for short-lived tasks (player registration, score submission, basic queries).
 - [ ] **7** — Establish hybrid architecture documentation showing which services are serverless and which are managed.
 
 ### Phase 3 — Persistence Layer

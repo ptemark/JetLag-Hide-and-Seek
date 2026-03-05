@@ -6,6 +6,7 @@ import { GameLoopManager } from './gameLoopManager.js';
 import { WsHandler } from './wsHandler.js';
 import { GameStateManager } from './gameState.js';
 import { HeartbeatManager } from './heartbeat.js';
+import { StateDispatcher } from './stateDispatcher.js';
 
 export function createServer({
   tickInterval = 1000,
@@ -21,6 +22,7 @@ export function createServer({
   const gameLoop = new GameLoop(tickInterval);
   const gameLoopManager = new GameLoopManager({ tickInterval, hidingDuration, seekingDuration });
   const gameStateManager = new GameStateManager();
+  const stateDispatcher = new StateDispatcher();
   const wss = new WebSocketServer({ server: httpServer });
   const wsHandler = new WsHandler(gameLoop, gameStateManager);
   const heartbeatManager = new HeartbeatManager(wss, { interval: heartbeatInterval });
@@ -29,6 +31,14 @@ export function createServer({
   gameLoopManager.onPhaseChange = (gameId, oldPhase, newPhase) => {
     gameStateManager.setGameStatus(gameId, newPhase);
     wsHandler.broadcastToGame(gameId, { type: 'phase_change', gameId, oldPhase, newPhase });
+  };
+
+  // Dispatch state computation tasks on every game tick
+  gameLoopManager.onTick = (gameId, phase) => {
+    const gameState = gameStateManager.getGameState(gameId);
+    if (gameState) {
+      stateDispatcher.dispatch(gameState);
+    }
   };
 
   wss.on('connection', (ws, req) => {
@@ -64,6 +74,7 @@ export function createServer({
     gameLoop,
     gameLoopManager,
     gameStateManager,
+    stateDispatcher,
     wsHandler,
     heartbeatManager,
     httpServer,

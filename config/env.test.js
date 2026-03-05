@@ -76,4 +76,12 @@ describe('ENV shape and defaults', () => {
   it('gpsTracking defaults to true', () => {
     expect(ENV.features.gpsTracking).toBe(true);
   });
+
+  it('database.url is a string', () => {
+    expect(typeof ENV.database.url).toBe('string');
+  });
+
+  it('database.url defaults to empty string when DATABASE_URL is not set', () => {
+    expect(ENV.database.url).toBe('');
+  });
 });

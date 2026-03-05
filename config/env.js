@@ -42,6 +42,15 @@ const ENV = {
   /** Optional Google Maps API key (only used when mapsProvider === 'google') */
   googleMapsApiKey: getEnvVar('VITE_GOOGLE_MAPS_API_KEY', ''),
 
+  /**
+   * Database connection URL (server-side only; never exposed to the browser).
+   * Format: postgresql://user:password@host/db?sslmode=require
+   * Provider: Neon serverless Postgres (autoscales to zero, $0 idle).
+   */
+  database: {
+    url: getEnvVar('DATABASE_URL', ''),
+  },
+
   features: {
     /** Enable experimental two-team seeker mode */
     twoTeams: parseBool(getEnvVar('VITE_FEATURE_TWO_TEAMS', 'false')),

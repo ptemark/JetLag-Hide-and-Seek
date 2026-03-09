@@ -42,6 +42,7 @@ _Task 28 complete._
 | 26 | 2026-03-09 | Implement alerting for failure scenarios | server/alerting.js, server/alerting.test.js, server/index.js, server/server.test.js, config/env.js, config/env.test.js, .env.example | AlertManager (SERVER_CRASH, DB_ERROR, CONNECTION_DROP, ERROR_RATE_HIGH, LOOP_STALL); fire-and-forget HTTP webhook; logger + onAlert callback; watchProcess() for uncaughtException/unhandledRejection; nullAlertManager no-op; ALERT_WEBHOOK_URL + ALERT_ERROR_THRESHOLD env vars; wired into createServer (onTick checkMetrics + ws error alert); 39 new tests; 505 total pass; build clean |
 | 27 | 2026-03-09 | Add unit tests for serverless functions and managed game loop logic | server/wsHandler.test.js | Dedicated WsHandler unit tests: handleConnection, broadcast, broadcastToGame, getGamePlayerCount, message routing (join_game, leave_game, location_update, request_state, unknown type, invalid JSON), disconnect; mock ws objects; 47 new tests; 552 total pass; build clean |
 | 28 | 2026-03-09 | Add integration tests to simulate multiple players connecting, updating state, and disconnecting | server/integration.test.js | Real HTTP+WebSocket server; buffered message queue; 10 describe blocks: handshake, multi-player join, location updates, WS state request, HTTP state endpoint, disconnect notifications, count tracking, broadcast isolation, admin endpoint, full lifecycle; 19 new tests; 571 total pass; build clean |
+| 29 | 2026-03-09 | Set up CI/CD pipeline to run tests and deploy both serverless and managed components | .github/workflows/ci.yml, server/start.js, Dockerfile, package.json | Multi-job pipeline: test → deploy-serverless (Vercel) + deploy-server (Docker → GHCR + webhook); concurrency cancel-in-progress; Docker layer cache via GHA; server/start.js container entrypoint with onIdle shutdown; npm start script; 571 tests pass; build clean |
 
 ---
 
@@ -100,7 +101,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **27** — Add unit tests for serverless functions and managed game loop logic.
 - [x] **28** — Add integration tests to simulate multiple players connecting, updating state, and disconnecting.
-- [ ] **29** — Set up CI/CD pipeline to run tests and deploy both serverless and managed components.
+- [x] **29** — Set up CI/CD pipeline to run tests and deploy both serverless and managed components.
 - [ ] **30** — Add staging environment to validate system behavior before production deployment.
 
 ### Phase 9 — Optimization & Cost Management

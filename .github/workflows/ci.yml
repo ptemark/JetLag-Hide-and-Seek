@@ -93,6 +93,7 @@ jobs:
     permissions:
       contents: read
       packages: write  # required to push to ghcr.io
+      actions: write   # required for type=gha cache backend
 
     steps:
       - uses: actions/checkout@v4
@@ -196,6 +197,7 @@ jobs:
     permissions:
       contents: read
       packages: write  # required to push to ghcr.io
+      actions: write   # required for type=gha cache backend
 
     steps:
       - uses: actions/checkout@v4

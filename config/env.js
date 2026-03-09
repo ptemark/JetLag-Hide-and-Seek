@@ -59,6 +59,24 @@ const ENV = {
   adminApiKey: getEnvVar('ADMIN_API_KEY', ''),
 
   /**
+   * Auto-scaling configuration (server-side only; never exposed to the browser).
+   */
+  autoScaling: {
+    /** HTTP webhook URL for scale-up/scale-down events (empty = disabled). */
+    webhookUrl:          getEnvVar('SCALE_WEBHOOK_URL', ''),
+    /** Active game count at or above which scale-up fires (default 5). */
+    scaleUpGames:        parseInt(getEnvVar('SCALE_UP_GAMES', '5'), 10),
+    /** Connection count at or above which scale-up fires (default 20). */
+    scaleUpConnections:  parseInt(getEnvVar('SCALE_UP_CONNECTIONS', '20'), 10),
+    /** Active game count at or below which scale-down fires (default 0). */
+    scaleDownGames:      parseInt(getEnvVar('SCALE_DOWN_GAMES', '0'), 10),
+    /** Connection count at or below which scale-down fires (default 0). */
+    scaleDownConnections: parseInt(getEnvVar('SCALE_DOWN_CONNECTIONS', '0'), 10),
+    /** Minimum ms between consecutive events of the same direction (default 60 s). */
+    cooldownMs:          parseInt(getEnvVar('SCALE_COOLDOWN_MS', '60000'), 10),
+  },
+
+  /**
    * Alerting configuration (server-side only; never exposed to the browser).
    */
   alerting: {

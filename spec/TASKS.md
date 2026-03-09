@@ -44,6 +44,7 @@ _Task 30 complete._
 | 28 | 2026-03-09 | Add integration tests to simulate multiple players connecting, updating state, and disconnecting | server/integration.test.js | Real HTTP+WebSocket server; buffered message queue; 10 describe blocks: handshake, multi-player join, location updates, WS state request, HTTP state endpoint, disconnect notifications, count tracking, broadcast isolation, admin endpoint, full lifecycle; 19 new tests; 571 total pass; build clean |
 | 29 | 2026-03-09 | Set up CI/CD pipeline to run tests and deploy both serverless and managed components | .github/workflows/ci.yml, server/start.js, Dockerfile, package.json | Multi-job pipeline: test → deploy-serverless (Vercel) + deploy-server (Docker → GHCR + webhook); concurrency cancel-in-progress; Docker layer cache via GHA; server/start.js container entrypoint with onIdle shutdown; npm start script; 571 tests pass; build clean |
 | 30 | 2026-03-09 | Add staging environment to validate system behavior before production deployment | .github/workflows/ci.yml, scripts/smoke.js, scripts/smoke.test.js, .env.staging.example, package.json | 6-job CI pipeline: test → deploy-staging-serverless + deploy-staging-server → smoke-test → deploy-serverless + deploy-server; Vercel preview URL captured as job output; Docker :staging tag separate from :latest; smoke.js checks SPA 200 / admin 401 / unknown-route 404 / optional game-server; 11 new tests; 582 total pass; build clean |
+| 31 | 2026-03-09 | Implement auto-scaling for managed servers based on activity | server/autoScaler.js, server/autoScaler.test.js, server/index.js, server/server.test.js, config/env.js, config/env.test.js, .env.example | AutoScaler class: UP/DOWN thresholds on activeGames + activeConnections; cooldown hysteresis; fire-and-forget webhook; onScale callback; nullAutoScaler no-op; wired into createServer onTick via nullAutoScaler default; env vars SCALE_WEBHOOK_URL/SCALE_UP_GAMES/SCALE_UP_CONNECTIONS/SCALE_DOWN_GAMES/SCALE_DOWN_CONNECTIONS/SCALE_COOLDOWN_MS; 36 new tests; 618 total pass; build clean |
 
 ---
 
@@ -107,7 +108,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 ### Phase 9 — Optimization & Cost Management
 
-- [ ] **31** — Implement auto-scaling for managed servers based on activity.
+- [x] **31** — Implement auto-scaling for managed servers based on activity.
 - [ ] **32** — Optimize serverless functions to reduce invocation costs (minimal memory, short execution).
 - [ ] **33** — Implement full shutdown option to reduce idle costs to zero.
 - [ ] **34** — Document cost-saving strategies in `DESIGN.md` for future reference.

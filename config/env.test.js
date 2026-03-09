@@ -100,4 +100,29 @@ describe('ENV shape and defaults', () => {
   it('alerting.errorThreshold defaults to 10', () => {
     expect(ENV.alerting.errorThreshold).toBe(10);
   });
+
+  it('autoScaling.webhookUrl is a string defaulting to empty', () => {
+    expect(typeof ENV.autoScaling.webhookUrl).toBe('string');
+    expect(ENV.autoScaling.webhookUrl).toBe('');
+  });
+
+  it('autoScaling.scaleUpGames defaults to 5', () => {
+    expect(ENV.autoScaling.scaleUpGames).toBe(5);
+  });
+
+  it('autoScaling.scaleUpConnections defaults to 20', () => {
+    expect(ENV.autoScaling.scaleUpConnections).toBe(20);
+  });
+
+  it('autoScaling.scaleDownGames defaults to 0', () => {
+    expect(ENV.autoScaling.scaleDownGames).toBe(0);
+  });
+
+  it('autoScaling.scaleDownConnections defaults to 0', () => {
+    expect(ENV.autoScaling.scaleDownConnections).toBe(0);
+  });
+
+  it('autoScaling.cooldownMs defaults to 60000', () => {
+    expect(ENV.autoScaling.cooldownMs).toBe(60_000);
+  });
 });

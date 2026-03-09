@@ -677,3 +677,63 @@ describe('createServer', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// AutoScaler integration
+// ---------------------------------------------------------------------------
+
+describe('createServer — autoScaler integration', () => {
+  it('exposes the injected autoScaler on the returned server object', () => {
+    const autoScaler = { check: vi.fn(), reset: vi.fn() };
+    const s = createServer({ autoScaler });
+    expect(s.autoScaler).toBe(autoScaler);
+  });
+
+  it('calls autoScaler.check on every game tick', () => {
+    vi.useFakeTimers();
+    const autoScaler = { check: vi.fn(), reset: vi.fn() };
+    const s = createServer({ tickInterval: 100, autoScaler });
+
+    s.gameLoopManager.startGame('as-game');
+
+    vi.advanceTimersByTime(250);
+
+    expect(autoScaler.check).toHaveBeenCalled();
+    // Arguments are (activeGames, activeConnections)
+    const [activeGames, activeConnections] = autoScaler.check.mock.calls[0];
+    expect(typeof activeGames).toBe('number');
+    expect(typeof activeConnections).toBe('number');
+
+    s.gameLoopManager.stopGame('as-game');
+    vi.useRealTimers();
+  });
+
+  it('passes current active game count to autoScaler.check', () => {
+    vi.useFakeTimers();
+    const autoScaler = { check: vi.fn(), reset: vi.fn() };
+    const s = createServer({ tickInterval: 100, autoScaler });
+
+    s.gameLoopManager.startGame('game-a');
+    s.gameLoopManager.startGame('game-b');
+
+    vi.advanceTimersByTime(150);
+
+    const calls = autoScaler.check.mock.calls;
+    // At least one call should have activeGames >= 2 (both games running)
+    expect(calls.some(([games]) => games >= 2)).toBe(true);
+
+    s.gameLoopManager.stopGame('game-a');
+    s.gameLoopManager.stopGame('game-b');
+    vi.useRealTimers();
+  });
+
+  it('uses nullAutoScaler by default (no errors without explicit autoScaler)', () => {
+    vi.useFakeTimers();
+    // Should not throw when autoScaler is omitted
+    const s = createServer({ tickInterval: 100 });
+    s.gameLoopManager.startGame('default-game');
+    expect(() => vi.advanceTimersByTime(150)).not.toThrow();
+    s.gameLoopManager.stopGame('default-game');
+    vi.useRealTimers();
+  });
+});

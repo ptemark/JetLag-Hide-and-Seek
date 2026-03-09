@@ -10,6 +10,7 @@ import { StateDispatcher } from './stateDispatcher.js';
 import { Logger, LogCategory, LogLevel } from './logger.js';
 import { MetricsCollector, MetricKey, RateTracker } from './monitoring.js';
 import { nullAlertManager, AlertType } from './alerting.js';
+import { nullAutoScaler } from './autoScaler.js';
 
 export function createServer({
   tickInterval = 1000,
@@ -19,6 +20,7 @@ export function createServer({
   logger        = new Logger({ level: LogLevel.INFO }),
   metrics       = new MetricsCollector(),
   alertManager  = nullAlertManager,
+  autoScaler    = nullAutoScaler,
 } = {}) {
   // Declare gameStateManager/gameLoopManager/wsHandler before using them in
   // the HTTP handler below. Variables are assigned immediately after; the
@@ -108,6 +110,10 @@ export function createServer({
       loopRateTracker.getPerMinute(),
       gameLoopManager.getActiveGameCount(),
     );
+    autoScaler.check(
+      gameLoopManager.getActiveGameCount(),
+      wsHandler.getConnectedCount(),
+    );
   };
 
   wss.on('connection', (ws, req) => {
@@ -182,6 +188,7 @@ export function createServer({
     logger,
     metrics,
     alertManager,
+    autoScaler,
     loopRateTracker,
     gameLoop,
     gameLoopManager,

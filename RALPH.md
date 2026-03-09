@@ -127,18 +127,25 @@ Never commit:
 
 # Build Verification
 
-Validation commands for JetLag:
+Before committing or pushing, **always** run the full local CI check:
 
 ```
-INSTALL: npm install
-RUN: npm run dev
+npm run ci:local
+```
+
+This runs `npm ci && npm test && npm run build` — the same sequence the GitHub Actions pipeline executes. All three steps must pass with no errors before proceeding.
+
+Individual commands for targeted checks:
+
+```
+TEST:  npm test
 BUILD: npm run build
-TEST: npm run test
 ```
 
 - Build must succeed.
-- Tests must pass.
+- All tests must pass.
 - No new warnings.
+- If `ci:local` fails, fix the issue before committing. Do not push a broken build.
 
 ---
 
@@ -195,6 +202,7 @@ Append after each task:
 
 Before committing:
 
+- Run `npm run ci:local` — all steps must pass.
 - `git diff --staged`
 - Confirm no secrets or temporary debug code.
 - Commit format:
@@ -274,7 +282,7 @@ Always leave the repository:
 5. Select next task.
 6. Mark `[~]`.
 7. Implement.
-8. Build & test.
+8. Run `npm run ci:local` — fix any failures before continuing.
 9. Self‑critique.
 10. Mark `[x]`.
 11. Commit & push.

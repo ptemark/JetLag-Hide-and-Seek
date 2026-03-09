@@ -2,7 +2,7 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
     branches: [main]
 
@@ -36,20 +36,129 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      # Upload the compiled frontend so the deploy job can publish it without
-      # re-running the build step.
+      # Always upload so both staging and production deploy jobs can use the
+      # pre-built artifact without re-running the build step.
       - name: Upload build artifact
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
           path: dist/
           retention-days: 1
 
-  # ── 2. Deploy serverless (Vercel) ─────────────────────────────────────────
-  deploy-serverless:
-    name: Deploy serverless (Vercel)
+  # ── 2. Deploy staging serverless (Vercel preview) ─────────────────────────
+  deploy-staging-serverless:
+    name: Deploy staging serverless (Vercel preview)
     needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      staging_url: ${{ steps.deploy.outputs.staging_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+
+      # Deploy a Vercel preview (no --prod flag) and capture the preview URL.
+      # The URL is passed to the smoke-test job via job outputs.
+      - name: Deploy to Vercel (staging preview)
+        id: deploy
+        run: |
+          STAGING_URL=$(npx vercel --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1 \
+            | grep -E 'https://[^ ]+' | tail -1)
+          echo "staging_url=$STAGING_URL" >> $GITHUB_OUTPUT
+          echo "Staging preview URL: $STAGING_URL"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  # ── 3. Deploy staging managed game server (Docker → GHCR) ─────────────────
+  deploy-staging-server:
+    name: Deploy staging managed game server
+    needs: test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write  # required to push to ghcr.io
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Push under the 'staging' tag (distinct from 'latest' used by production).
+      - name: Build and push Docker image (staging)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}/game-server:staging
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Redeploy the staging server via its own webhook secret.
+      # Leave STAGING_MANAGED_SERVER_DEPLOY_WEBHOOK empty to skip.
+      - name: Trigger staging server redeploy
+        if: env.WEBHOOK != ''
+        env:
+          WEBHOOK: ${{ secrets.STAGING_MANAGED_SERVER_DEPLOY_WEBHOOK }}
+        run: |
+          curl --fail --silent --show-error \
+            -X POST "${{ secrets.STAGING_MANAGED_SERVER_DEPLOY_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d '{"image":"ghcr.io/${{ github.repository }}/game-server:staging"}'
+
+  # ── 4. Smoke-test staging ──────────────────────────────────────────────────
+  smoke-test:
+    name: Smoke-test staging
+    needs: [deploy-staging-serverless, deploy-staging-server]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # SMOKE_TEST_URL comes from the Vercel preview deploy output.
+      # STAGING_GAME_SERVER_URL is optional; leave the secret empty to skip
+      # game-server smoke checks (e.g. when no staging server is running).
+      - name: Run smoke tests against staging
+        run: npm run smoke
+        env:
+          SMOKE_TEST_URL: ${{ needs.deploy-staging-serverless.outputs.staging_url }}
+          STAGING_GAME_SERVER_URL: ${{ secrets.STAGING_GAME_SERVER_URL }}
+
+  # ── 5. Deploy serverless (Vercel production) ───────────────────────────────
+  # Production deploys only run on pushes to main AND only after staging
+  # smoke tests pass, ensuring every production release is validated.
+  deploy-serverless:
+    name: Deploy serverless (Vercel production)
+    needs: smoke-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
@@ -65,7 +174,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Download the pre-built frontend so Vercel doesn't need to build again.
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
@@ -78,10 +186,10 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-  # ── 3. Deploy managed game server (Docker → GHCR) ─────────────────────────
+  # ── 6. Deploy managed game server (Docker → GHCR production) ──────────────
   deploy-server:
-    name: Deploy managed game server
-    needs: test
+    name: Deploy managed game server (production)
+    needs: smoke-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
@@ -122,7 +230,9 @@ jobs:
       # MANAGED_SERVER_DEPLOY_WEBHOOK (Railway, Render, Fly.io, etc.).
       # Leave the secret empty to skip this step.
       - name: Trigger managed server redeploy
-        if: ${{ secrets.MANAGED_SERVER_DEPLOY_WEBHOOK != '' }}
+        if: env.WEBHOOK != ''
+        env:
+          WEBHOOK: ${{ secrets.MANAGED_SERVER_DEPLOY_WEBHOOK }}
         run: |
           curl --fail --silent --show-error \
             -X POST "${{ secrets.MANAGED_SERVER_DEPLOY_WEBHOOK }}" \

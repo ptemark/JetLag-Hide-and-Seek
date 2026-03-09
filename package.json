@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "start": "node server/start.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke": "node scripts/smoke.js",
+    "ci:local": "npm ci && npm test && npm run build"
   },
   "dependencies": {
     "pg": "^8.20.0",

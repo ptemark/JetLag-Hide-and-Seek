@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 27 complete._
+_Task 28 complete._
 
 ---
 
@@ -41,6 +41,7 @@ _Task 27 complete._
 | 25 | 2026-03-09 | Track metrics: active connections, loop iterations/min, DB reads/writes | server/monitoring.js, server/monitoring.test.js, server/index.js, server/server.test.js, db/gameStore.js, db/gameStore.test.js | RateTracker (sliding-window per-minute rate); MetricsCollector wired into createServer (ACTIVE_CONNECTIONS on WS connect/close, LOOP_ITERATIONS + RateTracker on tick, ERRORS on WS error); /internal/admin includes metrics snapshot + loopIterationsPerMinute; createInstrumentedStore wraps all DB fns to auto-increment DB_READS/DB_WRITES/ERRORS; 23 new tests; 466 total pass; build clean |
 | 26 | 2026-03-09 | Implement alerting for failure scenarios | server/alerting.js, server/alerting.test.js, server/index.js, server/server.test.js, config/env.js, config/env.test.js, .env.example | AlertManager (SERVER_CRASH, DB_ERROR, CONNECTION_DROP, ERROR_RATE_HIGH, LOOP_STALL); fire-and-forget HTTP webhook; logger + onAlert callback; watchProcess() for uncaughtException/unhandledRejection; nullAlertManager no-op; ALERT_WEBHOOK_URL + ALERT_ERROR_THRESHOLD env vars; wired into createServer (onTick checkMetrics + ws error alert); 39 new tests; 505 total pass; build clean |
 | 27 | 2026-03-09 | Add unit tests for serverless functions and managed game loop logic | server/wsHandler.test.js | Dedicated WsHandler unit tests: handleConnection, broadcast, broadcastToGame, getGamePlayerCount, message routing (join_game, leave_game, location_update, request_state, unknown type, invalid JSON), disconnect; mock ws objects; 47 new tests; 552 total pass; build clean |
+| 28 | 2026-03-09 | Add integration tests to simulate multiple players connecting, updating state, and disconnecting | server/integration.test.js | Real HTTP+WebSocket server; buffered message queue; 10 describe blocks: handshake, multi-player join, location updates, WS state request, HTTP state endpoint, disconnect notifications, count tracking, broadcast isolation, admin endpoint, full lifecycle; 19 new tests; 571 total pass; build clean |
 
 ---
 
@@ -98,7 +99,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 ### Phase 8 — Testing & CI/CD
 
 - [x] **27** — Add unit tests for serverless functions and managed game loop logic.
-- [ ] **28** — Add integration tests to simulate multiple players connecting, updating state, and disconnecting.
+- [x] **28** — Add integration tests to simulate multiple players connecting, updating state, and disconnecting.
 - [ ] **29** — Set up CI/CD pipeline to run tests and deploy both serverless and managed components.
 - [ ] **30** — Add staging environment to validate system behavior before production deployment.
 

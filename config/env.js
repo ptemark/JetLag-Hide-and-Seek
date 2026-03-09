@@ -58,6 +58,16 @@ const ENV = {
    */
   adminApiKey: getEnvVar('ADMIN_API_KEY', ''),
 
+  /**
+   * Alerting configuration (server-side only; never exposed to the browser).
+   */
+  alerting: {
+    /** HTTP webhook URL to POST alert payloads to (empty = disabled). */
+    webhookUrl: getEnvVar('ALERT_WEBHOOK_URL', ''),
+    /** Fire ERROR_RATE_HIGH when cumulative errors exceed this value. */
+    errorThreshold: parseInt(getEnvVar('ALERT_ERROR_THRESHOLD', '10'), 10),
+  },
+
   features: {
     /** Enable experimental two-team seeker mode */
     twoTeams: parseBool(getEnvVar('VITE_FEATURE_TWO_TEAMS', 'false')),

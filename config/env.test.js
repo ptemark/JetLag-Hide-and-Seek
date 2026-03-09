@@ -84,4 +84,20 @@ describe('ENV shape and defaults', () => {
   it('database.url defaults to empty string when DATABASE_URL is not set', () => {
     expect(ENV.database.url).toBe('');
   });
+
+  it('alerting.webhookUrl is a string', () => {
+    expect(typeof ENV.alerting.webhookUrl).toBe('string');
+  });
+
+  it('alerting.webhookUrl defaults to empty string', () => {
+    expect(ENV.alerting.webhookUrl).toBe('');
+  });
+
+  it('alerting.errorThreshold is a number', () => {
+    expect(typeof ENV.alerting.errorThreshold).toBe('number');
+  });
+
+  it('alerting.errorThreshold defaults to 10', () => {
+    expect(ENV.alerting.errorThreshold).toBe(10);
+  });
 });

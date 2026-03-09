@@ -9,14 +9,16 @@ import { HeartbeatManager } from './heartbeat.js';
 import { StateDispatcher } from './stateDispatcher.js';
 import { Logger, LogCategory, LogLevel } from './logger.js';
 import { MetricsCollector, MetricKey, RateTracker } from './monitoring.js';
+import { nullAlertManager, AlertType } from './alerting.js';
 
 export function createServer({
   tickInterval = 1000,
   heartbeatInterval = 30_000,
   hidingDuration = 120_000,
   seekingDuration = 600_000,
-  logger = new Logger({ level: LogLevel.INFO }),
-  metrics = new MetricsCollector(),
+  logger        = new Logger({ level: LogLevel.INFO }),
+  metrics       = new MetricsCollector(),
+  alertManager  = nullAlertManager,
 } = {}) {
   // Declare gameStateManager/gameLoopManager/wsHandler before using them in
   // the HTTP handler below. Variables are assigned immediately after; the
@@ -101,6 +103,11 @@ export function createServer({
     if (gameState) {
       stateDispatcher.dispatch(gameState);
     }
+    alertManager.checkMetrics(
+      metrics.getSnapshot(),
+      loopRateTracker.getPerMinute(),
+      gameLoopManager.getActiveGameCount(),
+    );
   };
 
   wss.on('connection', (ws, req) => {
@@ -112,14 +119,19 @@ export function createServer({
     ws.on('close', () => {
       metrics.set(MetricKey.ACTIVE_CONNECTIONS, wsHandler.getConnectedCount());
     });
-    ws.on('error', () => {
+    ws.on('error', (err) => {
       metrics.increment(MetricKey.ERRORS);
+      alertManager.alert(AlertType.CONNECTION_DROP, 'WebSocket connection error', {
+        playerId,
+        error: String(err),
+      });
     });
   });
 
   return {
     start(port) {
       return new Promise((resolve) => {
+        alertManager.watchProcess();
         httpServer.listen(port, () => {
           heartbeatManager.start();
           logger.info(LogCategory.SERVER, 'server_started', { port });
@@ -169,6 +181,7 @@ export function createServer({
     },
     logger,
     metrics,
+    alertManager,
     loopRateTracker,
     gameLoop,
     gameLoopManager,

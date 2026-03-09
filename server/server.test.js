@@ -633,4 +633,47 @@ describe('createServer', () => {
     expect(s.loopRateTracker).toBeDefined();
     expect(typeof s.loopRateTracker.getPerMinute).toBe('function');
   });
+
+  it('alertManager is exposed on the server object', () => {
+    const s = createServer({ tickInterval: 5000 });
+    expect(s.alertManager).toBeDefined();
+  });
+
+  it('createServer accepts a custom alertManager', () => {
+    const alertManager = { alert: vi.fn(), checkMetrics: vi.fn(), watchProcess: vi.fn(), reset: vi.fn() };
+    const s = createServer({ tickInterval: 5000, alertManager });
+    expect(s.alertManager).toBe(alertManager);
+  });
+
+  it('alertManager.checkMetrics is called on each game tick', () => {
+    vi.useFakeTimers();
+    const alertManager = { alert: vi.fn(), checkMetrics: vi.fn(), watchProcess: vi.fn(), reset: vi.fn() };
+    const s = createServer({ tickInterval: 100, alertManager });
+
+    s.gameLoopManager.startGame('alert-game');
+    s.gameStateManager.createGame('alert-game', { status: 'hiding' });
+
+    vi.advanceTimersByTime(250);
+
+    expect(alertManager.checkMetrics).toHaveBeenCalled();
+
+    s.gameLoopManager.stopGame('alert-game');
+    vi.useRealTimers();
+  });
+
+  it('alertManager.alert is called on WebSocket error', () => {
+    const alertManager = { alert: vi.fn(), checkMetrics: vi.fn(), watchProcess: vi.fn(), reset: vi.fn() };
+    const s = createServer({ tickInterval: 5000, alertManager });
+
+    // Simulate a WS error event via the wss connection handler
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('error', new Error('net error'));
+
+    expect(alertManager.alert).toHaveBeenCalledWith(
+      'CONNECTION_DROP',
+      expect.any(String),
+      expect.objectContaining({ playerId: 'p1' }),
+    );
+  });
 });

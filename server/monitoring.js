@@ -26,6 +26,69 @@
  *   LOG_ENV           Environment label        (default: NODE_ENV or 'development')
  */
 
+// ── RateTracker ───────────────────────────────────────────────────────────────
+
+/**
+ * Sliding-window rate tracker using 1-second time buckets.
+ *
+ * Records events in second-level buckets and computes a per-minute rate over
+ * the configured window. Old buckets are pruned lazily on each read/write to
+ * bound memory usage.
+ *
+ * @example
+ * const tracker = new RateTracker();
+ * tracker.record();         // record one event
+ * tracker.getPerMinute();   // → current rate in events/minute
+ */
+export class RateTracker {
+  /**
+   * @param {number} windowMs  Sliding window size in milliseconds (default 60 s).
+   * @param {() => number} [nowFn]  Injectable clock for testing (default Date.now).
+   */
+  constructor(windowMs = 60_000, nowFn = Date.now) {
+    this._windowMs = windowMs;
+    this._bucketSizeMs = 1_000;
+    /** @type {Map<number, number>}  bucket (epoch-second) → event count */
+    this._buckets = new Map();
+    this._nowFn = nowFn;
+  }
+
+  /**
+   * Record `count` events at the current time.
+   * @param {number} [count=1]
+   */
+  record(count = 1) {
+    const bucket = Math.floor(this._nowFn() / this._bucketSizeMs);
+    this._buckets.set(bucket, (this._buckets.get(bucket) ?? 0) + count);
+    this._prune(bucket);
+  }
+
+  /**
+   * Return the number of events per minute observed in the current window.
+   * @returns {number}
+   */
+  getPerMinute() {
+    const nowBucket = Math.floor(this._nowFn() / this._bucketSizeMs);
+    const windowBuckets = Math.ceil(this._windowMs / this._bucketSizeMs);
+    const cutoff = nowBucket - windowBuckets + 1;
+    let total = 0;
+    for (const [bucket, count] of this._buckets) {
+      if (bucket >= cutoff) total += count;
+    }
+    // Normalise to per-minute regardless of window size.
+    return total * (60_000 / this._windowMs);
+  }
+
+  /** @private */
+  _prune(nowBucket) {
+    const windowBuckets = Math.ceil(this._windowMs / this._bucketSizeMs);
+    const cutoff = nowBucket - windowBuckets;
+    for (const bucket of this._buckets.keys()) {
+      if (bucket < cutoff) this._buckets.delete(bucket);
+    }
+  }
+}
+
 // ── Metric keys ──────────────────────────────────────────────────────────────
 
 export const MetricKey = Object.freeze({

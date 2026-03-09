@@ -9,7 +9,9 @@ import {
   dbJoinGame,
   dbSubmitScore,
   dbGetGameScores,
+  createInstrumentedStore,
 } from './gameStore.js';
+import { MetricsCollector, MetricKey } from '../server/monitoring.js';
 
 // ---------------------------------------------------------------------------
 // Shared mock pool factory.
@@ -292,6 +294,130 @@ describe('dbGetGameScores', () => {
   it('propagates query errors', async () => {
     const pool = makeMockPool(() => Promise.reject(new Error('connection lost')));
     await expect(dbGetGameScores(pool, 'g-x')).rejects.toThrow('connection lost');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createInstrumentedStore — metrics tracking
+// ---------------------------------------------------------------------------
+
+describe('createInstrumentedStore — DB_READS counter', () => {
+  it('increments DB_READS on dbGetPlayer success', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ id: 'p1', name: 'Alice', created_at: '' }] }),
+    );
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await store.dbGetPlayer('p1');
+    expect(metrics.getSnapshot()[MetricKey.DB_READS]).toBe(1);
+  });
+
+  it('increments DB_READS on dbGetGame success', async () => {
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{ id: 'g1', size: 'small', bounds: {}, status: 'waiting', created_at: '' }] })
+        .mockResolvedValueOnce({ rows: [] }),
+    };
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await store.dbGetGame('g1');
+    expect(metrics.getSnapshot()[MetricKey.DB_READS]).toBe(1);
+  });
+
+  it('increments DB_READS on dbGetGameScores success', async () => {
+    const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await store.dbGetGameScores('g1');
+    expect(metrics.getSnapshot()[MetricKey.DB_READS]).toBe(1);
+  });
+});
+
+describe('createInstrumentedStore — DB_WRITES counter', () => {
+  it('increments DB_WRITES on dbCreatePlayer success', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ id: 'p1', name: 'Bob', created_at: '' }] }),
+    );
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await store.dbCreatePlayer({ name: 'Bob' });
+    expect(metrics.getSnapshot()[MetricKey.DB_WRITES]).toBe(1);
+  });
+
+  it('increments DB_WRITES on dbCreateGame success', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ id: 'g1', size: 'small', bounds: {}, status: 'waiting', created_at: '' }] }),
+    );
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await store.dbCreateGame({ size: 'small' });
+    expect(metrics.getSnapshot()[MetricKey.DB_WRITES]).toBe(1);
+  });
+
+  it('increments DB_WRITES on dbJoinGame success', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ game_id: 'g1', player_id: 'p1', role: 'hider', joined_at: '' }] }),
+    );
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await store.dbJoinGame({ gameId: 'g1', playerId: 'p1', role: 'hider' });
+    expect(metrics.getSnapshot()[MetricKey.DB_WRITES]).toBe(1);
+  });
+
+  it('accumulates DB_WRITES across multiple successful writes', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ id: 'p1', name: 'Carol', created_at: '' }] }),
+    );
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await store.dbCreatePlayer({ name: 'Carol' });
+    await store.dbCreatePlayer({ name: 'Dave' });
+    expect(metrics.getSnapshot()[MetricKey.DB_WRITES]).toBe(2);
+  });
+});
+
+describe('createInstrumentedStore — ERRORS counter', () => {
+  it('increments ERRORS on read failure and re-throws', async () => {
+    const pool = makeMockPool(() => Promise.reject(new Error('read failure')));
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await expect(store.dbGetPlayer('p1')).rejects.toThrow('read failure');
+    expect(metrics.getSnapshot()[MetricKey.ERRORS]).toBe(1);
+    expect(metrics.getSnapshot()[MetricKey.DB_READS]).toBe(0);
+  });
+
+  it('increments ERRORS on write failure and re-throws', async () => {
+    const pool = makeMockPool(() => Promise.reject(new Error('write failure')));
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await expect(store.dbCreatePlayer({ name: 'Eve' })).rejects.toThrow('write failure');
+    expect(metrics.getSnapshot()[MetricKey.ERRORS]).toBe(1);
+    expect(metrics.getSnapshot()[MetricKey.DB_WRITES]).toBe(0);
+  });
+
+  it('does not increment READS or WRITES on failure', async () => {
+    const pool = makeMockPool(() => Promise.reject(new Error('db down')));
+    const metrics = new MetricsCollector();
+    const store = createInstrumentedStore(pool, metrics);
+    await expect(store.dbGetGameScores('g1')).rejects.toThrow();
+    const snap = metrics.getSnapshot();
+    expect(snap[MetricKey.DB_READS]).toBe(0);
+    expect(snap[MetricKey.DB_WRITES]).toBe(0);
+  });
+});
+
+describe('createInstrumentedStore — isolation', () => {
+  it('separate stores with separate metrics do not share counts', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ id: 'p1', name: 'Frank', created_at: '' }] }),
+    );
+    const m1 = new MetricsCollector();
+    const m2 = new MetricsCollector();
+    const store1 = createInstrumentedStore(pool, m1);
+    const store2 = createInstrumentedStore(pool, m2);
+    await store1.dbCreatePlayer({ name: 'Frank' });
+    expect(m1.getSnapshot()[MetricKey.DB_WRITES]).toBe(1);
+    expect(m2.getSnapshot()[MetricKey.DB_WRITES]).toBe(0);
   });
 });
 

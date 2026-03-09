@@ -198,3 +198,58 @@ export async function dbGetGameScores(pool, gameId) {
     createdAt: row.created_at,
   }));
 }
+
+// ── Instrumented store ────────────────────────────────────────────────────────
+
+/**
+ * Wrap the DB store functions with metrics instrumentation.
+ *
+ * Returns bound versions of all store functions that automatically increment
+ * MetricKey.DB_READS or MetricKey.DB_WRITES on success, and
+ * MetricKey.ERRORS on failure, using the provided MetricsCollector.
+ *
+ * @param {import('pg').Pool} pool  Database pool passed through to each function.
+ * @param {import('../server/monitoring.js').MetricsCollector} metrics
+ * @returns {{
+ *   dbCreatePlayer: Function,
+ *   dbGetPlayer: Function,
+ *   dbCreateGame: Function,
+ *   dbGetGame: Function,
+ *   dbUpdateGameStatus: Function,
+ *   dbJoinGame: Function,
+ *   dbSubmitScore: Function,
+ *   dbGetGameScores: Function,
+ * }}
+ */
+export function createInstrumentedStore(pool, metrics) {
+  // Keys of the MetricKey enum used here; imported lazily to avoid a circular
+  // dep from db/ → server/monitoring.  The caller supplies the MetricsCollector
+  // instance directly so we only need the string keys.
+  const READ  = 'dbReads';
+  const WRITE = 'dbWrites';
+  const ERROR = 'errors';
+
+  function wrap(fn, metricKey) {
+    return async (...args) => {
+      try {
+        const result = await fn(pool, ...args);
+        metrics.increment(metricKey);
+        return result;
+      } catch (err) {
+        metrics.increment(ERROR);
+        throw err;
+      }
+    };
+  }
+
+  return {
+    dbCreatePlayer:    wrap(dbCreatePlayer,    WRITE),
+    dbGetPlayer:       wrap(dbGetPlayer,       READ),
+    dbCreateGame:      wrap(dbCreateGame,      WRITE),
+    dbGetGame:         wrap(dbGetGame,         READ),
+    dbUpdateGameStatus:wrap(dbUpdateGameStatus,WRITE),
+    dbJoinGame:        wrap(dbJoinGame,        WRITE),
+    dbSubmitScore:     wrap(dbSubmitScore,     WRITE),
+    dbGetGameScores:   wrap(dbGetGameScores,   READ),
+  };
+}

@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 24 in progress._
+_Task 25 complete._
 
 ---
 
@@ -38,6 +38,7 @@ _Task 24 in progress._
 | 22 | 2026-03-05 | Add authentication/authorization for admin access | functions/auth.js, functions/auth.test.js, functions/admin.js, functions/admin.test.js, functions/router.js, config/env.js, .env.example | Bearer token auth via Authorization header; constant-time comparison (timingSafeEqual); ADMIN_API_KEY env var; 401 for missing/wrong token, 503 if unconfigured; router passes headers to handlers; 23 new tests; 386 total pass; build clean |
 | 23 | 2026-03-05 | Add rate limiting and error handling for API endpoints | functions/rateLimiter.js, functions/rateLimiter.test.js, functions/router.test.js, functions/router.js | Fixed-window rate limiter (100 req/60s per client IP); X-Forwarded-For extraction; 429 with Retry-After + X-RateLimit-Remaining headers; try/catch in router → 500 on handler throw; injectable limiter for test isolation; 31 new tests; 417 total pass; build clean |
 | 24 | 2026-03-09 | Integrate logging/monitoring services | server/monitoring.js, server/monitoring.test.js, api/*.js, vercel.json, .env.example, .github/workflows/ci.yml | MetricsCollector (loop iterations, connections, DB reads/writes, errors); createMonitoringSink (stdout JSON-line for CloudWatch/Datadog, HTTP sink for Datadog Logs API); Vercel serverless adapters in api/; CI Vercel deploy step; GAME_SERVER_URL env var; 26 new tests; 443 total pass; build clean |
+| 25 | 2026-03-09 | Track metrics: active connections, loop iterations/min, DB reads/writes | server/monitoring.js, server/monitoring.test.js, server/index.js, server/server.test.js, db/gameStore.js, db/gameStore.test.js | RateTracker (sliding-window per-minute rate); MetricsCollector wired into createServer (ACTIVE_CONNECTIONS on WS connect/close, LOOP_ITERATIONS + RateTracker on tick, ERRORS on WS error); /internal/admin includes metrics snapshot + loopIterationsPerMinute; createInstrumentedStore wraps all DB fns to auto-increment DB_READS/DB_WRITES/ERRORS; 23 new tests; 466 total pass; build clean |
 
 ---
 
@@ -89,7 +90,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 ### Phase 7 — Analytics & Monitoring
 
 - [x] **24** — Integrate logging/monitoring services (CloudWatch, Datadog, or equivalent) for both serverless and managed components.
-- [ ] **25** — Track metrics like active connections, loop iterations per minute, and database reads/writes.
+- [x] **25** — Track metrics like active connections, loop iterations per minute, and database reads/writes.
 - [ ] **26** — Implement alerting for failure scenarios (server crashes, DB errors, connection drops).
 
 ### Phase 8 — Testing & CI/CD

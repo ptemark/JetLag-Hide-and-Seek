@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   MetricsCollector,
   MetricKey,
+  RateTracker,
   createMonitoringSink,
 } from './monitoring.js';
 import { Logger, LogLevel, LogCategory } from './logger.js';
@@ -255,6 +256,85 @@ describe('Integration — Logger using monitoring sink', () => {
     const logger = new Logger({ sink });
     expect(() => logger.info(LogCategory.SERVER, 'server_started', { port: 3000 })).not.toThrow();
     stdoutSpy.mockRestore();
+  });
+});
+
+// ── RateTracker ───────────────────────────────────────────────────────────────
+
+describe('RateTracker — initial state', () => {
+  it('returns 0 per minute when no events have been recorded', () => {
+    const tracker = new RateTracker();
+    expect(tracker.getPerMinute()).toBe(0);
+  });
+});
+
+describe('RateTracker — record() and getPerMinute()', () => {
+  it('counts a single event as 1 per minute for a 60s window', () => {
+    let now = 0;
+    const tracker = new RateTracker(60_000, () => now);
+    tracker.record();
+    // 1 event in 60s window → 1/min
+    expect(tracker.getPerMinute()).toBe(1);
+  });
+
+  it('counts multiple events in the same second', () => {
+    let now = 0;
+    const tracker = new RateTracker(60_000, () => now);
+    tracker.record(5);
+    expect(tracker.getPerMinute()).toBe(5);
+  });
+
+  it('accumulates events across different seconds', () => {
+    let now = 0;
+    const tracker = new RateTracker(60_000, () => now);
+    tracker.record(3);
+    now = 2_000;
+    tracker.record(2);
+    expect(tracker.getPerMinute()).toBe(5);
+  });
+
+  it('excludes events outside the sliding window', () => {
+    let now = 0;
+    const tracker = new RateTracker(60_000, () => now);
+    tracker.record(10);  // at t=0, will expire after window
+    now = 61_000;        // advance past window
+    tracker.record(2);   // only this one should count
+    expect(tracker.getPerMinute()).toBe(2);
+  });
+
+  it('normalises correctly for a 30s window', () => {
+    let now = 0;
+    const tracker = new RateTracker(30_000, () => now);
+    tracker.record(5);   // 5 events in 30s = 10/min
+    expect(tracker.getPerMinute()).toBe(10);
+  });
+
+  it('record() with default count increments by 1', () => {
+    let now = 0;
+    const tracker = new RateTracker(60_000, () => now);
+    tracker.record();
+    tracker.record();
+    expect(tracker.getPerMinute()).toBe(2);
+  });
+});
+
+describe('RateTracker — pruning old buckets', () => {
+  it('does not accumulate stale buckets indefinitely', () => {
+    let now = 0;
+    const tracker = new RateTracker(60_000, () => now);
+    // Record events across many seconds that will all expire
+    for (let i = 0; i < 10; i++) {
+      now = i * 1_000;
+      tracker.record();
+    }
+    // Advance well past window
+    now = 120_000;
+    tracker.record(3);
+
+    // Only the 3 fresh events should count
+    expect(tracker.getPerMinute()).toBe(3);
+    // Old buckets were pruned — internal map should be small
+    expect(tracker._buckets.size).toBeLessThanOrEqual(2);
   });
 });
 

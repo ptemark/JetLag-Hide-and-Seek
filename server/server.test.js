@@ -5,6 +5,7 @@ import { WsHandler } from './wsHandler.js';
 import { GameStateManager } from './gameState.js';
 import { HeartbeatManager } from './heartbeat.js';
 import { createServer } from './index.js';
+import { MetricsCollector, MetricKey } from './monitoring.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -584,5 +585,52 @@ describe('createServer', () => {
     const body2 = await res2.json();
 
     expect(body2.uptimeMs).toBeGreaterThanOrEqual(body1.uptimeMs);
+  });
+
+  it('GET /internal/admin includes metrics snapshot', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/admin`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.metrics).toBeDefined();
+    expect(typeof body.metrics[MetricKey.LOOP_ITERATIONS]).toBe('number');
+    expect(typeof body.metrics[MetricKey.ACTIVE_CONNECTIONS]).toBe('number');
+    expect(typeof body.metrics[MetricKey.DB_READS]).toBe('number');
+    expect(typeof body.metrics[MetricKey.DB_WRITES]).toBe('number');
+    expect(typeof body.metrics[MetricKey.ERRORS]).toBe('number');
+    expect(typeof body.metrics.loopIterationsPerMinute).toBe('number');
+  });
+
+  it('createServer accepts a custom MetricsCollector instance', () => {
+    const metrics = new MetricsCollector();
+    const s = createServer({ tickInterval: 5000, metrics });
+    expect(s.metrics).toBe(metrics);
+  });
+
+  it('LOOP_ITERATIONS counter increments on each game tick', async () => {
+    vi.useFakeTimers();
+    const metrics = new MetricsCollector();
+    const s = createServer({ tickInterval: 100, metrics });
+
+    s.gameLoopManager.startGame('tick-game');
+    s.gameStateManager.createGame('tick-game', { status: 'hiding' });
+
+    // Advance clock to trigger ticks
+    vi.advanceTimersByTime(350);
+
+    const snap = metrics.getSnapshot();
+    expect(snap[MetricKey.LOOP_ITERATIONS]).toBeGreaterThanOrEqual(3);
+
+    s.gameLoopManager.stopGame('tick-game');
+    vi.useRealTimers();
+  });
+
+  it('loopRateTracker is exposed on the server object', () => {
+    const s = createServer({ tickInterval: 5000 });
+    expect(s.loopRateTracker).toBeDefined();
+    expect(typeof s.loopRateTracker.getPerMinute).toBe('function');
   });
 });

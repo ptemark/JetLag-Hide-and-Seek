@@ -8,6 +8,7 @@ import { GameStateManager } from './gameState.js';
 import { HeartbeatManager } from './heartbeat.js';
 import { StateDispatcher } from './stateDispatcher.js';
 import { Logger, LogCategory, LogLevel } from './logger.js';
+import { MetricsCollector, MetricKey, RateTracker } from './monitoring.js';
 
 export function createServer({
   tickInterval = 1000,
@@ -15,6 +16,7 @@ export function createServer({
   hidingDuration = 120_000,
   seekingDuration = 600_000,
   logger = new Logger({ level: LogLevel.INFO }),
+  metrics = new MetricsCollector(),
 } = {}) {
   // Declare gameStateManager/gameLoopManager/wsHandler before using them in
   // the HTTP handler below. Variables are assigned immediately after; the
@@ -23,6 +25,7 @@ export function createServer({
   let gameLoopManager;
   let wsHandler;
   const startedAt = Date.now();
+  const loopRateTracker = new RateTracker();
 
   const httpServer = createHttpServer((req, res) => {
     const urlPath = new URL(
@@ -55,11 +58,17 @@ export function createServer({
           playerCount: wsHandler.getGamePlayerCount(gameId),
         });
       }
+      // Sync gauge metrics before snapshotting.
+      metrics.set(MetricKey.ACTIVE_CONNECTIONS, wsHandler.getConnectedCount());
       const payload = {
         connectedPlayers: wsHandler.getConnectedCount(),
         activeGameCount: gameLoopManager.getActiveGameCount(),
         uptimeMs: Date.now() - startedAt,
         games,
+        metrics: {
+          ...metrics.getSnapshot(),
+          loopIterationsPerMinute: loopRateTracker.getPerMinute(),
+        },
       };
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(payload));
@@ -86,6 +95,8 @@ export function createServer({
 
   // Dispatch state computation tasks on every game tick
   gameLoopManager.onTick = (gameId, phase) => {
+    metrics.increment(MetricKey.LOOP_ITERATIONS);
+    loopRateTracker.record();
     const gameState = gameStateManager.getGameState(gameId);
     if (gameState) {
       stateDispatcher.dispatch(gameState);
@@ -95,8 +106,15 @@ export function createServer({
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const playerId = url.searchParams.get('playerId') ?? randomUUID();
+    metrics.set(MetricKey.ACTIVE_CONNECTIONS, wsHandler.getConnectedCount() + 1);
     heartbeatManager.track(ws);
     wsHandler.handleConnection(ws, playerId);
+    ws.on('close', () => {
+      metrics.set(MetricKey.ACTIVE_CONNECTIONS, wsHandler.getConnectedCount());
+    });
+    ws.on('error', () => {
+      metrics.increment(MetricKey.ERRORS);
+    });
   });
 
   return {
@@ -150,6 +168,8 @@ export function createServer({
       };
     },
     logger,
+    metrics,
+    loopRateTracker,
     gameLoop,
     gameLoopManager,
     gameStateManager,

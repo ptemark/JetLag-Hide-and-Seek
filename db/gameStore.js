@@ -199,6 +199,95 @@ export async function dbGetGameScores(pool, gameId) {
   }));
 }
 
+// ── Question / Answer store ───────────────────────────────────────────────────
+
+/**
+ * Insert a new question record.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string }} options
+ * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, createdAt: string }>}
+ */
+export async function dbCreateQuestion(pool, { gameId, askerId, targetId, category, text }) {
+  const res = await pool.query(
+    `INSERT INTO questions (game_id, asker_id, target_id, category, text)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, game_id, asker_id, target_id, category, text, status, created_at`,
+    [gameId, askerId, targetId, category, text],
+  );
+  const row = res.rows[0];
+  return {
+    questionId: row.id,
+    gameId: row.game_id,
+    askerId: row.asker_id,
+    targetId: row.target_id,
+    category: row.category,
+    text: row.text,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Retrieve all questions addressed to a specific player (as target), newest first.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {string} playerId
+ * @returns {Promise<Array<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, createdAt: string }>>}
+ */
+export async function dbGetQuestionsForPlayer(pool, playerId) {
+  const res = await pool.query(
+    `SELECT id, game_id, asker_id, target_id, category, text, status, created_at
+     FROM questions
+     WHERE target_id = $1
+     ORDER BY created_at DESC`,
+    [playerId],
+  );
+  return res.rows.map(row => ({
+    questionId: row.id,
+    gameId: row.game_id,
+    askerId: row.asker_id,
+    targetId: row.target_id,
+    category: row.category,
+    text: row.text,
+    status: row.status,
+    createdAt: row.created_at,
+  }));
+}
+
+/**
+ * Insert an answer for a question and mark the question as answered.
+ * Returns the answer record on success or null if the question was not found.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ questionId: string, responderId: string, text: string }} options
+ * @returns {Promise<{ answerId: string, questionId: string, responderId: string, text: string, createdAt: string } | null>}
+ */
+export async function dbSubmitAnswer(pool, { questionId, responderId, text }) {
+  // Verify the question exists before inserting the answer.
+  const check = await pool.query('SELECT id FROM questions WHERE id = $1', [questionId]);
+  if (check.rows.length === 0) return null;
+
+  const answerRes = await pool.query(
+    `INSERT INTO answers (question_id, responder_id, text)
+     VALUES ($1, $2, $3)
+     RETURNING id, question_id, responder_id, text, created_at`,
+    [questionId, responderId, text],
+  );
+  await pool.query(
+    `UPDATE questions SET status = 'answered' WHERE id = $1`,
+    [questionId],
+  );
+  const row = answerRes.rows[0];
+  return {
+    answerId: row.id,
+    questionId: row.question_id,
+    responderId: row.responder_id,
+    text: row.text,
+    createdAt: row.created_at,
+  };
+}
+
 // ── Instrumented store ────────────────────────────────────────────────────────
 
 /**

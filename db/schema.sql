@@ -42,6 +42,37 @@ CREATE TABLE IF NOT EXISTS game_players (
 );
 
 -- -------------------------------------------------------------------------
+-- questions
+-- Questions submitted by seekers to narrow down the hider's location.
+-- category: matching | thermometer | photo | tentacle
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS questions (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id     UUID        NOT NULL REFERENCES games(id)   ON DELETE CASCADE,
+  asker_id    UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  target_id   UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  category    TEXT        NOT NULL
+                CHECK (category IN ('matching', 'thermometer', 'photo', 'tentacle')),
+  text        TEXT        NOT NULL,
+  status      TEXT        NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'answered')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- -------------------------------------------------------------------------
+-- answers
+-- Hider responses to seeker questions.
+-- One answer per question (enforced by unique constraint).
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS answers (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  question_id  UUID        NOT NULL UNIQUE REFERENCES questions(id) ON DELETE CASCADE,
+  responder_id UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  text         TEXT        NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- -------------------------------------------------------------------------
 -- scores
 -- Outcome record written at the end of each game.
 -- score_seconds = total time the hider survived (higher is better for hider).

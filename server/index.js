@@ -52,6 +52,26 @@ export function createServer({
       return;
     }
 
+    // POST /internal/notify — receive a fire-and-forget broadcast request from
+    // a serverless function (e.g. after an answer is submitted) and relay it
+    // to all connected players in the target game via WebSocket.
+    if (req.method === 'POST' && urlPath === '/internal/notify') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body);
+          const { gameId, ...event } = payload;
+          if (gameId) {
+            wsHandler.broadcastToGame(gameId, event);
+          }
+        } catch { /* malformed payload — ignore */ }
+        res.writeHead(204);
+        res.end();
+      });
+      return;
+    }
+
     if (req.method === 'GET' && urlPath === '/internal/admin') {
       const games = [];
       for (const [gameId] of gameLoopManager._games) {

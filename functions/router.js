@@ -21,6 +21,9 @@
  *   GET    /live/:gameId         → getLiveState
  *   GET    /admin                → getAdminStatus
  *   GET    /zones                → getZones
+ *   POST   /questions            → submitQuestion
+ *   GET    /questions            → listQuestions
+ *   POST   /answers/:questionId  → submitAnswer
  */
 
 import { registerPlayer } from './players.js';
@@ -30,6 +33,7 @@ import { initiateSession, terminateSession } from './sessions.js';
 import { getLiveState } from './liveState.js';
 import { getAdminStatus } from './admin.js';
 import { getZones } from './zones.js';
+import { submitQuestion, listQuestions, submitAnswer } from './questions.js';
 import { defaultLimiter } from './rateLimiter.js';
 
 /**
@@ -71,6 +75,9 @@ const ROUTES = [
   { method: 'GET',    pattern: /^\/live\/(?<gameId>[^/]+)$/, handler: getLiveState },
   { method: 'GET',    pattern: /^\/admin$/, handler: getAdminStatus },
   { method: 'GET',    pattern: /^\/zones$/, handler: getZones },
+  { method: 'POST',   pattern: /^\/questions$/, handler: submitQuestion },
+  { method: 'GET',    pattern: /^\/questions$/, handler: listQuestions },
+  { method: 'POST',   pattern: /^\/answers\/(?<questionId>[^/]+)$/, handler: submitAnswer },
 ];
 
 /**

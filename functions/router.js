@@ -14,6 +14,7 @@
  *
  * Route table:
  *   POST   /players              → registerPlayer
+ *   POST   /games                → handleCreateGame
  *   GET    /games/:id            → getGame
  *   POST   /scores               → submitScore
  *   POST   /sessions             → initiateSession
@@ -29,7 +30,7 @@
  */
 
 import { registerPlayer } from './players.js';
-import { getGame } from './games.js';
+import { getGame, handleCreateGame } from './games.js';
 import { submitScore } from './scores.js';
 import { initiateSession, terminateSession } from './sessions.js';
 import { getLiveState } from './liveState.js';
@@ -71,6 +72,7 @@ const BODYLESS_METHODS = new Set(['GET', 'DELETE', 'HEAD', 'OPTIONS']);
  */
 const ROUTES = [
   { method: 'POST',   pattern: /^\/players$/, handler: registerPlayer },
+  { method: 'POST',   pattern: /^\/games$/, handler: handleCreateGame },
   { method: 'GET',    pattern: /^\/games\/(?<id>[^/]+)$/, handler: getGame },
   { method: 'POST',   pattern: /^\/scores$/, handler: submitScore },
   { method: 'POST',   pattern: /^\/sessions$/, handler: initiateSession },
@@ -110,9 +112,12 @@ function clientKey(httpReq) {
  * @param {object} [opts]
  * @param {{ check: (key: string) => { allowed: boolean, remaining: number, resetAtMs: number } }} [opts.limiter]
  *   Rate-limiter instance.  Defaults to the shared defaultLimiter.
+ * @param {import('pg').Pool|null} [opts.pool]
+ *   Database pool passed through to every route handler as the second argument.
  */
 export async function handleRequest(httpReq, httpRes, opts = {}) {
   const limiter = opts.limiter ?? defaultLimiter;
+  const pool = opts.pool ?? null;
 
   // --- Rate limiting ---
   const key = clientKey(httpReq);
@@ -155,7 +160,7 @@ export async function handleRequest(httpReq, httpRes, opts = {}) {
       const req = { method, path: urlPath, params: match.groups ?? {}, query, body, headers: httpReq.headers ?? {} };
       let result;
       try {
-        result = await route.handler(req);
+        result = await route.handler(req, pool);
       } catch {
         httpRes.writeHead(500, { 'Content-Type': 'application/json' });
         httpRes.end(JSON.stringify({ error: 'Internal Server Error' }));

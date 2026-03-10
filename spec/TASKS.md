@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 35 complete._
+_Task 40 complete._
 
 ---
 
@@ -51,6 +51,7 @@ _Task 35 complete._
 | 35 | 2026-03-10 | Finalize DESIGN.md with architecture diagrams | spec/DESIGN.md | Added sections 17–21: detailed component diagram, 3 request-flow diagrams (game setup / real-time gameplay / end-game), game state machine, key file reference table, deployment topology; 655 tests pass; build clean |
 | 36 | 2026-03-10 | Update README.md with setup, API endpoints, and deployment | README.md | Full rewrite: prerequisites, local setup, env var table, all REST + WS API endpoints, project structure, Vercel + Docker + CI/CD deployment, GitHub secrets reference; 655 tests pass; build clean |
 | 38 | 2026-03-10 | Write onboarding guide for new developers | docs/ONBOARDING.md | 13-section guide: prerequisites, first-time setup, dev commands, project map, 90-second architecture, testing conventions, step-by-step for adding endpoints and WS messages, env var rules, RALPH loop, deployment checklist, help reference; 655 tests pass; build clean |
+| 40 | 2026-03-10 | Implement zone calculation service | functions/zones.js, functions/zones.test.js, api/zones.js, functions/router.js, functions/router.test.js | GET /zones?bounds=&scale= fetches transit stations from OSM Overpass API and returns hiding zones (500 m small/medium, 1 km large); injectable fetch for test isolation; router updated with query param parsing; 32 new tests; 687 total pass; build clean |
 
 ---
 
@@ -129,3 +130,14 @@ Tasks are ordered by dependency. Complete them top to bottom.
 ### Phase 11 — Production Wiring
 
 - [x] **39** — Wire Vercel API adapters to real Postgres: update `api/players.js`, `api/games/[id].js`, and `api/scores.js` to create a `pg.Pool` from `DATABASE_URL` and pass it to each handler. Use `createPool` from `db/db.js` and call `createTables` on cold start. Handlers already accept an optional pool argument and fall back to in-memory when omitted.
+
+### Phase 12 — Core Gameplay Features
+
+- [x] **40** — Implement zone calculation service: given game bounds and scale, fetch transit stations from the OSM Overpass API and compute hiding zones (circles of 500 m for small/medium, 1 km for large). Expose as `GET /api/zones?bounds=&scale=`. Pure handler in `functions/zones.js`, Vercel adapter in `api/zones.js`.
+- [ ] **41** — Implement question system API: `POST /api/questions` (submit question), `GET /api/questions?playerId=` (list questions for a player), `POST /api/answers/:questionId` (submit answer). Persist questions/answers in new DB tables. Trigger seeker-notification broadcast via managed server when answer is submitted.
+- [ ] **42** — Implement challenge card system: Hider Deck with time-bonus, powerup, and curse cards. `GET /api/cards?gameId=&playerId=` returns current hand (max 6). `POST /api/cards/:cardId/play` applies effect. Card draws triggered by question answers via DB layer.
+- [ ] **43** — Implement proximity / capture detection in the game loop: every tick check all seeker locations against hider hiding zone; when all seekers are within zone radius and off transit, transition phase to `finished`, broadcast winner, persist result, update scores.
+- [ ] **44** — Build frontend game lobby: player registration form, create/join game form with scale selector and map bounds picker. Wire to existing `/api/players` and `/api/games` endpoints.
+- [ ] **45** — Build frontend map view: Leaflet + OSM map showing game bounds, hiding zones overlay, live player positions. Location updates throttled to 10–20 s via WebSocket. Redraw only on state changes.
+- [ ] **46** — Build frontend question/answer UI: seekers see question form with category selector and submit button; hider sees pending questions with answer form and optional photo upload.
+- [ ] **47** — Build frontend hider card panel: display hand of up to 6 cards; tap to play; show effect confirmation. Wire to `/api/cards` endpoints.

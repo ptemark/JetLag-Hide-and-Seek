@@ -253,6 +253,49 @@ describe('handleRequest — successful routing', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Zones route
+// ---------------------------------------------------------------------------
+
+describe('handleRequest — zones route', () => {
+  it('returns 400 when bounds is missing', async () => {
+    const req = makeReq({ method: 'GET', url: '/zones?scale=small' });
+    const res = makeRes();
+    await handleRequest(req, res, { limiter: unlimitedLimiter() });
+    expect(res._status).toBe(400);
+    expect(res._body.error).toMatch(/bounds/i);
+  });
+
+  it('returns 400 when scale is missing', async () => {
+    const req = makeReq({ method: 'GET', url: '/zones?bounds=51.4,-0.2,51.6,0.1' });
+    const res = makeRes();
+    await handleRequest(req, res, { limiter: unlimitedLimiter() });
+    expect(res._status).toBe(400);
+    expect(res._body.error).toMatch(/scale/i);
+  });
+
+  it('returns 400 for an invalid scale value', async () => {
+    const req = makeReq({ method: 'GET', url: '/zones?bounds=51.4,-0.2,51.6,0.1&scale=huge' });
+    const res = makeRes();
+    await handleRequest(req, res, { limiter: unlimitedLimiter() });
+    expect(res._status).toBe(400);
+  });
+
+  it('returns 400 for malformed bounds', async () => {
+    const req = makeReq({ method: 'GET', url: '/zones?bounds=bad&scale=small' });
+    const res = makeRes();
+    await handleRequest(req, res, { limiter: unlimitedLimiter() });
+    expect(res._status).toBe(400);
+  });
+
+  it('returns 405 for non-GET method', async () => {
+    const req = makeReq({ method: 'DELETE', url: '/zones' });
+    const res = makeRes();
+    await handleRequest(req, res, { limiter: unlimitedLimiter() });
+    expect(res._status).toBe(405);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bodyless method optimisation
 // ---------------------------------------------------------------------------
 

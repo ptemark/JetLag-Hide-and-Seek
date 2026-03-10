@@ -20,6 +20,7 @@
  *   DELETE /sessions/:sessionId  → terminateSession
  *   GET    /live/:gameId         → getLiveState
  *   GET    /admin                → getAdminStatus
+ *   GET    /zones                → getZones
  */
 
 import { registerPlayer } from './players.js';
@@ -28,6 +29,7 @@ import { submitScore } from './scores.js';
 import { initiateSession, terminateSession } from './sessions.js';
 import { getLiveState } from './liveState.js';
 import { getAdminStatus } from './admin.js';
+import { getZones } from './zones.js';
 import { defaultLimiter } from './rateLimiter.js';
 
 /**
@@ -68,6 +70,7 @@ const ROUTES = [
   { method: 'DELETE', pattern: /^\/sessions\/(?<sessionId>[^/]+)$/, handler: terminateSession },
   { method: 'GET',    pattern: /^\/live\/(?<gameId>[^/]+)$/, handler: getLiveState },
   { method: 'GET',    pattern: /^\/admin$/, handler: getAdminStatus },
+  { method: 'GET',    pattern: /^\/zones$/, handler: getZones },
 ];
 
 /**
@@ -114,7 +117,9 @@ export async function handleRequest(httpReq, httpRes, opts = {}) {
   }
 
   const method = httpReq.method ?? 'GET';
-  const urlPath = new URL(httpReq.url ?? '/', `http://${httpReq.headers?.host ?? 'localhost'}`).pathname;
+  const parsedUrl = new URL(httpReq.url ?? '/', `http://${httpReq.headers?.host ?? 'localhost'}`);
+  const urlPath = parsedUrl.pathname;
+  const query = Object.fromEntries(parsedUrl.searchParams);
 
   // --- Parse body (POST / PUT / PATCH only) ---
   // GET, DELETE, HEAD, and OPTIONS requests never carry a body; skipping
@@ -135,7 +140,7 @@ export async function handleRequest(httpReq, httpRes, opts = {}) {
   for (const route of ROUTES) {
     const match = urlPath.match(route.pattern);
     if (match && method === route.method) {
-      const req = { method, path: urlPath, params: match.groups ?? {}, body, headers: httpReq.headers ?? {} };
+      const req = { method, path: urlPath, params: match.groups ?? {}, query, body, headers: httpReq.headers ?? {} };
       let result;
       try {
         result = await route.handler(req);

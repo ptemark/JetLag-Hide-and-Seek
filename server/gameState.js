@@ -12,7 +12,7 @@ export class GameStateManager {
 
   createGame(gameId, { status = 'waiting' } = {}) {
     if (this._games.has(gameId)) return;
-    this._games.set(gameId, { status, players: new Map() });
+    this._games.set(gameId, { status, players: new Map(), zones: [] });
   }
 
   removeGame(gameId) {
@@ -57,6 +57,17 @@ export class GameStateManager {
     if (!game) return false;
     game.status = status;
     return true;
+  }
+
+  setGameZones(gameId, zones) {
+    const game = this._games.get(gameId);
+    if (!game) return false;
+    game.zones = zones;
+    return true;
+  }
+
+  getGameZones(gameId) {
+    return this._games.get(gameId)?.zones ?? [];
   }
 
   getGameState(gameId) {

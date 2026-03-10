@@ -11,6 +11,7 @@ import { Logger, LogCategory, LogLevel } from './logger.js';
 import { MetricsCollector, MetricKey, RateTracker } from './monitoring.js';
 import { nullAlertManager, AlertType } from './alerting.js';
 import { nullAutoScaler } from './autoScaler.js';
+import { checkCapture } from './captureDetector.js';
 
 export function createServer({
   tickInterval = 1000,
@@ -21,6 +22,7 @@ export function createServer({
   metrics       = new MetricsCollector(),
   alertManager  = nullAlertManager,
   autoScaler    = nullAutoScaler,
+  store         = null,   // optional: { dbUpdateGameStatus, dbSubmitScore }
 } = {}) {
   // Declare gameStateManager/gameLoopManager/wsHandler before using them in
   // the HTTP handler below. Variables are assigned immediately after; the
@@ -49,6 +51,34 @@ export function createServer({
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(state));
       }
+      return;
+    }
+
+    // POST /internal/games/:gameId/zones — register hiding zones for a game so
+    // the capture detector can evaluate seeker proximity each tick.
+    const zonesMatch = req.method === 'POST'
+      && urlPath.match(/^\/internal\/games\/(?<gameId>[^/]+)\/zones$/);
+    if (zonesMatch) {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { zones } = JSON.parse(body);
+          if (Array.isArray(zones)) {
+            gameStateManager.setGameZones(zonesMatch.groups.gameId, zones);
+            res.writeHead(204);
+          } else {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'zones must be an array' }));
+            return;
+          }
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+          return;
+        }
+        res.end();
+      });
       return;
     }
 
@@ -110,6 +140,52 @@ export function createServer({
   const wss = new WebSocketServer({ server: httpServer });
   wsHandler = new WsHandler(gameLoop, gameStateManager);
   const heartbeatManager = new HeartbeatManager(wss, { interval: heartbeatInterval });
+
+  // Guard against duplicate capture processing when ticks overlap async work.
+  const _capturingGames = new Set();
+
+  // Register capture detection task for the SEEKING phase.
+  stateDispatcher.register('seeking', 'capture_check', async (gameState) => {
+    const { gameId } = gameState;
+    if (_capturingGames.has(gameId)) return { captured: false };
+
+    const zones = gameStateManager.getGameZones(gameId);
+    const { captured, hiderZone, seekersInZone } = checkCapture(gameState, zones);
+    if (!captured) return { captured: false };
+
+    _capturingGames.add(gameId);
+
+    const capturedAt = new Date();
+    const seekingElapsedMs = gameLoopManager.getPhaseElapsed(gameId);
+
+    if (store) {
+      try {
+        await store.dbUpdateGameStatus({ gameId, status: 'finished' });
+        for (const seekerId of seekersInZone) {
+          await store.dbSubmitScore({
+            gameId,
+            playerId: seekerId,
+            scoreSeconds: Math.floor(seekingElapsedMs / 1000),
+            capturedAt,
+          });
+        }
+      } catch (err) {
+        logger.error(LogCategory.ERROR, 'capture_db_error', { gameId, error: err?.message });
+      }
+    }
+
+    wsHandler.broadcastToGame(gameId, {
+      type: 'capture',
+      gameId,
+      winner: 'seekers',
+      hiderZone,
+      seekersInZone,
+      seekingElapsedMs,
+    });
+
+    gameLoopManager.finishGame(gameId);
+    return { captured: true, winner: 'seekers', seekersInZone };
+  });
 
   // Broadcast phase changes to all players in the affected game
   gameLoopManager.onPhaseChange = (gameId, oldPhase, newPhase) => {

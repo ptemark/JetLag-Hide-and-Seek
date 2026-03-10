@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { registerPlayer, VALID_ROLES, _clearStore as clearPlayers, _getStore as getPlayerStore } from './players.js';
-import { getGame, createGame, VALID_SIZES, _clearStore as clearGames, _getStore as getGameStore } from './games.js';
+import { getGame, createGame, handleCreateGame, VALID_SIZES, _clearStore as clearGames, _getStore as getGameStore } from './games.js';
 import { submitScore, _clearStore as clearScores, _getStore as getScoreStore } from './scores.js';
 
 // ---------------------------------------------------------------------------
@@ -90,6 +90,49 @@ describe('createGame', () => {
     const game = createGame({ size: 'small' });
     const store = getGameStore();
     expect(store.has(game.gameId)).toBe(true);
+  });
+});
+
+describe('handleCreateGame', () => {
+  beforeEach(() => clearGames());
+
+  it('returns 405 for non-POST requests', () => {
+    const res = handleCreateGame({ method: 'GET', body: {} });
+    expect(res.status).toBe(405);
+    expect(res.body.error).toMatch(/Method Not Allowed/i);
+  });
+
+  it('creates a game with default medium size', () => {
+    const res = handleCreateGame({ method: 'POST', body: {} });
+    expect(res.status).toBe(201);
+    expect(res.body.gameId).toBeTruthy();
+    expect(res.body.size).toBe('medium');
+    expect(res.body.status).toBe('waiting');
+  });
+
+  it('creates a game with specified size', () => {
+    const res = handleCreateGame({ method: 'POST', body: { size: 'small' } });
+    expect(res.status).toBe(201);
+    expect(res.body.size).toBe('small');
+  });
+
+  it('returns 400 for invalid size', () => {
+    const res = handleCreateGame({ method: 'POST', body: { size: 'huge' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/size/i);
+  });
+
+  it('accepts bounds in the request body', () => {
+    const bounds = { lat_min: 48, lat_max: 49, lon_min: 2, lon_max: 3 };
+    const res = handleCreateGame({ method: 'POST', body: { size: 'large', bounds } });
+    expect(res.status).toBe(201);
+    expect(res.body.gameId).toBeTruthy();
+  });
+
+  it('handles missing body gracefully', () => {
+    const res = handleCreateGame({ method: 'POST' });
+    expect(res.status).toBe(201);
+    expect(res.body.size).toBe('medium');
   });
 });
 

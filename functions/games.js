@@ -87,6 +87,33 @@ export function getGame(req, pool = null) {
   return { status: 200, body: game };
 }
 
+/**
+ * HTTP handler: create a new game.
+ *
+ * POST /games  { size?, bounds? }  → 201 { gameId, size, status, ... }
+ *
+ * @param {{ method: string, body: unknown }} req
+ * @param {import('pg').Pool|null} [pool]
+ * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
+ */
+export function handleCreateGame(req, pool = null) {
+  if (req.method !== 'POST') {
+    return { status: 405, body: { error: 'Method Not Allowed' } };
+  }
+
+  const { size = 'medium', bounds = {} } = req.body ?? {};
+
+  try {
+    const result = createGame({ size, bounds }, pool);
+    if (result && typeof result.then === 'function') {
+      return result.then(game => ({ status: 201, body: game }));
+    }
+    return { status: 201, body: result };
+  } catch (err) {
+    return { status: 400, body: { error: err.message } };
+  }
+}
+
 /** Return a copy of the in-process game store (for testing). */
 export function _getStore() {
   return new Map(_games);

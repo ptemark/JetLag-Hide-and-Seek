@@ -49,6 +49,7 @@ _Task 35 complete._
 | 34 | 2026-03-10 | Document cost-saving strategies in DESIGN.md | spec/DESIGN.md | Added section 16: 8 numbered strategies covering static frontend, serverless functions, serverless Postgres, on-demand container + shutdown, auto-scaling, OSM maps, throttled location, and metrics-driven alerting; cost decision reference table included |
 | 39 | 2026-03-10 | Wire Vercel API adapters to real Postgres | api/players.js, api/games/[id].js, api/scores.js, api/api.test.js | Lazy pool singleton (createPool + createTables on cold start) in each adapter; null fallback when DATABASE_URL unset; try/catch → 500; 13 new tests; 655 total pass; build clean |
 | 35 | 2026-03-10 | Finalize DESIGN.md with architecture diagrams | spec/DESIGN.md | Added sections 17–21: detailed component diagram, 3 request-flow diagrams (game setup / real-time gameplay / end-game), game state machine, key file reference table, deployment topology; 655 tests pass; build clean |
+| 36 | 2026-03-10 | Update README.md with setup, API endpoints, and deployment | README.md | Full rewrite: prerequisites, local setup, env var table, all REST + WS API endpoints, project structure, Vercel + Docker + CI/CD deployment, GitHub secrets reference; 655 tests pass; build clean |
 
 ---
 
@@ -120,7 +121,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 ### Phase 10 — Documentation & Knowledge Transfer
 
 - [x] **35** — Finalize `DESIGN.md` with architecture diagrams and explanations.
-- [ ] **36** — Update `README.md` with setup instructions, API endpoints, and deployment notes.
+- [x] **36** — Update `README.md` with setup instructions, API endpoints, and deployment notes.
 - [x] **37** — Create `RALPH.md` instructions for future task execution using RALPH loops.
 - [ ] **38** — Write onboarding guide for new developers to run and extend the project.
 

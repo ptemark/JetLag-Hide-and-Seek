@@ -239,7 +239,7 @@ If the run fails, immediately fetch the logs and fix before doing anything else:
 gh run view --repo ptemark/JetLag-Hide-and-Seek --log-failed
 ```
 
-**Do not start a new task while the pipeline is red.**
+**Do not start a new task while the pipeline is red. Fix the failure first, even if it is unrelated to the current task.**
 
 ---
 

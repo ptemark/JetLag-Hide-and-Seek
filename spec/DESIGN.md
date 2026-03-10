@@ -202,3 +202,249 @@ Managed Game Loop / WebSocket Container
 | Container idling too long | Decrease `IDLE_SHUTDOWN_DELAY_MS` or set to `0` for immediate shutdown |
 | DB connection errors on resume | Verify pool reconnect logic in `db/db.js`; Neon wakes in ~500 ms |
 
+---
+
+## 1️⃣7️⃣ Detailed Architecture Diagram
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  CLIENT  (Mobile Browser / PWA)                                  │
+│                                                                  │
+│  React + Vite SPA  ──── Leaflet / OSM map tiles                 │
+│  Throttled GPS (10–20 s)  │  Location updates via WebSocket      │
+└───────────┬───────────────┴──────────────┬───────────────────────┘
+            │  HTTPS REST                  │  WSS
+            ▼                              ▼
+┌───────────────────────┐    ┌─────────────────────────────────────┐
+│  SERVERLESS TIER      │    │  MANAGED GAME SERVER (on-demand)    │
+│  Vercel Functions     │    │  Docker container – Node.js         │
+│                       │    │                                     │
+│  api/players.js       │    │  server/index.js          (boot)    │
+│  api/games/[id].js    │    │  server/wsHandler.js      (WS)      │
+│  api/scores.js        │    │  server/gameLoopManager.js(ticks)   │
+│  api/sessions.js      │    │  server/gameState.js      (memory)  │
+│  api/liveState.js ────┼────►  server/stateDispatcher.js          │
+│  api/admin.js    ◄────┼────  GET /internal/admin                 │
+│                       │    │  GET /internal/state/:gameId        │
+│  functions/           │    │                                     │
+│  ├─ router.js         │    │  server/heartbeat.js    (ping/pong) │
+│  ├─ rateLimiter.js    │    │  server/autoScaler.js   (webhooks)  │
+│  ├─ auth.js           │    │  server/shutdown.js     (SIGTERM)   │
+│  ├─ monitoring.js     │    │  server/monitoring.js   (metrics)   │
+│  └─ alerting.js       │    │  server/alerting.js     (alerts)    │
+└───────────┬───────────┘    └──────────────┬──────────────────────┘
+            │  SQL (pg pool)                │  SQL (pg pool)
+            ▼                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  DATABASE  (Neon serverless Postgres — pauses when idle)         │
+│                                                                  │
+│  Tables:  players · games · game_players · scores               │
+│  Module:  db/db.js (pool) · db/gameStore.js (CRUD)             │
+│  Schema:  db/schema.sql                                          │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Key design decisions illustrated above:**
+
+- The serverless tier has no persistent WebSocket connections; it proxies real-time reads from
+  the managed server's `/internal/*` endpoints when needed (`api/liveState.js`, `api/admin.js`).
+- Both tiers share the same Postgres database; the managed server holds the hot in-memory copy
+  and syncs durable state to DB on phase transitions and player events.
+- `functions/` contains pure handler logic; `api/` contains thin Vercel adapters (≤ 6 lines
+  each) that instantiate a DB pool on cold start and delegate to `functions/`.
+
+---
+
+## 1️⃣8️⃣ Request Flow Diagrams
+
+### 18a — Game Setup (REST)
+
+```
+Player (browser)
+  │
+  ├─ POST /api/players          ─► api/players.js
+  │                                  └─ functions/players.js → registerPlayer()
+  │                                       └─ db/gameStore.js → dbCreatePlayer()
+  │                                            └─ Postgres: INSERT players
+  │  ◄─ { playerId }
+  │
+  ├─ POST /api/games            ─► api/games.js
+  │                                  └─ functions/games.js → createGame()
+  │                                       └─ db/gameStore.js → dbCreateGame()
+  │                                            └─ Postgres: INSERT games
+  │  ◄─ { gameId, status: 'waiting' }
+  │
+  └─ WS connect  wss://server?playerId=X&gameId=Y
+                   └─ server/wsHandler.js → handleConnection()
+                        └─ server/gameLoopManager.js → addGame() [starts loop if first game]
+                             └─ send { type: 'connected', gameId, phase: 'waiting' }
+```
+
+### 18b — Real-Time Gameplay (WebSocket)
+
+```
+Hider (browser)                    Game Server                    Seeker (browser)
+     │                                  │                               │
+     ├── { type: 'location_update',     │                               │
+     │    lat, lon }  ──────────────►   │                               │
+     │                       wsHandler.handleMessage()                  │
+     │                       gameState.updatePlayerLocation()           │
+     │                                  ├── broadcast({ type:          │
+     │                                  │   'player_location', ... }) ──►
+     │                                  │                               │
+     │                            [every tick]                          │
+     │                       stateDispatcher.dispatch()                 │
+     │                       gameLoopManager.onPhaseChange()            │
+     │                                  ├── broadcast({ type:          │
+     │                                  │   'phase_change',            │
+     │                                  │   phase: 'seeking' }) ───────►
+     │                                  │                               │
+     │                                  │ ◄── { type: 'request_state' }─┤
+     │                       gameState.getGameState()                   │
+     │                                  ├── send({ type: 'game_state', │
+     │                                  │   ...fullState }) ───────────►
+```
+
+### 18c — End Game Capture
+
+```
+Seekers enter hiding zone (detected server-side via proximity check)
+  │
+  ├─ gameLoopManager: phase → 'finished'
+  ├─ broadcast({ type: 'phase_change', phase: 'finished', winner: 'seekers' })
+  ├─ db/gameStore.js → dbUpdateGameStatus(gameId, 'finished')
+  ├─ gameLoopManager.removeGame(gameId)
+  │    └─ [if last active game] → onIdle() → ShutdownManager.onIdle()
+  │         └─ [after IDLE_SHUTDOWN_DELAY_MS] → process.exit(0)
+  │
+  └─ Client: POST /api/scores  (final score submission via serverless)
+```
+
+---
+
+## 1️⃣9️⃣ Game State Machine
+
+```
+                ┌─────────┐
+    game created │ WAITING │ all players joined
+                 └────┬────┘
+                      │  host starts game
+                      ▼
+                ┌─────────┐
+    hiders move │ HIDING  │ hiding period timer (30–180 min by scale)
+   freely; no   └────┬────┘
+   seeker Q's        │  hiding period expires
+                      ▼
+                ┌─────────┐
+  seekers ask   │SEEKING  │ seekers submit questions; hider answers
+  questions;    └────┬────┘
+  hider stays        │  seekers enter hiding zone  OR  time limit expires
+                      ▼
+                ┌──────────┐
+                │ FINISHED │ scores recorded; container may shut down
+                └──────────┘
+```
+
+**Phase transitions** are managed by `server/gameLoopManager.js`. Each phase has a configured
+duration; when the timer expires the manager fires `onPhaseChange`, which broadcasts the new
+phase to all connected clients and writes the updated `status` to Postgres.
+
+---
+
+## 2️⃣0️⃣ Key File Reference
+
+### Serverless tier
+
+| File | Purpose |
+|------|---------|
+| `api/players.js` | Vercel adapter — player registration |
+| `api/games/[id].js` | Vercel adapter — game lookup |
+| `api/scores.js` | Vercel adapter — score submission |
+| `api/sessions.js` | Vercel adapter — session initiate/terminate |
+| `api/liveState.js` | Vercel adapter — proxies live state from managed server |
+| `api/admin.js` | Vercel adapter — proxies admin metrics (auth-gated) |
+| `functions/router.js` | HTTP adapter: routes `IncomingMessage` to handlers, applies rate-limiter |
+| `functions/rateLimiter.js` | Fixed-window rate limiter (100 req/60 s per IP) |
+| `functions/auth.js` | Bearer-token auth (constant-time compare) for admin routes |
+| `functions/players.js` | Pure handler: `registerPlayer`, `getPlayer` |
+| `functions/games.js` | Pure handler: `createGame`, `getGame`, `updateGameStatus`, `joinGame` |
+| `functions/scores.js` | Pure handler: `submitScore`, `getGameScores` |
+| `functions/sessions.js` | Pure handler: `initiateSession`, `terminateSession` |
+| `functions/liveState.js` | Pure handler: `getLiveState` (in-process GSM or HTTP proxy) |
+| `functions/admin.js` | Pure handler: `getAdminDashboard` (in-process or HTTP proxy) |
+
+### Managed game server
+
+| File | Purpose |
+|------|---------|
+| `server/index.js` | Creates HTTP + WebSocket server; wires all components |
+| `server/start.js` | Container entry point; calls `createServer`, hooks `ShutdownManager` |
+| `server/wsHandler.js` | WebSocket connections, message routing, broadcast |
+| `server/gameState.js` | In-memory per-game state (`GameStateManager`) |
+| `server/gameLoopManager.js` | Per-game phase lifecycle; tick loop; onActive/onIdle callbacks |
+| `server/stateDispatcher.js` | Phase-keyed task registry; concurrent async dispatch per tick |
+| `server/heartbeat.js` | Native WS ping/pong; terminates unresponsive clients |
+| `server/autoScaler.js` | Scale-up/down webhook on threshold crossing (with cooldown) |
+| `server/shutdown.js` | `ShutdownManager`: idle timer + SIGTERM/SIGINT handling |
+| `server/monitoring.js` | `MetricsCollector` + `RateTracker`; stdout JSON-line sink |
+| `server/alerting.js` | `AlertManager`: webhook alerts for crashes, DB errors, stalls |
+| `server/logger.js` | Levelled logger with injectable sink; `nullLogger` for tests |
+
+### Persistence
+
+| File | Purpose |
+|------|---------|
+| `db/schema.sql` | DDL: `players`, `games`, `game_players`, `scores` tables |
+| `db/db.js` | `createPool()` + `createTables()` (idempotent on cold start) |
+| `db/gameStore.js` | All CRUD operations: `dbCreatePlayer`, `dbCreateGame`, `dbJoinGame`, `dbSubmitScore`, … |
+
+### Configuration
+
+| File | Purpose |
+|------|---------|
+| `config/env.js` | Typed `ENV` object; validates required vars at startup |
+| `.env.example` | Full reference of all supported environment variables |
+
+---
+
+## 2️⃣1️⃣ Deployment Architecture
+
+```
+GitHub Repository
+      │
+      └─ .github/workflows/ci.yml
+            │
+            ├─ [test job]
+            │    npm ci && npm test && npm run build
+            │
+            ├─ [deploy-staging-serverless]  ──► Vercel Preview URL
+            │    vercel deploy --prebuilt
+            │
+            ├─ [deploy-staging-server]      ──► GHCR :staging tag
+            │    docker build + push         ──► deploy webhook (staging)
+            │
+            ├─ [smoke-test]
+            │    scripts/smoke.js  (SPA 200 / admin 401 / 404 checks)
+            │
+            ├─ [deploy-serverless]           ──► Vercel Production
+            │    vercel deploy --prebuilt --prod
+            │
+            └─ [deploy-server]              ──► GHCR :latest tag
+                 docker build + push         ──► deploy webhook (production)
+```
+
+**Runtime topology:**
+
+```
+Internet
+    │
+    ├─── cdn.vercel.com ──── src/ (static SPA)
+    │
+    ├─── api.vercel.com ──── api/*.js (serverless, $0 idle)
+    │                            └── Neon Postgres (pauses when idle)
+    │
+    └─── game.your-host.com ──── Docker container (on-demand)
+              starts on first WS connection
+              shuts down after last game ends + IDLE_SHUTDOWN_DELAY_MS
+```
+

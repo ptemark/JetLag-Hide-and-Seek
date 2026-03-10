@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 39 complete._
+_Task 35 complete._
 
 ---
 
@@ -48,6 +48,7 @@ _Task 39 complete._
 | 33 | 2026-03-10 | Implement full shutdown option to reduce idle costs to zero | server/shutdown.js, server/shutdown.test.js, server/start.js, .env.example | ShutdownManager: idle-triggered shutdown with configurable IDLE_SHUTDOWN_DELAY_MS grace period; SIGTERM/SIGINT signal handlers; async cleanup hooks; re-entrancy guard; onActive() cancels pending idle countdown; 16 new tests; 642 total pass; build clean |
 | 34 | 2026-03-10 | Document cost-saving strategies in DESIGN.md | spec/DESIGN.md | Added section 16: 8 numbered strategies covering static frontend, serverless functions, serverless Postgres, on-demand container + shutdown, auto-scaling, OSM maps, throttled location, and metrics-driven alerting; cost decision reference table included |
 | 39 | 2026-03-10 | Wire Vercel API adapters to real Postgres | api/players.js, api/games/[id].js, api/scores.js, api/api.test.js | Lazy pool singleton (createPool + createTables on cold start) in each adapter; null fallback when DATABASE_URL unset; try/catch → 500; 13 new tests; 655 total pass; build clean |
+| 35 | 2026-03-10 | Finalize DESIGN.md with architecture diagrams | spec/DESIGN.md | Added sections 17–21: detailed component diagram, 3 request-flow diagrams (game setup / real-time gameplay / end-game), game state machine, key file reference table, deployment topology; 655 tests pass; build clean |
 
 ---
 
@@ -118,7 +119,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 ### Phase 10 — Documentation & Knowledge Transfer
 
-- [ ] **35** — Finalize `DESIGN.md` with architecture diagrams and explanations.
+- [x] **35** — Finalize `DESIGN.md` with architecture diagrams and explanations.
 - [ ] **36** — Update `README.md` with setup instructions, API endpoints, and deployment notes.
 - [x] **37** — Create `RALPH.md` instructions for future task execution using RALPH loops.
 - [ ] **38** — Write onboarding guide for new developers to run and extend the project.

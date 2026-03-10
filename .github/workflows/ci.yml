@@ -73,12 +73,19 @@ jobs:
 
       # Deploy a Vercel preview (no --prod flag) and capture the preview URL.
       # The URL is passed to the smoke-test job via job outputs.
+      # Skips gracefully when VERCEL_TOKEN secret is not configured.
       - name: Deploy to Vercel (staging preview)
         id: deploy
         run: |
+          # Skip gracefully when Vercel credentials are not configured.
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN not set — skipping Vercel staging deploy."
+            echo "staging_url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # Disable exit-on-error so we can always print the output before failing
           set +e
-          DEPLOY_OUTPUT=$(npx vercel --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1)
+          DEPLOY_OUTPUT=$(npx vercel --token="$VERCEL_TOKEN" --yes 2>&1)
           VERCEL_EXIT=$?
           set -e
           echo "$DEPLOY_OUTPUT"
@@ -98,6 +105,7 @@ jobs:
           echo "staging_url=$STAGING_URL" >> "$GITHUB_OUTPUT"
           echo "Staging preview URL: $STAGING_URL"
         env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
@@ -205,8 +213,14 @@ jobs:
           path: dist/
 
       - name: Deploy to Vercel (production)
-        run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN not set — skipping Vercel production deploy."
+            exit 0
+          fi
+          npx vercel --prod --token="$VERCEL_TOKEN"
         env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
-// Prevent AnswerPanel/QuestionPanel from making real fetch calls in these tests.
+// Prevent AnswerPanel/QuestionPanel/CardPanel from making real fetch calls in these tests.
 vi.mock('../api.js', () => ({
   registerPlayer: vi.fn(),
   createGame:     vi.fn(),
@@ -11,6 +11,8 @@ vi.mock('../api.js', () => ({
   submitQuestion: vi.fn(),
   listQuestions:  vi.fn().mockResolvedValue({ questions: [] }),
   submitAnswer:   vi.fn(),
+  fetchCards:     vi.fn().mockResolvedValue({ hand: [] }),
+  playCardApi:    vi.fn(),
 }));
 
 // ── Hoist mock objects so they're available inside vi.mock factory ─────────────

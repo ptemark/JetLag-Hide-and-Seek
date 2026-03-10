@@ -3,6 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import QuestionPanel from './QuestionPanel.jsx';
 import AnswerPanel from './AnswerPanel.jsx';
+import CardPanel from './CardPanel.jsx';
 
 const LOCATION_INTERVAL_MS = 10_000;
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -214,6 +215,10 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
 
       {player.role === 'hider' && (
         <AnswerPanel player={player} game={game} refreshTrigger={qaRefresh} />
+      )}
+
+      {player.role === 'hider' && (
+        <CardPanel player={player} game={game} refreshTrigger={qaRefresh} />
       )}
     </div>
   );

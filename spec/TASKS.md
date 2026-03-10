@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 46 complete._
+_Task 47 complete._
 
 ---
 
@@ -58,6 +58,7 @@ _Task 46 complete._
 | 44 | 2026-03-10 | Build frontend game lobby | src/api.js, src/components/PlayerForm.jsx, src/components/GameForm.jsx, src/components/WaitingRoom.jsx, src/components/Lobby.jsx, src/components/Lobby.test.jsx, src/App.jsx, functions/games.js, api/games/index.js | 3-step lobby flow (register → create/join → waiting room); PlayerForm calls POST /api/players; GameForm create tab has scale selector + 4-field bounds picker; join tab validates via GET /api/games/:id; handleCreateGame HTTP handler + Vercel adapter api/games/index.js; 32 new tests; 803 total pass; build clean |
 | 45 | 2026-03-10 | Build frontend map view | src/components/GameMap.jsx, src/components/GameMap.test.jsx, src/components/Lobby.jsx, src/components/WaitingRoom.jsx, package.json | Leaflet+OSM map; game bounds rectangle; hiding zone circles; live player markers; WS connection (player_location/game_state/phase_change/capture); GPS polling throttled to 10 s; WaitingRoom gets Start Game button; Lobby transitions to GameMap in playing state; 18 new tests; 813 total pass; build clean |
 | 46 | 2026-03-10 | Build frontend question/answer UI | src/api.js, src/components/QuestionPanel.jsx, src/components/AnswerPanel.jsx, src/components/GameMap.jsx, src/components/QA.test.jsx, src/components/GameMap.test.jsx | Seeker QuestionPanel (category selector, targetId field, optimistic question list); Hider AnswerPanel (fetches inbox, per-question answer form, answered-count feedback); GameMap handles question_answered WS event via qaRefresh counter; 20 new tests; 833 total pass; build clean |
+| 47 | 2026-03-10 | Build frontend hider card panel | src/api.js, src/components/CardPanel.jsx, src/components/CardPanel.test.jsx, src/components/GameMap.jsx, src/components/GameMap.test.jsx | fetchCards/playCardApi API fns; CardPanel (hand display max 6, tap-to-play, effect confirmation, load/play errors, refreshTrigger); wired into GameMap for hiders below AnswerPanel; 15 new tests; 848 total pass; build clean |
 
 ---
 
@@ -146,4 +147,4 @@ Tasks are ordered by dependency. Complete them top to bottom.
 - [x] **44** — Build frontend game lobby: player registration form, create/join game form with scale selector and map bounds picker. Wire to existing `/api/players` and `/api/games` endpoints.
 - [x] **45** — Build frontend map view: Leaflet + OSM map showing game bounds, hiding zones overlay, live player positions. Location updates throttled to 10–20 s via WebSocket. Redraw only on state changes.
 - [x] **46** — Build frontend question/answer UI: seekers see question form with category selector and submit button; hider sees pending questions with answer form and optional photo upload.
-- [ ] **47** — Build frontend hider card panel: display hand of up to 6 cards; tap to play; show effect confirmation. Wire to `/api/cards` endpoints.
+- [x] **47** — Build frontend hider card panel: display hand of up to 6 cards; tap to play; show effect confirmation. Wire to `/api/cards` endpoints.

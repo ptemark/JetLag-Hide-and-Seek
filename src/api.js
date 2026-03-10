@@ -99,3 +99,32 @@ export async function submitAnswer({ questionId, responderId, text }) {
   if (!res.ok) throw new Error(`submitAnswer failed: ${res.status}`);
   return res.json();
 }
+
+/**
+ * Fetch the hider's current card hand.
+ * GET /api/cards?gameId=&playerId=  → { gameId, playerId, hand: [...] }
+ *
+ * @param {{ gameId: string, playerId: string }} options
+ */
+export async function fetchCards({ gameId, playerId }) {
+  const params = new URLSearchParams({ gameId, playerId });
+  const res = await fetch(`${BASE_URL}/api/cards?${params}`);
+  if (!res.ok) throw new Error(`fetchCards failed: ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Play a card from the hider's hand.
+ * POST /api/cards/:cardId/play  { playerId }  → card object with effect
+ *
+ * @param {{ cardId: string, playerId: string }} options
+ */
+export async function playCardApi({ cardId, playerId }) {
+  const res = await fetch(`${BASE_URL}/api/cards/${encodeURIComponent(cardId)}/play`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId }),
+  });
+  if (!res.ok) throw new Error(`playCard failed: ${res.status}`);
+  return res.json();
+}

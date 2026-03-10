@@ -76,8 +76,16 @@ jobs:
       - name: Deploy to Vercel (staging preview)
         id: deploy
         run: |
+          # Disable exit-on-error so we can always print the output before failing
+          set +e
           DEPLOY_OUTPUT=$(npx vercel --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1)
+          VERCEL_EXIT=$?
+          set -e
           echo "$DEPLOY_OUTPUT"
+          if [ $VERCEL_EXIT -ne 0 ]; then
+            echo "ERROR: Vercel deploy exited with code $VERCEL_EXIT"
+            exit 1
+          fi
           # Strip ANSI escape codes, then extract only the URL (grep -o returns match only)
           STAGING_URL=$(echo "$DEPLOY_OUTPUT" \
             | sed 's/\x1B\[[0-9;]*[A-Za-z]//g' \

@@ -21,7 +21,9 @@ import {
   dbCreateQuestion,
   dbGetQuestionsForPlayer,
   dbSubmitAnswer,
+  dbDrawCard,
 } from '../db/gameStore.js';
+import { drawCardInProcess, randomCardDescriptor } from './cards.js';
 
 const VALID_CATEGORIES = ['matching', 'thermometer', 'photo', 'tentacle'];
 
@@ -150,16 +152,25 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
   }
 
   let answer;
+  let gameId = null;
 
   if (pool) {
     const row = await dbSubmitAnswer(pool, { questionId, responderId, text: text.trim() });
     if (!row) return { status: 404, body: { error: 'question not found' } };
     answer = row;
+
+    // Draw a card for the answering player (fire-and-forget; hand-full is silently ignored).
+    if (row.gameId) {
+      gameId = row.gameId;
+      const { type, effect } = randomCardDescriptor();
+      dbDrawCard(pool, { gameId: row.gameId, playerId: responderId, type, effect }).catch(() => { /* silent */ });
+    }
   } else {
     if (!_questions.has(questionId)) {
       return { status: 404, body: { error: 'question not found' } };
     }
     const question = _questions.get(questionId);
+    gameId = question.gameId ?? null;
     answer = {
       answerId: randomUUID(),
       questionId,
@@ -169,13 +180,16 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
     };
     _answers.set(answer.answerId, answer);
     _questions.set(questionId, { ...question, status: 'answered' });
+
+    // Draw a card for the answering player in the in-process store.
+    if (gameId) {
+      drawCardInProcess({ gameId, playerId: responderId });
+    }
   }
 
   // Fire-and-forget: notify managed server to broadcast to seekers.
   const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
   if (serverUrl && fetchFn) {
-    const question = pool ? null : _questions.get(questionId);
-    const gameId = question?.gameId ?? null;
     fetchFn(`${serverUrl}/internal/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

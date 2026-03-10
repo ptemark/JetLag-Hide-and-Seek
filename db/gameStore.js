@@ -265,8 +265,9 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
  */
 export async function dbSubmitAnswer(pool, { questionId, responderId, text }) {
   // Verify the question exists before inserting the answer.
-  const check = await pool.query('SELECT id FROM questions WHERE id = $1', [questionId]);
+  const check = await pool.query('SELECT id, game_id FROM questions WHERE id = $1', [questionId]);
   if (check.rows.length === 0) return null;
+  const questionGameId = check.rows[0].game_id;
 
   const answerRes = await pool.query(
     `INSERT INTO answers (question_id, responder_id, text)
@@ -282,9 +283,105 @@ export async function dbSubmitAnswer(pool, { questionId, responderId, text }) {
   return {
     answerId: row.id,
     questionId: row.question_id,
+    gameId: questionGameId,
     responderId: row.responder_id,
     text: row.text,
     createdAt: row.created_at,
+  };
+}
+
+// ── Card store ────────────────────────────────────────────────────────────────
+
+/** Maximum cards a player may hold in hand at once. */
+export const HAND_LIMIT = 6;
+
+/**
+ * Insert a new card for a player if their hand has fewer than HAND_LIMIT cards.
+ * Returns the new card record, or null if the hand is already full.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ gameId: string, playerId: string, type: string, effect: object }} options
+ * @returns {Promise<{ cardId: string, gameId: string, playerId: string, type: string, effect: object, status: string, drawnAt: string } | null>}
+ */
+export async function dbDrawCard(pool, { gameId, playerId, type, effect }) {
+  const countRes = await pool.query(
+    `SELECT COUNT(*) AS cnt FROM cards
+     WHERE game_id = $1 AND player_id = $2 AND status = 'in_hand'`,
+    [gameId, playerId],
+  );
+  if (Number(countRes.rows[0].cnt) >= HAND_LIMIT) return null;
+
+  const res = await pool.query(
+    `INSERT INTO cards (game_id, player_id, type, effect)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, game_id, player_id, type, effect, status, drawn_at`,
+    [gameId, playerId, type, JSON.stringify(effect)],
+  );
+  const row = res.rows[0];
+  return {
+    cardId: row.id,
+    gameId: row.game_id,
+    playerId: row.player_id,
+    type: row.type,
+    effect: row.effect,
+    status: row.status,
+    drawnAt: row.drawn_at,
+  };
+}
+
+/**
+ * Retrieve all in-hand cards for a player in a game.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ gameId: string, playerId: string }} options
+ * @returns {Promise<Array<{ cardId: string, gameId: string, playerId: string, type: string, effect: object, status: string, drawnAt: string }>>}
+ */
+export async function dbGetPlayerHand(pool, { gameId, playerId }) {
+  const res = await pool.query(
+    `SELECT id, game_id, player_id, type, effect, status, drawn_at
+     FROM cards
+     WHERE game_id = $1 AND player_id = $2 AND status = 'in_hand'
+     ORDER BY drawn_at ASC`,
+    [gameId, playerId],
+  );
+  return res.rows.map(row => ({
+    cardId: row.id,
+    gameId: row.game_id,
+    playerId: row.player_id,
+    type: row.type,
+    effect: row.effect,
+    status: row.status,
+    drawnAt: row.drawn_at,
+  }));
+}
+
+/**
+ * Mark a card as played.  Only succeeds if the card is in_hand and belongs to
+ * the given player.  Returns the updated card, or null if not found / already played.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ cardId: string, playerId: string }} options
+ * @returns {Promise<{ cardId: string, gameId: string, playerId: string, type: string, effect: object, status: string, drawnAt: string, playedAt: string } | null>}
+ */
+export async function dbPlayCard(pool, { cardId, playerId }) {
+  const res = await pool.query(
+    `UPDATE cards
+     SET status = 'played', played_at = NOW()
+     WHERE id = $1 AND player_id = $2 AND status = 'in_hand'
+     RETURNING id, game_id, player_id, type, effect, status, drawn_at, played_at`,
+    [cardId, playerId],
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  return {
+    cardId: row.id,
+    gameId: row.game_id,
+    playerId: row.player_id,
+    type: row.type,
+    effect: row.effect,
+    status: row.status,
+    drawnAt: row.drawn_at,
+    playedAt: row.played_at,
   };
 }
 

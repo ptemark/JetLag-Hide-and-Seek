@@ -24,6 +24,8 @@
  *   POST   /questions            → submitQuestion
  *   GET    /questions            → listQuestions
  *   POST   /answers/:questionId  → submitAnswer
+ *   GET    /cards                → getCards
+ *   POST   /cards/:cardId/play   → playCard
  */
 
 import { registerPlayer } from './players.js';
@@ -34,6 +36,7 @@ import { getLiveState } from './liveState.js';
 import { getAdminStatus } from './admin.js';
 import { getZones } from './zones.js';
 import { submitQuestion, listQuestions, submitAnswer } from './questions.js';
+import { getCards, playCard } from './cards.js';
 import { defaultLimiter } from './rateLimiter.js';
 
 /**
@@ -78,6 +81,8 @@ const ROUTES = [
   { method: 'POST',   pattern: /^\/questions$/, handler: submitQuestion },
   { method: 'GET',    pattern: /^\/questions$/, handler: listQuestions },
   { method: 'POST',   pattern: /^\/answers\/(?<questionId>[^/]+)$/, handler: submitAnswer },
+  { method: 'GET',    pattern: /^\/cards$/, handler: getCards },
+  { method: 'POST',   pattern: /^\/cards\/(?<cardId>[^/]+)\/play$/, handler: playCard },
 ];
 
 /**

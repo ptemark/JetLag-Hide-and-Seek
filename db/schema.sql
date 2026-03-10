@@ -73,6 +73,27 @@ CREATE TABLE IF NOT EXISTS answers (
 );
 
 -- -------------------------------------------------------------------------
+-- cards
+-- Challenge cards held by hiders.  Drawn automatically when a hider answers
+-- a question (max 6 in-hand per player per game).
+-- type: time_bonus | powerup | curse
+-- effect: JSONB payload describing the card's mechanical effect.
+-- status: in_hand (playable) | played (already used)
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cards (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id     UUID        NOT NULL REFERENCES games(id)   ON DELETE CASCADE,
+  player_id   UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  type        TEXT        NOT NULL
+                CHECK (type IN ('time_bonus', 'powerup', 'curse')),
+  effect      JSONB       NOT NULL DEFAULT '{}',
+  status      TEXT        NOT NULL DEFAULT 'in_hand'
+                CHECK (status IN ('in_hand', 'played')),
+  drawn_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  played_at   TIMESTAMPTZ
+);
+
+-- -------------------------------------------------------------------------
 -- scores
 -- Outcome record written at the end of each game.
 -- score_seconds = total time the hider survived (higher is better for hider).

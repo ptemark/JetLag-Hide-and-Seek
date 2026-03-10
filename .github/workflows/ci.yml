@@ -78,7 +78,7 @@ jobs:
         run: |
           STAGING_URL=$(npx vercel --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1 \
             | grep -E 'https://[^ ]+' | tail -1)
-          echo "staging_url=$STAGING_URL" >> $GITHUB_OUTPUT
+          echo "staging_url=$STAGING_URL" >> "$GITHUB_OUTPUT"
           echo "Staging preview URL: $STAGING_URL"
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -115,8 +115,6 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/${{ github.repository }}/game-server:staging
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       # Redeploy the staging server via its own webhook secret.
       # Leave STAGING_MANAGED_SERVER_DEPLOY_WEBHOOK empty to skip.
@@ -231,8 +229,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       # Platform-agnostic redeploy: POST to a webhook URL stored in
       # MANAGED_SERVER_DEPLOY_WEBHOOK (Railway, Render, Fly.io, etc.).

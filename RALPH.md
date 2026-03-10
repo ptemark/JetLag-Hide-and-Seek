@@ -127,25 +127,31 @@ Never commit:
 
 # Build Verification
 
-Before committing or pushing, **always** run the full local CI check:
+Before committing or pushing, **always** run ALL of the following. Every check must pass with zero errors before proceeding.
+
+## 1 — Full local CI
 
 ```
 npm run ci:local
 ```
 
-This runs `npm ci && npm test && npm run build` — the same sequence the GitHub Actions pipeline executes. All three steps must pass with no errors before proceeding.
+Runs `npm ci && npm test && npm run build` — identical to the GitHub Actions pipeline. All three steps must pass.
 
-Individual commands for targeted checks:
+## 2 — Workflow linting (if `.github/workflows/` was touched)
 
 ```
-TEST:  npm test
-BUILD: npm run build
+actionlint .github/workflows/ci.yml
 ```
 
-- Build must succeed.
-- All tests must pass.
-- No new warnings.
-- If `ci:local` fails, fix the issue before committing. Do not push a broken build.
+Must report zero errors. Info-level shellcheck warnings must also be fixed — they indicate real issues. If `actionlint` is not installed: `brew install actionlint`.
+
+**Never push a CI workflow change without running actionlint first. A broken workflow file breaks every subsequent build regardless of code quality.**
+
+## Rules
+
+- If either check fails, fix the issue before staging anything.
+- Do not skip checks to save time. A broken push costs more time than the check takes.
+- Do not rely on GitHub Actions as the first line of validation — it is the last.
 
 ---
 
@@ -202,10 +208,10 @@ Append after each task:
 
 Before committing:
 
-- Run `npm run ci:local` — all steps must pass.
-- `git diff --staged`
-- Confirm no secrets or temporary debug code.
-- Commit format:
+1. Run `npm run ci:local` — all steps must pass.
+2. If `.github/workflows/` was changed: run `actionlint .github/workflows/ci.yml` — zero errors.
+3. `git diff --staged` — confirm no secrets or temporary debug code.
+4. Commit format:
 
 ```
 <type>(scope): short description
@@ -283,9 +289,10 @@ Always leave the repository:
 6. Mark `[~]`.
 7. Implement.
 8. Run `npm run ci:local` — fix any failures before continuing.
-9. Self‑critique.
-10. Mark `[x]`.
-11. Commit & push.
+9. If `.github/workflows/` was changed: run `actionlint` — zero errors required.
+10. Self‑critique.
+11. Mark `[x]`.
+12. Commit & push.
 12. Exit.
 
 ---

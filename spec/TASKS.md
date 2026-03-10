@@ -46,6 +46,7 @@ _Task 30 complete._
 | 30 | 2026-03-09 | Add staging environment to validate system behavior before production deployment | .github/workflows/ci.yml, scripts/smoke.js, scripts/smoke.test.js, .env.staging.example, package.json | 6-job CI pipeline: test → deploy-staging-serverless + deploy-staging-server → smoke-test → deploy-serverless + deploy-server; Vercel preview URL captured as job output; Docker :staging tag separate from :latest; smoke.js checks SPA 200 / admin 401 / unknown-route 404 / optional game-server; 11 new tests; 582 total pass; build clean |
 | 31 | 2026-03-09 | Implement auto-scaling for managed servers based on activity | server/autoScaler.js, server/autoScaler.test.js, server/index.js, server/server.test.js, config/env.js, config/env.test.js, .env.example | AutoScaler class: UP/DOWN thresholds on activeGames + activeConnections; cooldown hysteresis; fire-and-forget webhook; onScale callback; nullAutoScaler no-op; wired into createServer onTick via nullAutoScaler default; env vars SCALE_WEBHOOK_URL/SCALE_UP_GAMES/SCALE_UP_CONNECTIONS/SCALE_DOWN_GAMES/SCALE_DOWN_CONNECTIONS/SCALE_COOLDOWN_MS; 36 new tests; 618 total pass; build clean |
 | 33 | 2026-03-10 | Implement full shutdown option to reduce idle costs to zero | server/shutdown.js, server/shutdown.test.js, server/start.js, .env.example | ShutdownManager: idle-triggered shutdown with configurable IDLE_SHUTDOWN_DELAY_MS grace period; SIGTERM/SIGINT signal handlers; async cleanup hooks; re-entrancy guard; onActive() cancels pending idle countdown; 16 new tests; 642 total pass; build clean |
+| 34 | 2026-03-10 | Document cost-saving strategies in DESIGN.md | spec/DESIGN.md | Added section 16: 8 numbered strategies covering static frontend, serverless functions, serverless Postgres, on-demand container + shutdown, auto-scaling, OSM maps, throttled location, and metrics-driven alerting; cost decision reference table included |
 
 ---
 
@@ -112,7 +113,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 - [x] **31** — Implement auto-scaling for managed servers based on activity.
 - [x] **32** — Optimize serverless functions to reduce invocation costs (minimal memory, short execution).
 - [x] **33** — Implement full shutdown option to reduce idle costs to zero.
-- [ ] **34** — Document cost-saving strategies in `DESIGN.md` for future reference.
+- [x] **34** — Document cost-saving strategies in `DESIGN.md` for future reference.
 
 ### Phase 10 — Documentation & Knowledge Transfer
 

@@ -122,3 +122,83 @@ Managed Game Loop / WebSocket Container
 - Map API: OSM preferred
 - Mobile-first; low maintenance
 
+## 1️⃣6️⃣ Cost-Saving Strategies
+
+### Strategy 1 — Static Frontend ($0 Idle)
+- React + Vite SPA compiled to static HTML/JS/CSS.
+- Hosted on Vercel free tier or any CDN; no compute while no player is loading the page.
+- **Key rule:** never move game logic into the frontend that requires a server to stay alive.
+
+### Strategy 2 — Serverless API Functions ($0 Idle)
+- All short-lived operations (player registration, score submission, game queries, session management, admin)
+  run as Vercel serverless functions in `api/` + `functions/`.
+- Functions are billed per-invocation; idle cost is exactly $0.
+- **Optimization implemented (Task 32):** Vercel adapter files in `api/` are kept as thin pass-throughs
+  (≤ 6 lines) that delegate immediately to pure handler functions in `functions/`. This minimises
+  cold-start bundle size and memory footprint, reducing both latency cost and billed GB-seconds.
+
+### Strategy 3 — Serverless Postgres ($0 Idle)
+- Database: Neon serverless Postgres (or equivalent autoscale-to-zero provider).
+- Neon pauses compute after a period of inactivity; storage costs only; $0 compute while idle.
+- `db/db.js` manages pool creation; `db/gameStore.js` provides all read/write operations.
+- **Key rule:** never rely on a persistent Postgres connection — always use a pool that can reconnect
+  after the compute node wakes from pause.
+
+### Strategy 4 — On-Demand Managed Container ($0 Idle)
+- The game loop and WebSocket server run in a Docker container that is started only when the first
+  player joins and stopped when the last game ends.
+- Implemented in `server/gameLoopManager.js` via `onActive` / `onIdle` callbacks wired to
+  `server/shutdown.js` (`ShutdownManager`).
+- **Grace period:** `IDLE_SHUTDOWN_DELAY_MS` (default `0`) adds a configurable buffer before shutdown,
+  preventing unnecessary restarts when games start back-to-back.
+  ```
+  IDLE_SHUTDOWN_DELAY_MS=30000  # keep alive 30 s after last game ends
+  ```
+- **Key rule:** the container must cleanly handle `SIGTERM` / `SIGINT` so the orchestrator can stop it
+  instantly rather than waiting for a hard-kill timeout. `ShutdownManager.watchSignals()` ensures this.
+
+### Strategy 5 — Activity-Based Auto-Scaling
+- `server/autoScaler.js` watches active game count and WebSocket connection count on every game tick.
+- Fires a scale-up or scale-down webhook when thresholds are crossed (with cooldown hysteresis to
+  prevent flapping).
+- Thresholds are configurable via env vars so they can be tuned to the cheapest instance size:
+  ```
+  SCALE_UP_GAMES=5          # start a second replica at 5 concurrent games
+  SCALE_UP_CONNECTIONS=20   # or at 20 WebSocket connections
+  SCALE_DOWN_GAMES=0        # scale back when no games remain
+  SCALE_DOWN_CONNECTIONS=0
+  SCALE_COOLDOWN_MS=60000   # minimum 60 s between events in the same direction
+  ```
+- Decoupled from the orchestrator: the webhook payload (JSON) is compatible with ECS, Fly.io,
+  Kubernetes HPA, or any custom scaling script.
+
+### Strategy 6 — OSM Maps (Free Tile API)
+- Default map provider is OpenStreetMap (`VITE_MAPS_PROVIDER=osm`), which has no per-request cost.
+- Google Maps is supported as an optional fallback (`VITE_GOOGLE_MAPS_API_KEY`) but is disabled by
+  default.
+- **Key rule:** never add map features that require a paid tile or Distance Matrix API without
+  explicitly documenting the cost impact and making it opt-in via env var.
+
+### Strategy 7 — Throttled Location Updates
+- Client-side location polling is throttled to 10–20 s intervals (not continuous GPS streaming).
+- Reduces both client battery drain and server-side WebSocket message volume, keeping managed
+  container CPU low and extending the idle window.
+
+### Strategy 8 — Metrics-Driven Alerting (Catch Runaway Costs Early)
+- `server/monitoring.js` tracks active connections, loop iterations/min, DB reads/writes, and errors.
+- `server/alerting.js` fires webhook alerts on `ERROR_RATE_HIGH`, `LOOP_STALL`, `DB_ERROR`, and
+  `SERVER_CRASH` — catching runaway loops or connection leaks before they become costly.
+- Alert threshold is configurable: `ALERT_ERROR_THRESHOLD=10`.
+
+### Cost Decision Reference
+
+| Situation | Recommendation |
+|-----------|---------------|
+| No active games | All costs $0 (static site + serverless + paused DB + stopped container) |
+| 1–4 concurrent games | Single container instance; serverless handles all API calls |
+| 5+ concurrent games | Auto-scaler fires scale-up webhook; add container replicas |
+| Maps needed | Use OSM; add Google Maps key only if a specific feature requires it |
+| Container slow to start | Increase `IDLE_SHUTDOWN_DELAY_MS` to reduce cold-start frequency |
+| Container idling too long | Decrease `IDLE_SHUTDOWN_DELAY_MS` or set to `0` for immediate shutdown |
+| DB connection errors on resume | Verify pool reconnect logic in `db/db.js`; Neon wakes in ~500 ms |
+

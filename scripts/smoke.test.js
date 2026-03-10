@@ -51,7 +51,7 @@ describe('runSmokeChecks — serverless tier', () => {
     const { results, failed } = await runSmokeChecks(BASE_URL, undefined, fetch);
     expect(failed).toBe(1);
     expect(results[1].ok).toBe(false);
-    expect(results[1].error).toMatch(/Expected 401, got 200/);
+    expect(results[1].error).toMatch(/Expected 401 or 503, got 200/);
   });
 
   it('fails when unknown route does not return 404', async () => {

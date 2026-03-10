@@ -251,3 +251,71 @@ describe('handleRequest — successful routing', () => {
     expect(res._status).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bodyless method optimisation
+// ---------------------------------------------------------------------------
+
+describe('handleRequest — bodyless method optimisation', () => {
+  it('handles GET request successfully without emitting body events', async () => {
+    // Build a fake request that never emits 'data' or 'end' — if the router
+    // tries to call readBody it would hang.  Wrap in a timeout to detect hangs.
+    const { EventEmitter } = await import('node:events');
+    const emitter = new EventEmitter();
+    emitter.method = 'GET';
+    emitter.url = '/games/some-id';
+    emitter.headers = { host: 'localhost' };
+    emitter.socket = { remoteAddress: '127.0.0.1' };
+    // Intentionally do NOT emit 'data' or 'end' — readBody would never resolve.
+
+    const res = makeRes();
+    // handleRequest should resolve immediately without waiting for body stream.
+    await handleRequest(emitter, res, { limiter: unlimitedLimiter() });
+    expect([200, 404]).toContain(res._status);
+  });
+
+  it('handles DELETE request successfully without body parsing', async () => {
+    const { EventEmitter } = await import('node:events');
+    const emitter = new EventEmitter();
+    emitter.method = 'DELETE';
+    emitter.url = '/sessions/nonexistent-session';
+    emitter.headers = { host: 'localhost' };
+    emitter.socket = { remoteAddress: '127.0.0.1' };
+    // No body events emitted — DELETE should not call readBody.
+
+    const res = makeRes();
+    await handleRequest(emitter, res, { limiter: unlimitedLimiter() });
+    // terminateSession returns 404 for unknown session
+    expect(res._status).toBe(404);
+  });
+
+  it('still parses body for POST requests', async () => {
+    const req = makeReq({
+      method: 'POST',
+      url: '/players',
+      body: { name: 'Dave', role: 'seeker' },
+    });
+    const res = makeRes();
+    await handleRequest(req, res, { limiter: unlimitedLimiter() });
+    expect(res._status).toBe(201);
+    expect(res._body.name).toBe('Dave');
+  });
+
+  it('returns 400 for POST with invalid JSON body', async () => {
+    const { EventEmitter } = await import('node:events');
+    const emitter = new EventEmitter();
+    emitter.method = 'POST';
+    emitter.url = '/players';
+    emitter.headers = { host: 'localhost' };
+    emitter.socket = { remoteAddress: '127.0.0.1' };
+    setImmediate(() => {
+      emitter.emit('data', '{ not valid json }');
+      emitter.emit('end');
+    });
+
+    const res = makeRes();
+    await handleRequest(emitter, res, { limiter: unlimitedLimiter() });
+    expect(res._status).toBe(400);
+    expect(res._body.error).toMatch(/Invalid JSON/i);
+  });
+});

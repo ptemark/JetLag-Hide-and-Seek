@@ -206,3 +206,68 @@ describe('createRateLimiter — default options', () => {
     expect(r101.allowed).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// maxEntries pruning
+// ---------------------------------------------------------------------------
+
+describe('createRateLimiter — maxEntries pruning', () => {
+  it('does not prune when store is below maxEntries', () => {
+    const store = new Map();
+    let t = 1_000_000;
+    const limiter = createRateLimiter({ windowMs: 10_000, maxRequests: 10, maxEntries: 5, now: () => t, store });
+    limiter.check('ip-1');
+    limiter.check('ip-2');
+    limiter.check('ip-3');
+    // 3 entries < maxEntries(5) — all should be preserved
+    expect(store.size).toBe(3);
+  });
+
+  it('removes expired entries when store reaches maxEntries', () => {
+    const store = new Map();
+    let t = 1_000_000;
+    const limiter = createRateLimiter({ windowMs: 10_000, maxRequests: 10, maxEntries: 3, now: () => t, store });
+    limiter.check('ip-1');
+    limiter.check('ip-2');
+    // Advance past window so ip-1 and ip-2 are expired
+    t += 11_000;
+    // ip-3 triggers a new-window insert; store.size == 2 >= maxEntries(3)? No, size is 2, limit is 3
+    // Need to hit exactly the limit — add ip-3 first, then ip-4 should prune
+    t -= 11_000; // back to original time
+    limiter.check('ip-3'); // store now has 3 entries == maxEntries
+    t += 11_000; // expire ip-1, ip-2, ip-3
+    limiter.check('ip-4'); // triggers prune: removes 3 expired, then inserts ip-4
+    expect(store.has('ip-4')).toBe(true);
+    // ip-1, ip-2, ip-3 expired and pruned
+    expect(store.has('ip-1')).toBe(false);
+    expect(store.has('ip-2')).toBe(false);
+    expect(store.has('ip-3')).toBe(false);
+  });
+
+  it('clears all entries when no expired entries can be pruned at the limit', () => {
+    const store = new Map();
+    let t = 1_000_000;
+    const limiter = createRateLimiter({ windowMs: 10_000, maxRequests: 10, maxEntries: 3, now: () => t, store });
+    // Fill store to maxEntries with fresh (non-expired) entries
+    limiter.check('ip-1');
+    limiter.check('ip-2');
+    limiter.check('ip-3'); // store.size == 3 == maxEntries
+    // Advance by less than windowMs so none are expired, then trigger a new client
+    t += 5_000;
+    limiter.check('ip-4'); // prune finds 0 expired → store.clear() → inserts ip-4
+    expect(store.has('ip-4')).toBe(true);
+    expect(store.size).toBe(1); // only ip-4 remains after clear
+  });
+
+  it('allows normal rate limiting after a full-store clear', () => {
+    const store = new Map();
+    let t = 1_000_000;
+    const limiter = createRateLimiter({ windowMs: 10_000, maxRequests: 3, maxEntries: 2, now: () => t, store });
+    limiter.check('ip-1');
+    limiter.check('ip-2'); // store.size == 2 == maxEntries
+    t += 5_000; // still within window — next new key triggers clear
+    const r = limiter.check('ip-3'); // clears store, inserts ip-3
+    expect(r.allowed).toBe(true);
+    expect(r.remaining).toBe(2); // fresh window for ip-3
+  });
+});

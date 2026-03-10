@@ -109,7 +109,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 ### Phase 9 — Optimization & Cost Management
 
 - [x] **31** — Implement auto-scaling for managed servers based on activity.
-- [ ] **32** — Optimize serverless functions to reduce invocation costs (minimal memory, short execution).
+- [x] **32** — Optimize serverless functions to reduce invocation costs (minimal memory, short execution).
 - [ ] **33** — Implement full shutdown option to reduce idle costs to zero.
 - [ ] **34** — Document cost-saving strategies in `DESIGN.md` for future reference.
 

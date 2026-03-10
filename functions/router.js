@@ -50,6 +50,13 @@ function readBody(httpReq) {
 }
 
 /**
+ * HTTP methods that never carry a request body.
+ * Skipping readBody for these methods eliminates stream overhead and reduces
+ * execution time, lowering serverless invocation costs.
+ */
+const BODYLESS_METHODS = new Set(['GET', 'DELETE', 'HEAD', 'OPTIONS']);
+
+/**
  * Route patterns: { method, pattern, handler }
  * pattern is a regex; named groups become req.params.
  */
@@ -109,14 +116,19 @@ export async function handleRequest(httpReq, httpRes, opts = {}) {
   const method = httpReq.method ?? 'GET';
   const urlPath = new URL(httpReq.url ?? '/', `http://${httpReq.headers?.host ?? 'localhost'}`).pathname;
 
-  // --- Parse body ---
+  // --- Parse body (POST / PUT / PATCH only) ---
+  // GET, DELETE, HEAD, and OPTIONS requests never carry a body; skipping
+  // readBody avoids attaching stream listeners and waiting for an 'end' event
+  // that would otherwise add latency to every read request.
   let body = null;
-  try {
-    body = await readBody(httpReq);
-  } catch {
-    httpRes.writeHead(400, { 'Content-Type': 'application/json' });
-    httpRes.end(JSON.stringify({ error: 'Invalid JSON body' }));
-    return;
+  if (!BODYLESS_METHODS.has(method)) {
+    try {
+      body = await readBody(httpReq);
+    } catch {
+      httpRes.writeHead(400, { 'Content-Type': 'application/json' });
+      httpRes.end(JSON.stringify({ error: 'Invalid JSON body' }));
+      return;
+    }
   }
 
   // --- Route ---

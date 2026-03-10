@@ -1,6 +1,12 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/**/*.js": {
+      "memory": 128,
+      "maxDuration": 10
+    }
+  },
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

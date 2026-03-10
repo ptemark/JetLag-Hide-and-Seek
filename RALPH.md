@@ -226,7 +226,20 @@ Types:
 
 - feat, fix, refactor, docs, test, style, chore
 
-Then `git push`.
+Then push and watch:
+
+```
+git push
+gh run watch --repo ptemark/JetLag-Hide-and-Seek
+```
+
+If the run fails, immediately fetch the logs and fix before doing anything else:
+
+```
+gh run view --repo ptemark/JetLag-Hide-and-Seek --log-failed
+```
+
+**Do not start a new task while the pipeline is red.**
 
 ---
 

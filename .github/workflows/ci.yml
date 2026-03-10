@@ -98,6 +98,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set lowercase image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/game-server" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -114,7 +118,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository }}/game-server:staging
+          tags: ${{ steps.image.outputs.name }}:staging
 
       # Redeploy the staging server via its own webhook secret.
       # Leave STAGING_MANAGED_SERVER_DEPLOY_WEBHOOK empty to skip.
@@ -122,11 +126,12 @@ jobs:
         if: env.WEBHOOK != ''
         env:
           WEBHOOK: ${{ secrets.STAGING_MANAGED_SERVER_DEPLOY_WEBHOOK }}
+          IMAGE: ${{ steps.image.outputs.name }}
         run: |
           curl --fail --silent --show-error \
             -X POST "${{ secrets.STAGING_MANAGED_SERVER_DEPLOY_WEBHOOK }}" \
             -H "Content-Type: application/json" \
-            -d '{"image":"ghcr.io/${{ github.repository }}/game-server:staging"}'
+            -d "{\"image\":\"${IMAGE}:staging\"}"
 
   # ── 4. Smoke-test staging ──────────────────────────────────────────────────
   smoke-test:
@@ -203,6 +208,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set lowercase image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/game-server" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -217,7 +226,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/game-server
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=latest
@@ -237,8 +246,9 @@ jobs:
         if: env.WEBHOOK != ''
         env:
           WEBHOOK: ${{ secrets.MANAGED_SERVER_DEPLOY_WEBHOOK }}
+          IMAGE: ${{ steps.image.outputs.name }}
         run: |
           curl --fail --silent --show-error \
             -X POST "${{ secrets.MANAGED_SERVER_DEPLOY_WEBHOOK }}" \
             -H "Content-Type: application/json" \
-            -d '{"image":"ghcr.io/${{ github.repository }}/game-server:latest"}'
+            -d "{\"image\":\"${IMAGE}:latest\"}"

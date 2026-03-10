@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import QuestionPanel from './QuestionPanel.jsx';
+import AnswerPanel from './AnswerPanel.jsx';
 
 const LOCATION_INTERVAL_MS = 10_000;
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -32,8 +34,10 @@ function boundsCenter(bounds) {
  *   - Draw circle overlays for hiding zones.
  *   - Connect to the managed game server via WebSocket.
  *   - Poll GPS every 10 s and send location_update messages.
- *   - Receive player_location / game_state / phase_change / capture messages.
+ *   - Receive player_location / game_state / phase_change / capture /
+ *     question_answered messages.
  *   - Update player markers on state change; redraw only when data changes.
+ *   - Render QuestionPanel for seekers and AnswerPanel for hiders below the map.
  */
 export default function GameMap({ player, game, zones = [], serverUrl }) {
   const mapContainerRef = useRef(null);
@@ -44,6 +48,7 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
   const [players, setPlayers] = useState({});      // { [playerId]: { lat, lon } }
   const [phase, setPhase] = useState(game.status);
   const [captureMsg, setCaptureMsg] = useState(null);
+  const [qaRefresh, setQaRefresh] = useState(0);   // increments on question_answered WS event
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -144,6 +149,8 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
         setPhase(msg.phase);
       } else if (msg.type === 'capture') {
         setCaptureMsg(msg.winner === 'seekers' ? 'Seekers win!' : 'Hiders win!');
+      } else if (msg.type === 'question_answered') {
+        setQaRefresh((n) => n + 1);
       }
     };
 
@@ -200,6 +207,14 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
         data-testid="map-container"
         style={{ height: '60vh', width: '100%', border: '1px solid #ccc' }}
       />
+
+      {player.role === 'seeker' && (
+        <QuestionPanel player={player} game={game} />
+      )}
+
+      {player.role === 'hider' && (
+        <AnswerPanel player={player} game={game} refreshTrigger={qaRefresh} />
+      )}
     </div>
   );
 }

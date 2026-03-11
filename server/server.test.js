@@ -344,15 +344,24 @@ describe('WsHandler — game routing', () => {
     );
   });
 
-  it('disconnect removes player from all joined games', () => {
+  it('disconnect removes player from all joined games after grace period', () => {
+    vi.useFakeTimers();
+    // Use a short grace period for this test.
+    const shortHandler = new WsHandler(loop, gsm, 100);
     const ws = createMockWs();
-    handler.handleConnection(ws, 'p1');
+    shortHandler.handleConnection(ws, 'p1');
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g2' }));
     ws.emit('close');
-    expect(handler.getGamePlayerCount('g1')).toBe(0);
-    expect(handler.getGamePlayerCount('g2')).toBe(0);
-    expect(handler.getConnectedCount()).toBe(0);
+    // Connected clients map is cleared immediately.
+    expect(shortHandler.getConnectedCount()).toBe(0);
+    // Game slots are held during the grace period.
+    expect(shortHandler.getGamePlayerCount('g1')).toBe(1);
+    // After grace period expires, slots are freed.
+    vi.advanceTimersByTime(100);
+    expect(shortHandler.getGamePlayerCount('g1')).toBe(0);
+    expect(shortHandler.getGamePlayerCount('g2')).toBe(0);
+    vi.useRealTimers();
   });
 
   it('location_update broadcasts to game players', () => {

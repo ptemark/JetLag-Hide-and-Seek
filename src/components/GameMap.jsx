@@ -12,6 +12,7 @@ const LOCATION_INTERVAL_MS = 10_000;
 const TIMER_TICK_MS = 1_000;
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const MAX_RECONNECT_ATTEMPTS = 6; // 1 s, 2 s, 4 s, 8 s, 16 s, 30 s
 
 /**
  * Format a future ISO timestamp as a MM:SS countdown string.
@@ -71,6 +72,9 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const bonusSecondsRef = useRef(0);       // accumulated time_bonus card seconds
   const captureWinnerRef = useRef(null);   // winner string from capture event (avoids stale closure)
 
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef(null);
+
   const [players, setPlayers] = useState({});      // { [playerId]: { lat, lon, team? } }
   const [myTeam, setMyTeam] = useState(null);       // 'A' | 'B' | null (assigned by server in two-team mode)
   const [phase, setPhase] = useState(game.status);
@@ -81,6 +85,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [pendingQuestionExpiresAt, setPendingQuestionExpiresAt] = useState(null); // ISO from question_pending
   const [, setTimerTick] = useState(0); // incremented each second to refresh countdown display
   const [gameResult, setGameResult] = useState(null); // { winner, elapsedMs, bonusSeconds, captureTeam? } on finish
+  const [wsStatus, setWsStatus] = useState('connecting'); // 'connecting' | 'connected' | 'reconnecting'
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -168,28 +173,18 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     }
   }, [players, player.playerId, myTeam]);
 
-  // ── WebSocket connection ───────────────────────────────────────────────────
+  // ── WebSocket connection with exponential backoff reconnect ───────────────
   useEffect(() => {
     if (!serverUrl) return;
 
-    const url = `${serverUrl}?playerId=${encodeURIComponent(player.playerId)}&gameId=${encodeURIComponent(game.gameId)}`;
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
+    let isMounted = true;
 
-    ws.onopen = () => {
-      // Register with the game server so the player is added to game broadcasts.
-      ws.send(JSON.stringify({
-        type: 'join_game',
-        gameId: game.gameId,
-        role: player.role,
-      }));
-    };
-
-    ws.onmessage = (evt) => {
+    function handleMessage(evt) {
       let msg;
       try { msg = JSON.parse(evt.data); } catch { return; }
 
       if (msg.type === 'joined_game' && msg.playerId === player.playerId) {
+        setWsStatus('connected');
         // Server may assign a team in two-team mode.
         if (msg.team) setMyTeam(msg.team);
       } else if (msg.type === 'player_location') {
@@ -241,13 +236,54 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       } else if (msg.type === 'question_pending') {
         setPendingQuestionExpiresAt(msg.expiresAt ?? null);
       }
-    };
+    }
+
+    function connect() {
+      if (!isMounted) return;
+
+      const url = `${serverUrl}?playerId=${encodeURIComponent(player.playerId)}&gameId=${encodeURIComponent(game.gameId)}`;
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        reconnectAttemptsRef.current = 0;
+        // Register with the game server so the player is added to game broadcasts.
+        ws.send(JSON.stringify({
+          type: 'join_game',
+          gameId: game.gameId,
+          role: player.role,
+        }));
+      };
+
+      ws.onmessage = handleMessage;
+
+      ws.onclose = () => {
+        if (!isMounted) return;
+        wsRef.current = null;
+        const attempts = reconnectAttemptsRef.current;
+        if (attempts >= MAX_RECONNECT_ATTEMPTS) return; // give up
+        const delayMs = Math.min(1_000 * Math.pow(2, attempts), 30_000);
+        reconnectAttemptsRef.current = attempts + 1;
+        setWsStatus('reconnecting');
+        reconnectTimerRef.current = setTimeout(connect, delayMs);
+      };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
-      wsRef.current = null;
+      isMounted = false;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.onclose = null; // prevent reconnect loop on intentional unmount
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
-  }, [player.playerId, game.gameId, serverUrl]);
+  }, [player.playerId, game.gameId, serverUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── GPS polling — throttled to LOCATION_INTERVAL_MS ───────────────────────
   useEffect(() => {
@@ -286,6 +322,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           {player.name} ({player.role}){myTeam ? ` · Team ${myTeam}` : ''}
         </span>
       </div>
+
+      {wsStatus === 'reconnecting' && (
+        <p role="status" data-testid="reconnecting-banner" style={{ background: '#fee2e2', padding: '0.25rem 0.5rem' }}>
+          Reconnecting…
+        </p>
+      )}
 
       {captureMsg && (
         <p role="alert" style={{ background: '#ffe', padding: '0.5rem', fontWeight: 'bold' }}>

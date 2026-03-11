@@ -1,13 +1,18 @@
 const WS_OPEN = 1;
 
+/** Default grace period (ms) before a disconnected player is purged from game state. */
+const DEFAULT_RECONNECT_GRACE_MS = 30_000;
+
 export class WsHandler {
-  constructor(gameLoop, gameStateManager = null) {
+  constructor(gameLoop, gameStateManager = null, reconnectGraceMs = DEFAULT_RECONNECT_GRACE_MS) {
     this.gameLoop = gameLoop;
     this.gameStateManager = gameStateManager;
+    this.reconnectGraceMs = reconnectGraceMs;
     this.clients = new Map();      // playerId -> ws
     this.gameClients = new Map();  // gameId   -> Map<playerId, ws>
     this.playerGames = new Map();  // playerId -> Set<gameId>
     this.playerTeams = new Map();  // playerId -> team ('A'|'B'|null)
+    this._reconnectTimers = new Map(); // playerId -> timerId (grace-period cleanup)
   }
 
   handleConnection(ws, playerId) {
@@ -82,6 +87,13 @@ export class WsHandler {
       return;
     }
 
+    // If a reconnect grace timer is pending for this player, cancel it — they're back.
+    const isReconnect = this._reconnectTimers.has(playerId);
+    if (isReconnect) {
+      clearTimeout(this._reconnectTimers.get(playerId));
+      this._reconnectTimers.delete(playerId);
+    }
+
     if (!this.gameClients.has(gameId)) {
       this.gameClients.set(gameId, new Map());
     }
@@ -116,9 +128,16 @@ export class WsHandler {
     // Confirm join to the new player, including team assignment if applicable.
     this._send(ws, { type: 'joined_game', gameId, playerId, role, team: assignedTeam ?? null });
 
+    // On reconnect: send current game state so client can recover without a full rejoin sequence.
+    if (isReconnect && this.gameStateManager) {
+      const state = this.gameStateManager.getGameState(gameId);
+      this._send(ws, { type: 'game_state', gameId, state });
+    }
+
     // Notify existing players in the game
+    const eventType = isReconnect ? 'player_reconnected' : 'player_joined';
     const gamePlayers = this.gameClients.get(gameId);
-    const payload = JSON.stringify({ type: 'player_joined', gameId, playerId, team: assignedTeam ?? null });
+    const payload = JSON.stringify({ type: eventType, gameId, playerId, team: assignedTeam ?? null });
     for (const [pid, clientWs] of gamePlayers.entries()) {
       if (pid !== playerId && clientWs.readyState === WS_OPEN) {
         clientWs.send(payload);
@@ -181,9 +200,37 @@ export class WsHandler {
   }
 
   _handleDisconnect(playerId) {
+    // Remove from active connection tracking immediately.
     this.clients.delete(playerId);
-    this.playerTeams.delete(playerId);
     this.gameLoop.removePlayer(playerId);
+
+    // Cancel any previously scheduled grace timer for this player (shouldn't normally exist).
+    if (this._reconnectTimers.has(playerId)) {
+      clearTimeout(this._reconnectTimers.get(playerId));
+    }
+
+    // Notify game peers of the temporary disconnection (not a full leave yet).
+    const games = this.playerGames.get(playerId);
+    if (games) {
+      for (const gameId of games) {
+        this._broadcastToGameExcluding(gameId, playerId, { type: 'player_disconnected', gameId, playerId });
+      }
+    }
+
+    // Schedule full cleanup after the grace period.
+    const timerId = setTimeout(() => {
+      this._finalizeDisconnect(playerId);
+    }, this.reconnectGraceMs);
+    this._reconnectTimers.set(playerId, timerId);
+  }
+
+  /**
+   * Fully remove a player from game state after the grace period expires.
+   * Called by the grace-period timer set in _handleDisconnect.
+   */
+  _finalizeDisconnect(playerId) {
+    this._reconnectTimers.delete(playerId);
+    this.playerTeams.delete(playerId);
 
     const games = this.playerGames.get(playerId);
     if (games) {
@@ -208,8 +255,19 @@ export class WsHandler {
       this.gameStateManager.removePlayerFromGame(gameId, playerId);
     }
 
-    // Notify remaining players
+    // Notify remaining players that the player has fully left.
     this.broadcastToGame(gameId, { type: 'player_left', gameId, playerId });
+  }
+
+  _broadcastToGameExcluding(gameId, excludePlayerId, message) {
+    const players = this.gameClients.get(gameId);
+    if (!players) return;
+    const payload = JSON.stringify(message);
+    for (const [pid, ws] of players.entries()) {
+      if (pid !== excludePlayerId && ws.readyState === WS_OPEN) {
+        ws.send(payload);
+      }
+    }
   }
 
   _send(ws, message) {

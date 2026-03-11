@@ -18,6 +18,7 @@ export function createServer({
   heartbeatInterval = 30_000,
   hidingDuration = 120_000,
   seekingDuration = 600_000,
+  reconnectGraceMs = 30_000,
   logger        = new Logger({ level: LogLevel.INFO }),
   metrics       = new MetricsCollector(),
   alertManager  = nullAlertManager,
@@ -138,7 +139,7 @@ export function createServer({
   gameStateManager = new GameStateManager();
   const stateDispatcher = new StateDispatcher({ logger });
   const wss = new WebSocketServer({ server: httpServer });
-  wsHandler = new WsHandler(gameLoop, gameStateManager);
+  wsHandler = new WsHandler(gameLoop, gameStateManager, reconnectGraceMs);
   const heartbeatManager = new HeartbeatManager(wss, { interval: heartbeatInterval });
 
   // Track last timer_sync broadcast time per game to enforce 30 s throttle.

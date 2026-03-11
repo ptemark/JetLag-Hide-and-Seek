@@ -432,7 +432,8 @@ describe('Integration — disconnect notifications', () => {
   let server, port;
 
   beforeAll(async () => {
-    server = createServer({ tickInterval: 5000, heartbeatInterval: 60_000, logger: silentLogger() });
+    // Use a very short grace period so player_left arrives quickly in tests.
+    server = createServer({ tickInterval: 5000, heartbeatInterval: 60_000, reconnectGraceMs: 100, logger: silentLogger() });
     await server.start(0);
     port = getPort(server);
   }, 15_000);

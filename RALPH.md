@@ -6,6 +6,9 @@
 
 This configuration enforces strict rules for safe, maintainable, and cost-efficient development while preventing drift from the design spec.
 
+> **No shortcuts. Ever.**
+> Every task must be implemented completely and correctly. Partial implementations, stubs, skipped tests, suppressed errors, and workarounds that hide the real problem are forbidden. If a task is too large, split it — do not cut corners to finish it faster. A shortcut that passes today creates a harder failure tomorrow.
+
 ---
 
 # Agent Identity
@@ -114,6 +117,15 @@ Before coding:
 - Document blockers if the task cannot be completed safely.
 - Include well written unit tests for all code written.
 
+### No-Shortcut Rules (mandatory — no exceptions)
+
+- **No stubs or TODO placeholders** — every function written must be fully implemented. A function that returns a hardcoded value or throws "not implemented" is not done.
+- **No skipped tests** — do not use `.skip`, `xit`, `xdescribe`, or comment out test cases to make the suite pass. Fix the code, not the tests.
+- **No suppressed errors** — do not swallow exceptions with empty catch blocks, `|| null` fallbacks, or `// eslint-disable` comments to silence a real bug. Understand and fix the root cause.
+- **No copy-paste duplication** — if logic appears twice, extract it. Duplicated code is a future bug waiting to happen.
+- **No hardcoded magic values** — use named constants or configuration. Hardcoded port numbers, timeouts, and limits hidden in implementation code are a maintenance trap.
+- **No fake fixes for build failures** — if `npm run ci:local` fails, fix the actual issue. Do not delete the failing test, mock away the failing module, or add a try/catch that turns a failure into a no-op. The failure is telling you something is wrong; find out what.
+
 ---
 
 # Security Rules
@@ -153,6 +165,7 @@ Must report zero errors. Info-level shellcheck warnings must also be fixed — t
 - If either check fails, fix the issue before staging anything.
 - Do not skip checks to save time. A broken push costs more time than the check takes.
 - Do not rely on GitHub Actions as the first line of validation — it is the last.
+- **Never patch a check to make it green without fixing the underlying problem.** Changing a test assertion to match wrong output, widening an error handler to swallow a failure, or commenting out a lint rule to silence a warning are all forbidden. Treat every red check as a signal that the implementation is wrong.
 
 ---
 
@@ -273,6 +286,13 @@ If a task fails repeatedly:
 4. Move to next independent task.
 
 Never loop indefinitely on a broken implementation.
+
+### What "recovery" does NOT mean
+
+- Do not reduce the scope of the task to avoid the hard part.
+- Do not mark a task `[x]` with partial functionality and call it done.
+- Do not work around a broken dependency by removing the dependency or mocking it permanently.
+- A task is only complete when: all specified behavior is implemented, all tests pass, and `npm run ci:local` passes with zero errors. Anything less is not done.
 
 ---
 

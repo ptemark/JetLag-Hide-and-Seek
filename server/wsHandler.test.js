@@ -6,7 +6,7 @@
  * WebSocket objects.  Integration / reliability scenarios (reconnection,
  * heartbeat integration, multi-game cleanup) live in connection.test.js.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WsHandler } from './wsHandler.js';
 
 // ---------------------------------------------------------------------------
@@ -475,47 +475,61 @@ describe('WsHandler — message routing — invalid JSON', () => {
 });
 
 // ---------------------------------------------------------------------------
-// disconnect
+// disconnect — immediate effects (no timer needed)
 // ---------------------------------------------------------------------------
 
-describe('WsHandler — disconnect', () => {
+describe('WsHandler — disconnect (immediate)', () => {
   let handler, loop, gsm, ws;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     loop = makeLoop();
     gsm = makeGsm();
-    handler = new WsHandler(loop, gsm);
+    // Use a long grace period so deferred cleanup does not run in these tests.
+    handler = new WsHandler(loop, gsm, 60_000);
     ws = mockWs();
     handler.handleConnection(ws, 'p1');
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g2' }));
   });
 
-  it('removes the player from the clients map on close', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('removes the player from the clients map immediately on close', () => {
     ws.emit('close');
     expect(handler.clients.has('p1')).toBe(false);
   });
 
-  it('calls gameLoop.removePlayer on close', () => {
+  it('calls gameLoop.removePlayer immediately on close', () => {
     ws.emit('close');
     expect(loop.removePlayer).toHaveBeenCalledWith('p1');
   });
 
-  it('removes the player from all joined games on close', () => {
+  it('broadcasts player_disconnected to game peers immediately (not player_left)', () => {
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.send.mockClear();
+
     ws.emit('close');
-    expect(handler.getGamePlayerCount('g1')).toBe(0);
-    expect(handler.getGamePlayerCount('g2')).toBe(0);
+
+    const msgs = sentMessages(ws2);
+    expect(msgs.some(m => m.type === 'player_disconnected' && m.playerId === 'p1')).toBe(true);
+    // player_left is NOT sent immediately — it is deferred until grace period expires.
+    expect(msgs.some(m => m.type === 'player_left' && m.playerId === 'p1')).toBe(false);
   });
 
-  it('clears playerGames tracking on close', () => {
+  it('does NOT call gsm.removePlayerFromGame immediately (deferred)', () => {
     ws.emit('close');
-    expect(handler.playerGames.has('p1')).toBe(false);
+    expect(gsm.removePlayerFromGame).not.toHaveBeenCalled();
   });
 
-  it('calls gsm.removePlayerFromGame for each game on close', () => {
+  it('does NOT remove player from gameClients immediately (grace period)', () => {
     ws.emit('close');
-    expect(gsm.removePlayerFromGame).toHaveBeenCalledWith('g1', 'p1');
-    expect(gsm.removePlayerFromGame).toHaveBeenCalledWith('g2', 'p1');
+    // Player is still in the game during grace period (slot held for reconnect).
+    expect(handler.getGamePlayerCount('g1')).toBe(1);
   });
 
   it('also disconnects on ws error event', () => {
@@ -531,9 +545,134 @@ describe('WsHandler — disconnect', () => {
     expect(handler.clients.has('p2')).toBe(false);
   });
 
-  it('decrements getConnectedCount after disconnect', () => {
+  it('decrements getConnectedCount immediately after disconnect', () => {
     expect(handler.getConnectedCount()).toBe(1);
     ws.emit('close');
     expect(handler.getConnectedCount()).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// disconnect — deferred cleanup after grace period
+// ---------------------------------------------------------------------------
+
+describe('WsHandler — disconnect (grace period expiry)', () => {
+  let handler, loop, gsm, ws;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    loop = makeLoop();
+    gsm = makeGsm();
+    handler = new WsHandler(loop, gsm, 5_000);
+    ws = mockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g2' }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('removes player from all joined games after grace period', () => {
+    ws.emit('close');
+    vi.advanceTimersByTime(5_000);
+    expect(handler.getGamePlayerCount('g1')).toBe(0);
+    expect(handler.getGamePlayerCount('g2')).toBe(0);
+  });
+
+  it('clears playerGames tracking after grace period', () => {
+    ws.emit('close');
+    vi.advanceTimersByTime(5_000);
+    expect(handler.playerGames.has('p1')).toBe(false);
+  });
+
+  it('calls gsm.removePlayerFromGame for each game after grace period', () => {
+    ws.emit('close');
+    vi.advanceTimersByTime(5_000);
+    expect(gsm.removePlayerFromGame).toHaveBeenCalledWith('g1', 'p1');
+    expect(gsm.removePlayerFromGame).toHaveBeenCalledWith('g2', 'p1');
+  });
+
+  it('broadcasts player_left after grace period expires', () => {
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.send.mockClear();
+
+    ws.emit('close');
+    vi.advanceTimersByTime(5_000);
+
+    const msgs = sentMessages(ws2);
+    expect(msgs.some(m => m.type === 'player_left' && m.playerId === 'p1')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reconnect — player rejoins within grace period
+// ---------------------------------------------------------------------------
+
+describe('WsHandler — reconnect within grace period', () => {
+  let handler, loop, gsm, ws1, ws2;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    loop = makeLoop();
+    gsm = makeGsm();
+    handler = new WsHandler(loop, gsm, 5_000);
+    ws1 = mockWs();
+    handler.handleConnection(ws1, 'p1');
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    // Simulate disconnect
+    ws1.emit('close');
+    // Player reconnects with a new WebSocket
+    ws2 = mockWs();
+    handler.handleConnection(ws2, 'p1');
+    ws2.send.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('cancels the grace timer when player rejoins the game', () => {
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    vi.advanceTimersByTime(5_000);
+    // gsm.removePlayerFromGame should NOT have been called (timer was cancelled)
+    expect(gsm.removePlayerFromGame).not.toHaveBeenCalled();
+  });
+
+  it('sends joined_game to the reconnecting player', () => {
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    const msgs = sentMessages(ws2);
+    expect(msgs.some(m => m.type === 'joined_game' && m.gameId === 'g1')).toBe(true);
+  });
+
+  it('sends current game_state to the reconnecting player', () => {
+    const fakeState = { status: 'hiding', players: { p1: { lat: 1, lon: 2 } } };
+    gsm.getGameState.mockReturnValue(fakeState);
+
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    const msgs = sentMessages(ws2);
+    expect(msgs.some(m => m.type === 'game_state' && m.gameId === 'g1')).toBe(true);
+  });
+
+  it('broadcasts player_reconnected (not player_joined) to other players', () => {
+    const ws3 = mockWs();
+    handler.handleConnection(ws3, 'p2');
+    ws3.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    ws3.send.mockClear();
+
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+
+    const msgs = sentMessages(ws3);
+    expect(msgs.some(m => m.type === 'player_reconnected' && m.playerId === 'p1')).toBe(true);
+    expect(msgs.some(m => m.type === 'player_joined' && m.playerId === 'p1')).toBe(false);
+  });
+
+  it('does not finalize disconnect after reconnect even if old timer duration elapses', () => {
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    vi.advanceTimersByTime(10_000); // well past grace period
+    expect(handler.getGamePlayerCount('g1')).toBeGreaterThan(0);
   });
 });

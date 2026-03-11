@@ -429,4 +429,43 @@ describe('GameMap', () => {
     });
     expect(screen.queryByTestId('zone-selector')).not.toBeInTheDocument();
   });
+
+  it('does not show reconnecting banner on initial render', () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('reconnecting-banner')).not.toBeInTheDocument();
+  });
+
+  it('shows Reconnecting… banner when WS connection drops', async () => {
+    vi.useFakeTimers();
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onclose?.();
+    });
+    expect(screen.getByTestId('reconnecting-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('reconnecting-banner')).toHaveTextContent('Reconnecting');
+  });
+
+  it('hides Reconnecting… banner after WS reconnects and receives joined_game', async () => {
+    vi.useFakeTimers();
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    // Drop connection — banner should appear.
+    await act(async () => {
+      MockWebSocket.last.onclose?.();
+    });
+    expect(screen.getByTestId('reconnecting-banner')).toBeInTheDocument();
+
+    // Advance timer so reconnect fires and a new WS is created.
+    await act(async () => {
+      vi.advanceTimersByTime(1_100);
+    });
+
+    // The new WS sends joined_game — banner should disappear.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'joined_game', playerId: 'p1', gameId: 'g1' }),
+      });
+    });
+    expect(screen.queryByTestId('reconnecting-banner')).not.toBeInTheDocument();
+  });
 });

@@ -177,13 +177,18 @@ describe('Connection reliability — multi-game cleanup', () => {
   let loop, handler;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     loop = new GameLoop(5000);
-    handler = new WsHandler(loop, new GameStateManager());
+    // Use a short grace period so tests can advance past it quickly.
+    handler = new WsHandler(loop, new GameStateManager(), 5_000);
   });
 
-  afterEach(() => loop.stop());
+  afterEach(() => {
+    vi.useRealTimers();
+    loop.stop();
+  });
 
-  it('disconnect removes player from all three games simultaneously', () => {
+  it('disconnect removes player from all three games after grace period', () => {
     const ws = createMockWs();
     handler.handleConnection(ws, 'p1');
 
@@ -192,14 +197,17 @@ describe('Connection reliability — multi-game cleanup', () => {
     });
 
     ws.emit('close');
+    // Player is still counted during grace period.
+    expect(handler.getConnectedCount()).toBe(0); // removed from clients immediately
 
+    // Advance past grace period — player is fully removed from all games.
+    vi.advanceTimersByTime(5_000);
     expect(handler.getGamePlayerCount('g1')).toBe(0);
     expect(handler.getGamePlayerCount('g2')).toBe(0);
     expect(handler.getGamePlayerCount('g3')).toBe(0);
-    expect(handler.getConnectedCount()).toBe(0);
   });
 
-  it('other players in those games receive player_left on disconnect', () => {
+  it('other players receive player_disconnected immediately and player_left after grace period', () => {
     const ws1 = createMockWs();
     const ws2 = createMockWs();
 
@@ -212,18 +220,29 @@ describe('Connection reliability — multi-game cleanup', () => {
     ws2.send.mockClear();
     ws1.emit('close');
 
-    const types = sent(ws2).map((m) => m.type);
+    // Immediate: player_disconnected (grace window open).
+    let types = sent(ws2).map((m) => m.type);
+    expect(types).toContain('player_disconnected');
+    expect(types).not.toContain('player_left');
+
+    // After grace period: player_left arrives.
+    ws2.send.mockClear();
+    vi.advanceTimersByTime(5_000);
+    types = sent(ws2).map((m) => m.type);
     expect(types).toContain('player_left');
   });
 
-  it('game entry is removed when last player disconnects', () => {
+  it('game entry is removed when last player grace period expires', () => {
     const ws = createMockWs();
     handler.handleConnection(ws, 'p1');
     ws.emit('message', msg('join_game', { gameId: 'solo' }));
 
     ws.emit('close');
+    // Still in grace period — player slot held.
+    expect(handler.getGamePlayerCount('solo')).toBe(1);
 
-    // getGamePlayerCount returns 0 (game entry cleaned up)
+    vi.advanceTimersByTime(5_000);
+    // Grace period expired — game entry cleaned up.
     expect(handler.getGamePlayerCount('solo')).toBe(0);
   });
 });

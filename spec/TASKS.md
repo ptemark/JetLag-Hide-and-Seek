@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 55 complete. Two-teams seeker variant; 992 tests pass._
+_Task 56 complete. WebSocket reconnection with exponential backoff; 1004 tests pass._
 
 ---
 
@@ -67,6 +67,7 @@ _Task 55 complete. Two-teams seeker variant; 992 tests pass._
 | 53 | 2026-03-11 | Post-game results screen | db/schema.sql, db/gameStore.js, db/gameStore.test.js, db/lifecycle.test.js, functions/scores.js, src/api.js, src/components/ResultsScreen.jsx, src/components/ResultsScreen.test.jsx, src/components/CardPanel.jsx, src/components/GameMap.jsx, src/components/Lobby.jsx | bonus_seconds column on scores; ResultsScreen full-screen overlay (winner, elapsed, bonus, final score, Play Again); CardPanel onTimeBonusPlayed callback; GameMap tracks hidingStartedAt + captureWinnerRef; submitScore API fn; Lobby Play Again resets game/playing but keeps player; 15 new tests; 953 total pass; build clean |
 | 54 | 2026-03-11 | Leaderboard | db/gameStore.js, functions/scores.js, functions/scores.test.js, functions/router.js, src/api.js, src/components/Leaderboard.jsx, src/components/Leaderboard.test.jsx, src/components/Lobby.jsx | dbGetLeaderboard JOIN query (scores+players+games); GET /scores endpoint with limit+gameId query params; fetchLeaderboard API fn; Leaderboard component (rank, player, scale, MM:SS hiding time); Leaderboard toggle button in Lobby; 24 new tests; 977 total pass; build clean |
 | 55 | 2026-03-11 | Two-teams seeker variant | db/schema.sql, db/gameStore.js, db/gameStore.test.js, db/lifecycle.test.js, functions/games.js, server/gameState.js, server/wsHandler.js, server/wsHandler.test.js, server/captureDetector.js, server/captureDetector.test.js, server/index.js, server/gameState.test.js, server/server.test.js, src/api.js, src/components/GameForm.jsx, src/components/WaitingRoom.jsx, src/components/GameMap.jsx, src/components/Lobby.jsx | seeker_teams on games (0=off, 2=two teams); team on game_players (auto-balanced A/B for seekers); team-scoped pending question check; WsHandler team auto-assignment + team-scoped location broadcasts; checkCapture two-team mode (first team all in zone wins); GameMap join_game on open + team-colored markers; GameForm seeker_teams selector; WaitingRoom team display; 15 new tests; 992 total pass; build clean |
+| 56 | 2026-03-11 | WebSocket reconnection | server/wsHandler.js, server/wsHandler.test.js, server/index.js, server/server.test.js, server/connection.test.js, server/integration.test.js, src/components/GameMap.jsx, src/components/GameMap.test.jsx | WsHandler 30 s grace period on disconnect; broadcasts player_disconnected immediately then player_left after expiry; cancels timer on rejoin; sends game_state to reconnecting player; broadcasts player_reconnected; reconnectGraceMs createServer param; GameMap exponential backoff (1 s→30 s, 6 attempts); Reconnecting… banner via wsStatus; 12 new tests; 1004 total pass; build clean |
 
 ---
 
@@ -174,3 +175,13 @@ Tasks are ordered by dependency. Complete them top to bottom.
 - [x] **54** — Leaderboard: add `GET /api/scores?limit=20&gameId=` serverless endpoint returning ranked scores with player name and scale; backed by a JOIN across `scores`, `players`, and `games`. Add a leaderboard tab/modal to the lobby frontend showing top scores across all games with columns: rank, player name, scale, hiding time (formatted mm:ss).
 
 - [x] **55** — Two-teams seeker variant: optional gameplay mode where seekers are split into two competing teams. Add a `seeker_teams` config field to game creation (0 = off, 2 = two teams). Game server tracks team membership; questions and location updates are scoped per team; capture is credited to the first team to spot the hider. Frontend lobby shows team assignment on game join.
+
+### Phase 14 — Reliability & UX Polish
+
+- [x] **56** — WebSocket reconnection: when a player's WS connection drops mid-game, the frontend should automatically attempt to reconnect with exponential backoff (1 s, 2 s, 4 s … up to 30 s). Show a "Reconnecting…" banner while disconnected. On reconnect, re-send `join_game` to restore server-side game membership. Server-side: give disconnected players a 30 s grace period before removing them from game state, and broadcast `player_disconnected` (not `player_left`) during the grace window; cancel the timer if the player reconnects. This prevents mid-game reconnects from appearing as a full leave+rejoin to other players.
+
+- [ ] **57** — Game invite URL: after a game is created, display a shareable link (e.g. `?gameId=xxx`) that pre-fills the Join tab in the lobby. Parse `?gameId` on page load and activate the Join tab automatically. No backend changes needed — purely frontend.
+
+- [ ] **58** — Progressive Web App: add `public/manifest.json` (name, icons, theme colour, `display: standalone`) and a minimal service worker that caches the app shell. Register the service worker in `src/main.jsx`. Allows players to add the game to their home screen on iOS/Android.
+
+- [ ] **59** — Question history: seekers should see all previous Q&A pairs (question text, category, answer, timestamp) above the current question form in `QuestionPanel`. Fetch from `GET /api/questions?gameId=` on mount and refresh after each `question_answered` WS event. No new backend endpoint needed — extend the existing `listQuestions` API fn to accept `gameId`.

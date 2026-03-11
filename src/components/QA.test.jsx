@@ -225,6 +225,29 @@ describe('QuestionPanel', () => {
       expect(screen.getByRole('alert')).toHaveTextContent(/history load failed/i)
     );
   });
+
+  it('shows curse banner and disables submit when curseEndsAt is in the future', async () => {
+    const curseEndsAt = new Date(Date.now() + 60_000).toISOString();
+    render(<QuestionPanel player={SEEKER} game={GAME} curseEndsAt={curseEndsAt} />);
+    await waitFor(() => screen.getByTestId('curse-banner'));
+    expect(screen.getByTestId('curse-banner')).toHaveTextContent(/questions blocked/i);
+    expect(screen.getByRole('button', { name: /submit question/i })).toBeDisabled();
+  });
+
+  it('does not show curse banner when curseEndsAt is null', async () => {
+    render(<QuestionPanel player={SEEKER} game={GAME} curseEndsAt={null} />);
+    await waitFor(() => screen.getByRole('button', { name: /submit question/i }));
+    expect(screen.queryByTestId('curse-banner')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /submit question/i })).not.toBeDisabled();
+  });
+
+  it('does not show curse banner when curseEndsAt is in the past', async () => {
+    const pastCurse = new Date(Date.now() - 1000).toISOString();
+    render(<QuestionPanel player={SEEKER} game={GAME} curseEndsAt={pastCurse} />);
+    await waitFor(() => screen.getByRole('button', { name: /submit question/i }));
+    expect(screen.queryByTestId('curse-banner')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /submit question/i })).not.toBeDisabled();
+  });
 });
 
 // ── AnswerPanel ───────────────────────────────────────────────────────────────

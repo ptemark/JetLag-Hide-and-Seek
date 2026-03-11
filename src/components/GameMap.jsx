@@ -86,6 +86,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [, setTimerTick] = useState(0); // incremented each second to refresh countdown display
   const [gameResult, setGameResult] = useState(null); // { winner, elapsedMs, bonusSeconds, captureTeam? } on finish
   const [wsStatus, setWsStatus] = useState('connecting'); // 'connecting' | 'connected' | 'reconnecting'
+  const [curseEndsAt, setCurseEndsAt] = useState(null);   // ISO from curse_active; null when inactive
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -235,6 +236,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setPhaseEndsAt(msg.phaseEndsAt ?? null);
       } else if (msg.type === 'question_pending') {
         setPendingQuestionExpiresAt(msg.expiresAt ?? null);
+      } else if (msg.type === 'curse_active') {
+        setCurseEndsAt(msg.curseEndsAt ?? null);
       }
     }
 
@@ -352,7 +355,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       />
 
       {player.role === 'seeker' && (
-        <QuestionPanel player={player} game={game} qaRefresh={qaRefresh} />
+        <QuestionPanel player={player} game={game} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} />
       )}
 
       {player.role === 'hider' && phase === 'hiding' && !lockedZone && (

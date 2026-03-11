@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS games (
 -- Idempotent migration: add seeker_teams if it doesn't exist yet.
 ALTER TABLE games ADD COLUMN IF NOT EXISTS seeker_teams INTEGER NOT NULL DEFAULT 0;
 
+-- Idempotent migration: add curse_expires_at for curse card enforcement.
+ALTER TABLE games ADD COLUMN IF NOT EXISTS curse_expires_at TIMESTAMPTZ;
+
 -- -------------------------------------------------------------------------
 -- game_players
 -- Joins players to games, recording each player's role.

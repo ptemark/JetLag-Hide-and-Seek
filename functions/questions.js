@@ -25,8 +25,9 @@ import {
   dbDrawCard,
   dbSaveQuestionPhoto,
   dbGetQuestionPhoto,
+  dbGetCurseExpiry,
 } from '../db/gameStore.js';
-import { drawCardInProcess, randomCardDescriptor } from './cards.js';
+import { drawCardInProcess, randomCardDescriptor, _curses } from './cards.js';
 
 /** Answer deadline in milliseconds by category. Photo: 15 min; others: 5 min. */
 const QUESTION_EXPIRY_MS = { photo: 15 * 60 * 1000, default: 5 * 60 * 1000 };
@@ -96,11 +97,23 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
   }
 
   if (pool) {
-    return dbCreateQuestion(pool, { gameId, askerId, targetId, category, text }).then(row => {
-      if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
-      notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
-      return { status: 201, body: row };
+    // Check for an active curse before allowing the question, then create it.
+    return dbGetCurseExpiry(pool, gameId).then(curseExpiry => {
+      if (curseExpiry && new Date(curseExpiry) > new Date()) {
+        return { status: 409, body: { error: 'curse_active', curseEndsAt: curseExpiry } };
+      }
+      return dbCreateQuestion(pool, { gameId, askerId, targetId, category, text }).then(row => {
+        if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
+        notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
+        return { status: 201, body: row };
+      });
     });
+  }
+
+  // Check for an active curse in the in-process store.
+  const curseEndsAt = _curses.get(gameId);
+  if (curseEndsAt && new Date(curseEndsAt) > new Date()) {
+    return { status: 409, body: { error: 'curse_active', curseEndsAt } };
   }
 
   // Enforce one-pending-question-at-a-time per game in the in-process store.

@@ -12,6 +12,8 @@ import {
   dbCreateQuestion,
   dbGetQuestionsForPlayer,
   dbExpireStaleQuestions,
+  dbSetCurse,
+  dbGetCurseExpiry,
   createInstrumentedStore,
 } from './gameStore.js';
 import { MetricsCollector, MetricKey } from '../server/monitoring.js';
@@ -774,5 +776,54 @@ describe('dbExpireStaleQuestions', () => {
   it('propagates query errors', async () => {
     const pool = makeMockPool(() => Promise.reject(new Error('timeout')));
     await expect(dbExpireStaleQuestions(pool, 'g1')).rejects.toThrow('timeout');
+  });
+});
+
+// dbSetCurse / dbGetCurseExpiry
+
+describe('dbSetCurse', () => {
+  it('issues an UPDATE games SET curse_expires_at query', async () => {
+    const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
+    const expiresAt = new Date(Date.now() + 120_000).toISOString();
+    await dbSetCurse(pool, 'game-1', expiresAt);
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('curse_expires_at'),
+      ['game-1', expiresAt],
+    );
+  });
+
+  it('propagates query errors', async () => {
+    const pool = makeMockPool(() => Promise.reject(new Error('db error')));
+    await expect(dbSetCurse(pool, 'g1', new Date().toISOString())).rejects.toThrow('db error');
+  });
+});
+
+describe('dbGetCurseExpiry', () => {
+  it('returns the ISO string when curse_expires_at is set', async () => {
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ curse_expires_at: expiresAt }] }),
+    );
+    const result = await dbGetCurseExpiry(pool, 'game-1');
+    expect(result).toBe(expiresAt);
+  });
+
+  it('returns null when curse_expires_at is null', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ curse_expires_at: null }] }),
+    );
+    const result = await dbGetCurseExpiry(pool, 'game-1');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when game does not exist', async () => {
+    const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
+    const result = await dbGetCurseExpiry(pool, 'no-such-game');
+    expect(result).toBeNull();
+  });
+
+  it('propagates query errors', async () => {
+    const pool = makeMockPool(() => Promise.reject(new Error('timeout')));
+    await expect(dbGetCurseExpiry(pool, 'g1')).rejects.toThrow('timeout');
   });
 });

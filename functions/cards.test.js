@@ -7,6 +7,7 @@ import {
   cardEffect,
   randomCardDescriptor,
   _getCardStore,
+  _getCurseStore,
   _clearCards,
 } from './cards.js';
 import { HAND_LIMIT } from '../db/gameStore.js';
@@ -277,5 +278,90 @@ describe('playCard (with pool)', () => {
     expect(res.status).toBe(200);
     expect(res.body.type).toBe('powerup');
     expect(res.body.status).toBe('played');
+  });
+
+  it('calls dbSetCurse and notifies server when curse card is played (with pool)', async () => {
+    const curseRow = {
+      id: 'c-curse', game_id: 'g1', player_id: 'p1', type: 'curse',
+      effect: { action: 'block_questions', durationMs: 120_000 }, status: 'played',
+      drawn_at: new Date().toISOString(), played_at: new Date().toISOString(),
+    };
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [curseRow] })  // dbPlayCard
+        .mockResolvedValueOnce({ rows: [] }),           // dbSetCurse (UPDATE games)
+    };
+    const mockFetch = vi.fn().mockResolvedValue({});
+    const res = await playCard(
+      makePostReq({ cardId: 'c-curse' }, { playerId: 'p1' }),
+      pool,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('curse');
+    // dbSetCurse was called (second query call)
+    expect(pool.query).toHaveBeenCalledTimes(2);
+    // notify was fired
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe('http://game-server/internal/notify');
+    const payload = JSON.parse(opts.body);
+    expect(payload.type).toBe('curse_active');
+    expect(payload.gameId).toBe('g1');
+    expect(payload.curseEndsAt).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Curse card (in-process)
+// ---------------------------------------------------------------------------
+
+describe('curse card (in-process)', () => {
+  beforeEach(() => _clearCards());
+
+  it('populates _curses map when a curse card is played', async () => {
+    // Math.floor(0.9 * 3) = 2 → CARD_TYPES[2] = 'curse'
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const card = drawCardInProcess({ gameId: 'g-curse', playerId: 'p1' });
+    vi.restoreAllMocks();
+    expect(card.type).toBe('curse');
+
+    await playCard(makePostReq({ cardId: card.cardId }, { playerId: 'p1' }));
+    const curses = _getCurseStore();
+    expect(curses.has('g-curse')).toBe(true);
+    expect(new Date(curses.get('g-curse')).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('fires notify to game server when curse card is played', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const card = drawCardInProcess({ gameId: 'g-notify', playerId: 'p1' });
+    vi.restoreAllMocks();
+
+    const mockFetch = vi.fn().mockResolvedValue({});
+    await playCard(
+      makePostReq({ cardId: card.cardId }, { playerId: 'p1' }),
+      null,
+      'http://game-server',
+      mockFetch,
+    );
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const payload = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(payload.type).toBe('curse_active');
+    expect(payload.gameId).toBe('g-notify');
+    expect(payload.curseEndsAt).toBeTruthy();
+  });
+
+  it('does not populate _curses when a non-curse card is played', async () => {
+    // Math.floor(0 * 3) = 0 → CARD_TYPES[0] = 'time_bonus'
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const card = drawCardInProcess({ gameId: 'g-nc', playerId: 'p1' });
+    vi.restoreAllMocks();
+    expect(card.type).toBe('time_bonus');
+
+    await playCard(makePostReq({ cardId: card.cardId }, { playerId: 'p1' }));
+    expect(_getCurseStore().has('g-nc')).toBe(false);
   });
 });

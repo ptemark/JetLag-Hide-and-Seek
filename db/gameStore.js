@@ -618,6 +618,42 @@ export async function dbPlayCard(pool, { cardId, playerId }) {
   };
 }
 
+// ── Curse card DB helpers ──────────────────────────────────────────────────────
+
+/**
+ * Set (or replace) the active curse expiry for a game.
+ * Called when a hider plays a curse card.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {string} gameId
+ * @param {string} expiresAt  ISO 8601 timestamp string.
+ * @returns {Promise<void>}
+ */
+export async function dbSetCurse(pool, gameId, expiresAt) {
+  await pool.query(
+    'UPDATE games SET curse_expires_at = $2 WHERE id = $1',
+    [gameId, expiresAt],
+  );
+}
+
+/**
+ * Get the curse expiry timestamp for a game.
+ * Returns an ISO string if a curse is or was active, otherwise null.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {string} gameId
+ * @returns {Promise<string | null>}
+ */
+export async function dbGetCurseExpiry(pool, gameId) {
+  const res = await pool.query(
+    'SELECT curse_expires_at FROM games WHERE id = $1',
+    [gameId],
+  );
+  if (res.rows.length === 0) return null;
+  const val = res.rows[0].curse_expires_at;
+  return val ? new Date(val).toISOString() : null;
+}
+
 // ── Leaderboard query ─────────────────────────────────────────────────────────
 
 /**

@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 61 complete. Hider timeout victory; 1028 tests pass._
+_Task 62 complete. Curse card enforcement; 1045 tests pass._
 
 ---
 
@@ -73,6 +73,7 @@ _Task 61 complete. Hider timeout victory; 1028 tests pass._
 | 59 | 2026-03-11 | Question history | db/gameStore.js, functions/questions.js, functions/questions.test.js, src/api.js, src/components/QuestionPanel.jsx, src/components/AnswerPanel.jsx, src/components/GameMap.jsx, src/components/QA.test.jsx | dbGetQuestionsForGame (LEFT JOIN questions+answers); listQuestions extended to accept gameId (returns full Q&A history) or playerId (hider inbox); listQuestions API fn changed to object param; QuestionPanel fetches history on mount + qaRefresh, displays Q&A pairs with answer text; GameMap passes qaRefresh to QuestionPanel; 10 new tests; 1022 total pass; build clean |
 | 60 | 2026-03-11 | Measuring and transit question categories | functions/questions.js, functions/questions.test.js, src/components/QuestionPanel.jsx, src/components/QA.test.jsx, spec/TASKS.md | Added 'measuring' and 'transit' to VALID_CATEGORIES (backend) and CATEGORIES array (frontend) to align with all 6 RULES.md question types; added CATEGORY_HINTS map; hint shown as <small aria-label="question type hint"> below selector; 2 new tests (hint renders, hint updates on select); 1024 total pass; build clean |
 | 61 | 2026-03-11 | Hider timeout victory | server/index.js, server/server.test.js, spec/TASKS.md | When seeking phase timer expires without capture, broadcast capture event with winner: 'hider' and call dbUpdateGameStatus('finished'); _seekingStartedAt map tracks phase entry time; _capturingGames cleaned up on finish; 4 new tests; 1028 total pass; build clean |
+| 62 | 2026-03-11 | Curse card enforcement | db/schema.sql, db/gameStore.js, db/gameStore.test.js, functions/cards.js, functions/cards.test.js, functions/questions.js, functions/questions.test.js, src/components/GameMap.jsx, src/components/QuestionPanel.jsx, src/components/QA.test.jsx, spec/TASKS.md | curse_expires_at on games; dbSetCurse/dbGetCurseExpiry; playCard activates curse + notifies server; submitQuestion returns 409 curse_active while blocked; _curses in-process map shared between cards.js and questions.js; GameMap handles curse_active WS event; QuestionPanel shows countdown banner + disabled submit; 17 new tests; 1045 total pass; build clean |
 
 ---
 
@@ -198,3 +199,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 ### Phase 16 — Gameplay Correctness
 
 - [x] **61** — Hider timeout victory: when the seeking phase timer expires without a seeker capture, the server broadcasts a `capture` event with `winner: 'hider'` and updates DB game status to `'finished'`. Previously only a `phase_change` event was emitted, leaving winner undefined and DB status un-persisted. Track seeking start time in `_seekingStartedAt` and check `_capturingGames` in `onPhaseChange` to distinguish timeout from seeker capture.
+
+### Phase 17 — Card Mechanics
+
+- [x] **62** — Curse card enforcement: when a hider plays a curse card (`{ action: 'block_questions', durationMs: 120_000 }`), seekers must be blocked from submitting new questions for the curse duration. Add `curse_expires_at` column to the `games` table. Add `dbSetCurse`/`dbGetCurseExpiry` to `gameStore.js`. In `playCard`, if the played card is a curse, persist the expiry and fire-and-forget notify the managed server with `{ type: 'curse_active', curseEndsAt }` so it can broadcast to all players. In `submitQuestion`, check the active curse before creating the question (409 `curse_active` if blocked). In-process paths use a shared `_curses` Map exported from `cards.js`. Frontend: `GameMap` handles `curse_active` WS event and passes `curseEndsAt` to `QuestionPanel`; `QuestionPanel` shows a countdown and disables the submit button until the curse expires (checked locally via the existing 1-second tick).

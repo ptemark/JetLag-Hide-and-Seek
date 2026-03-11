@@ -19,6 +19,7 @@ import {
   dbDrawCard,
   dbGetPlayerHand,
   dbPlayCard,
+  dbSetCurse,
   HAND_LIMIT,
 } from '../db/gameStore.js';
 
@@ -57,11 +58,22 @@ export function randomCardDescriptor() {
 /** @type {Map<string, object>} cardId → card */
 const _cards = new Map();
 
+/**
+ * In-process curse store: gameId → curseEndsAt (ISO string).
+ * Shared with questions.js so the submitQuestion handler can enforce the curse
+ * without a DB pool.  Exported for import by questions.js and for test inspection.
+ * @type {Map<string, string>}
+ */
+export const _curses = new Map();
+
 /** Return a copy of the in-process card store (for testing). */
 export function _getCardStore() { return new Map(_cards); }
 
-/** Clear in-process card store (for test isolation). */
-export function _clearCards() { _cards.clear(); }
+/** Return a copy of the in-process curse store (for testing). */
+export function _getCurseStore() { return new Map(_curses); }
+
+/** Clear in-process card and curse stores (for test isolation). */
+export function _clearCards() { _cards.clear(); _curses.clear(); }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -97,17 +109,53 @@ export function getCards(req, pool = null) {
 }
 
 /**
+ * Activate a curse for a game: persist to DB (if pool) or in-process map,
+ * then fire-and-forget notify the managed server so it can broadcast
+ * `curse_active` to all connected players.
+ *
+ * @param {{ gameId: string, durationMs: number }} options
+ * @param {import('pg').Pool|null} pool
+ * @param {string|undefined} gameServerUrl
+ * @param {typeof fetch} fetchFn
+ * @returns {string} curseEndsAt ISO string
+ */
+async function activateCurse({ gameId, durationMs }, pool, gameServerUrl, fetchFn) {
+  const curseEndsAt = new Date(Date.now() + durationMs).toISOString();
+
+  if (pool) {
+    await dbSetCurse(pool, gameId, curseEndsAt);
+  } else {
+    _curses.set(gameId, curseEndsAt);
+  }
+
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  if (serverUrl && fetchFn) {
+    Promise.resolve(fetchFn(`${serverUrl}/internal/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'curse_active', gameId, curseEndsAt }),
+    })).catch(() => { /* intentionally silent */ });
+  }
+
+  return curseEndsAt;
+}
+
+/**
  * POST /cards/:cardId/play
  * Body: { playerId }
  *
  * Marks the card as played and returns it with its effect payload so the
- * caller can apply the game-mechanic change.
+ * caller can apply the game-mechanic change.  If the card is a curse, the
+ * question-blocking effect is activated server-side and broadcast to all
+ * players via the managed server's /internal/notify endpoint.
  *
  * @param {{ method: string, params: { cardId: string }, body: unknown }} req
  * @param {import('pg').Pool|null} [pool]
- * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
+ * @param {string} [gameServerUrl]  Override for GAME_SERVER_URL env var.
+ * @param {typeof fetch} [fetchFn]  Injectable fetch (tests / local dev).
+ * @returns {Promise<{ status: number, body: object }>}
  */
-export async function playCard(req, pool = null) {
+export async function playCard(req, pool = null, gameServerUrl, fetchFn = globalThis.fetch) {
   if (req.method !== 'POST') {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
@@ -125,6 +173,14 @@ export async function playCard(req, pool = null) {
   if (pool) {
     const card = await dbPlayCard(pool, { cardId, playerId });
     if (!card) return { status: 404, body: { error: 'card not found or already played' } };
+    if (card.type === 'curse' && card.effect?.action === 'block_questions' && card.gameId) {
+      await activateCurse(
+        { gameId: card.gameId, durationMs: card.effect.durationMs ?? 120_000 },
+        pool,
+        gameServerUrl,
+        fetchFn,
+      );
+    }
     return { status: 200, body: card };
   }
 
@@ -135,6 +191,16 @@ export async function playCard(req, pool = null) {
 
   const played = { ...card, status: 'played', playedAt: new Date().toISOString() };
   _cards.set(cardId, played);
+
+  if (card.type === 'curse' && card.effect?.action === 'block_questions' && card.gameId) {
+    await activateCurse(
+      { gameId: card.gameId, durationMs: card.effect.durationMs ?? 120_000 },
+      null,
+      gameServerUrl,
+      fetchFn,
+    );
+  }
+
   return { status: 200, body: played };
 }
 

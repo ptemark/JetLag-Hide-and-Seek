@@ -152,7 +152,8 @@ describe('submitQuestion', () => {
     };
     const pool = {
       query: vi.fn()
-        .mockResolvedValueOnce({ rows: [] })  // pending check returns none
+        .mockResolvedValueOnce({ rows: [{ curse_expires_at: null }] })  // dbGetCurseExpiry — no curse
+        .mockResolvedValueOnce({ rows: [] })                            // pending check returns none
         .mockResolvedValueOnce({ rows: [
           { id: mockRow.questionId, game_id: mockRow.gameId, asker_id: mockRow.askerId,
             target_id: mockRow.targetId, category: mockRow.category, text: mockRow.text,
@@ -167,11 +168,66 @@ describe('submitQuestion', () => {
 
   it('returns 409 via pool when a pending question exists for the game', async () => {
     const pool = {
-      query: vi.fn().mockResolvedValueOnce({ rows: [{ id: 'existing-q' }] }),  // pending check returns one
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{ curse_expires_at: null }] })  // dbGetCurseExpiry — no curse
+        .mockResolvedValueOnce({ rows: [{ id: 'existing-q' }] }),       // pending check returns one
     };
     const result = await submitQuestion({ method: 'POST', body: makeQuestion() }, pool);
     expect(result.status).toBe(409);
     expect(result.body.error).toMatch(/pending/i);
+  });
+
+  it('returns 409 curse_active via pool when a curse is active for the game', async () => {
+    const curseEndsAt = new Date(Date.now() + 90_000).toISOString();
+    const pool = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [{ curse_expires_at: curseEndsAt }] }),
+    };
+    const result = await submitQuestion({ method: 'POST', body: makeQuestion() }, pool);
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('curse_active');
+    expect(result.body.curseEndsAt).toBe(curseEndsAt);
+  });
+
+  it('returns 201 via pool when a past curse exists but has already expired', async () => {
+    const expiresAt = new Date(Date.now() + 300_000).toISOString();
+    const pastCurse = new Date(Date.now() - 1000).toISOString();
+    const mockRow = {
+      questionId: 'q-nc', gameId: 'g-1', askerId: 'a-1', targetId: 't-1',
+      category: 'matching', text: 'test', status: 'pending', expiresAt, createdAt: new Date().toISOString(),
+    };
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{ curse_expires_at: pastCurse }] })  // expired curse
+        .mockResolvedValueOnce({ rows: [] })                                  // no pending question
+        .mockResolvedValueOnce({ rows: [
+          { id: mockRow.questionId, game_id: mockRow.gameId, asker_id: mockRow.askerId,
+            target_id: mockRow.targetId, category: mockRow.category, text: mockRow.text,
+            status: mockRow.status, expires_at: mockRow.expiresAt, created_at: mockRow.createdAt }
+        ] }),
+    };
+    const result = await submitQuestion({ method: 'POST', body: makeQuestion() }, pool);
+    expect(result.status).toBe(201);
+  });
+
+  it('returns 409 curse_active (in-process) when curse card was played for the game', async () => {
+    const { _clearCards, _curses } = await import('./cards.js');
+    _clearCards();
+    const curseEndsAt = new Date(Date.now() + 90_000).toISOString();
+    _curses.set('game-1', curseEndsAt);
+    const result = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'game-1' }) });
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('curse_active');
+    expect(result.body.curseEndsAt).toBe(curseEndsAt);
+    _clearCards();
+  });
+
+  it('allows question (in-process) when curse has expired', async () => {
+    const { _clearCards, _curses } = await import('./cards.js');
+    _clearCards();
+    _curses.set('game-1', new Date(Date.now() - 1000).toISOString()); // past curse
+    const result = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'game-1' }) });
+    expect(result.status).toBe(201);
+    _clearCards();
   });
 
   it('fires question_pending notify with gameId, questionId, expiresAt on success (in-process)', () => {
@@ -216,7 +272,8 @@ describe('submitQuestion', () => {
     };
     const pool = {
       query: vi.fn()
-        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ curse_expires_at: null }] })  // dbGetCurseExpiry
+        .mockResolvedValueOnce({ rows: [] })                            // no pending question
         .mockResolvedValueOnce({ rows: [
           { id: mockRow.questionId, game_id: mockRow.gameId, asker_id: mockRow.askerId,
             target_id: mockRow.targetId, category: mockRow.category, text: mockRow.text,

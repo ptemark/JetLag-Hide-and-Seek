@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { submitQuestion, listQuestions } from '../api.js';
 
 const CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
@@ -21,11 +21,13 @@ const CATEGORY_HINTS = {
  *   game        — { gameId }
  *   qaRefresh   — number; increment to force a history re-fetch (e.g. on
  *                 question_answered WS event). Defaults to 0.
+ *   curseEndsAt — ISO timestamp string while a curse card is active; null otherwise.
+ *                 Submit is disabled and a countdown is shown until the curse expires.
  *
  * Maintains a local list of submitted questions (optimistic) merged with the
  * server-side Q&A history fetched on mount and on each qaRefresh change.
  */
-export default function QuestionPanel({ player, game, qaRefresh = 0 }) {
+export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt = null }) {
   const [targetId, setTargetId] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [text, setText] = useState('');
@@ -34,6 +36,22 @@ export default function QuestionPanel({ player, game, qaRefresh = 0 }) {
   const [historyError, setHistoryError] = useState(null);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [, setTick] = useState(0); // 1-second tick to refresh curse countdown
+
+  // Tick every second so the curse countdown stays live.
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const isCurseActive = curseEndsAt != null && new Date(curseEndsAt) > new Date();
+  const curseCountdown = (() => {
+    if (!isCurseActive) return null;
+    const ms = new Date(curseEndsAt) - Date.now();
+    if (ms <= 0) return '0:00';
+    const totalSecs = Math.floor(ms / 1000);
+    return `${Math.floor(totalSecs / 60)}:${String(totalSecs % 60).padStart(2, '0')}`;
+  })();
 
   // Fetch full Q&A history for the game on mount and whenever qaRefresh changes.
   useEffect(() => {
@@ -84,6 +102,11 @@ export default function QuestionPanel({ player, game, qaRefresh = 0 }) {
   return (
     <section aria-label="Question panel">
       <h3>Ask a Question</h3>
+      {isCurseActive && (
+        <p role="status" data-testid="curse-banner" style={{ background: '#fee2e2', padding: '0.25rem 0.5rem' }}>
+          Questions blocked by curse — {curseCountdown} remaining
+        </p>
+      )}
       <form onSubmit={handleSubmit}>
         {error && <p role="alert">{error}</p>}
 
@@ -116,7 +139,7 @@ export default function QuestionPanel({ player, game, qaRefresh = 0 }) {
           />
         </label>
 
-        <button type="submit" disabled={submitting}>
+        <button type="submit" disabled={submitting || isCurseActive}>
           {submitting ? 'Sending…' : 'Submit question'}
         </button>
       </form>

@@ -1,0 +1,23 @@
+{
+  "name": "JetLag: The Game",
+  "short_name": "JetLag",
+  "description": "Mobile hide-and-seek using transit zones, challenge cards, and real-time location.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1a56db",
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

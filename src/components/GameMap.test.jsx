@@ -294,6 +294,125 @@ describe('GameMap', () => {
     expect(screen.queryByTestId('zone-selector')).not.toBeInTheDocument();
   });
 
+  it('shows hiding countdown banner on timer_sync during hiding phase', async () => {
+    const phaseEndsAt = new Date(Date.now() + 23 * 60 * 1000 + 47 * 1000).toISOString();
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'timer_sync', phase: 'hiding', phaseEndsAt }),
+      });
+    });
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner).toBeInTheDocument();
+    expect(banner.textContent).toMatch(/hiding ends in/i);
+  });
+
+  it('shows seeking countdown banner on timer_sync during seeking phase', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    const phaseEndsAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'timer_sync', phase: 'seeking', phaseEndsAt }),
+      });
+    });
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner.textContent).toMatch(/seeking ends in/i);
+  });
+
+  it('shows question expiry banner on question_pending message', async () => {
+    const expiresAt = new Date(Date.now() + 4 * 60 * 1000 + 12 * 1000).toISOString();
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_pending', gameId: 'g1', questionId: 'q1', expiresAt }),
+      });
+    });
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner.textContent).toMatch(/question expires in/i);
+  });
+
+  it('question_pending banner takes priority over phase timer', async () => {
+    const phaseEndsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const questionExpiresAt = new Date(Date.now() + 3 * 60 * 1000).toISOString();
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'timer_sync', phase: 'seeking', phaseEndsAt }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_pending', gameId: 'g1', questionId: 'q1', expiresAt: questionExpiresAt }),
+      });
+    });
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner.textContent).toMatch(/question expires in/i);
+  });
+
+  it('clears question expiry banner on question_answered', async () => {
+    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
+    const phaseEndsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'timer_sync', phase: 'seeking', phaseEndsAt }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_pending', gameId: 'g1', questionId: 'q1', expiresAt }),
+      });
+    });
+    expect(screen.getByTestId('timer-banner').textContent).toMatch(/question expires in/i);
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_answered', questionId: 'q1' }),
+      });
+    });
+    // After answer, banner reverts to phase timer (not question expiry).
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner.textContent).toMatch(/seeking ends in/i);
+  });
+
+  it('clears question expiry banner on question_expired', async () => {
+    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
+    const phaseEndsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'timer_sync', phase: 'seeking', phaseEndsAt }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_pending', gameId: 'g1', questionId: 'q1', expiresAt }),
+      });
+    });
+    expect(screen.getByTestId('timer-banner').textContent).toMatch(/question expires in/i);
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_expired', questionId: 'q1' }),
+      });
+    });
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner.textContent).toMatch(/seeking ends in/i);
+  });
+
+  it('does not show timer banner when no timer_sync received', () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('timer-banner')).not.toBeInTheDocument();
+  });
+
   it('hides ZoneSelector after zone_locked WS event is received', async () => {
     const hidingGame = { ...game, status: 'hiding' };
     render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);

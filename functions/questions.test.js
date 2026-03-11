@@ -173,6 +173,63 @@ describe('submitQuestion', () => {
     expect(result.status).toBe(409);
     expect(result.body.error).toMatch(/pending/i);
   });
+
+  it('fires question_pending notify with gameId, questionId, expiresAt on success (in-process)', () => {
+    const mockFetch = vi.fn().mockResolvedValue({});
+    const { status, body } = submitQuestion(
+      { method: 'POST', body: makeQuestion() },
+      null,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(status).toBe(201);
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe('http://game-server/internal/notify');
+    const payload = JSON.parse(opts.body);
+    expect(payload.type).toBe('question_pending');
+    expect(payload.gameId).toBe('game-1');
+    expect(payload.questionId).toBe(body.questionId);
+    expect(payload.expiresAt).toBeTruthy();
+  });
+
+  it('does not fire question_pending notify when no server URL is provided', () => {
+    const mockFetch = vi.fn();
+    submitQuestion({ method: 'POST', body: makeQuestion() }, null, undefined, mockFetch);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not fire question_pending notify on 409 conflict', () => {
+    const mockFetch = vi.fn();
+    // Create a question so the second one conflicts.
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'conflict-game' }) }, null, 'http://gs', mockFetch);
+    mockFetch.mockClear();
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'conflict-game' }) }, null, 'http://gs', mockFetch);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('fires question_pending notify via pool on success', async () => {
+    const expiresAt = new Date(Date.now() + 300_000).toISOString();
+    const mockRow = {
+      questionId: 'q-pool', gameId: 'g-1', askerId: 'a-1', targetId: 't-1',
+      category: 'matching', text: 'test', status: 'pending', expiresAt, createdAt: new Date().toISOString(),
+    };
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [
+          { id: mockRow.questionId, game_id: mockRow.gameId, asker_id: mockRow.askerId,
+            target_id: mockRow.targetId, category: mockRow.category, text: mockRow.text,
+            status: mockRow.status, expires_at: mockRow.expiresAt, created_at: mockRow.createdAt }
+        ] }),
+    };
+    const mockFetch = vi.fn().mockResolvedValue({});
+    await submitQuestion({ method: 'POST', body: makeQuestion() }, pool, 'http://gs', mockFetch);
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const payload = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(payload.type).toBe('question_pending');
+    expect(payload.questionId).toBe('q-pool');
+  });
 });
 
 // ── listQuestions ─────────────────────────────────────────────────────────────

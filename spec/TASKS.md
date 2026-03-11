@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 51 complete. Photo question support; 922 tests pass._
+_Task 52 complete. Game timer display; 938 tests pass._
 
 ---
 
@@ -62,6 +62,7 @@ _Task 51 complete. Photo question support; 922 tests pass._
 | 48 | 2026-03-11 | Fix Vercel 12-function limit | vercel.json, spec/DESIGN.md | Individual api/ adapters already deleted (commit feddf74); updated vercel.json functions glob from api/**/*.js to api/[...path].js; updated DESIGN.md sections 16, 17, 18, 20 to remove stale adapter file references; 848 tests pass; build clean |
 | 49 | 2026-03-11 | Hider zone selection | db/schema.sql, db/gameStore.js, functions/gameZone.js, functions/gameZone.test.js, functions/router.js, src/api.js, src/components/ZoneSelector.jsx, src/components/ZoneSelector.test.jsx, src/components/GameMap.jsx, src/components/GameMap.test.jsx | game_zones table; dbSetGameZone/dbGetGameZone; POST /games/:gameId/zone handler; ZoneSelector component (tap-to-select + confirm dialog); GameMap shows ZoneSelector for hiders in hiding phase + handles zone_locked WS event; 880 tests pass; build clean |
 | 50 | 2026-03-11 | Question timing enforcement | db/schema.sql, db/gameStore.js, db/gameStore.test.js, functions/questions.js, functions/questions.test.js, server/index.js, server/server.test.js | expires_at column + 'expired' status on questions; dbCreateQuestion enforces one-pending-at-a-time (409 conflict); dbExpireStaleQuestions marks overdue questions; seeking-phase StateDispatcher task expires questions + broadcasts question_expired WS event; 19 new tests; 899 total pass; build clean |
+| 52 | 2026-03-11 | Game timer display | server/index.js, functions/questions.js, src/components/GameMap.jsx, server/server.test.js, src/components/GameMap.test.jsx, functions/questions.test.js | timer_sync WS broadcast on phase change + 30 s periodic; question_pending WS notify from submitQuestion; GameMap countdown banner (MM:SS); 16 new tests; 938 total pass; build clean |
 | 51 | 2026-03-11 | Photo question support | db/schema.sql, db/gameStore.js, functions/questions.js, functions/questions.test.js, functions/router.js, src/api.js, src/components/AnswerPanel.jsx, src/components/QA.test.jsx | question_photos table; dbSaveQuestionPhoto/dbGetQuestionPhoto; POST+GET /questions/:questionId/photo handlers with in-process store; router updated; AnswerPanel shows file-input for photo questions, reads as base64 via FileReader, uploads before text answer; 23 new tests; 922 total pass; build clean |
 
 ---
@@ -163,7 +164,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **51** — Photo question support: photo questions require the hider to upload a photo. Add `POST /api/questions/:questionId/photo` endpoint accepting a base64-encoded image in the JSON body; store in a new `question_photos` table (or a `photo_data` column on `questions`). Add `GET /api/questions/:questionId/photo` to retrieve it. Frontend `AnswerPanel`: when `category === 'photo'`, show a file-input that reads the file as base64 and calls the upload endpoint before submitting the text answer.
 
-- [ ] **52** — Game timer display: players need to see how much hiding time remains and, during seeking, how long until each question expires. The game server should broadcast a `timer_sync` WS message on phase change (and periodically, at most every 30 s) containing `{ phaseEndsAt: <ISO timestamp> }`. Frontend `GameMap` receives `timer_sync` and shows a countdown banner: "Hiding ends in 23:47" during hiding, "Question expires in 4:12" when a pending question exists. Derive phase duration from game scale (small: 30 min, medium: 60 min, large: 180 min).
+- [x] **52** — Game timer display: players need to see how much hiding time remains and, during seeking, how long until each question expires. The game server should broadcast a `timer_sync` WS message on phase change (and periodically, at most every 30 s) containing `{ phaseEndsAt: <ISO timestamp> }`. Frontend `GameMap` receives `timer_sync` and shows a countdown banner: "Hiding ends in 23:47" during hiding, "Question expires in 4:12" when a pending question exists. Derive phase duration from game scale (small: 30 min, medium: 60 min, large: 180 min).
 
 - [ ] **53** — Post-game results screen: when the frontend receives `phase_change` → `finished`, display a full-screen results overlay showing: winner (Hider or Seekers), elapsed hiding time, card time-bonuses applied, and final score. Score calculation: base = elapsed seconds hidden; bonus = sum of time_bonus card values played. `POST /api/scores` should accept and persist `bonus_seconds`. Add a "Play Again" button that resets state to the lobby (re-uses same `playerId`).
 

@@ -798,3 +798,125 @@ describe('createServer — question expiry task', () => {
     vi.useRealTimers();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Timer sync — phase-change broadcast + periodic tick
+// ---------------------------------------------------------------------------
+
+describe('createServer — timer sync', () => {
+  it('broadcasts timer_sync immediately on transition to hiding phase', () => {
+    vi.useFakeTimers();
+    const s = createServer({ tickInterval: 5000, hidingDuration: 120_000, seekingDuration: 600_000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'ts-game' }));
+    s.gameLoopManager.startGame('ts-game');
+    mockWs.send.mockClear();
+
+    s.gameLoopManager.beginHiding('ts-game');
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const timerSync = broadcasts.find((b) => b.type === 'timer_sync');
+    expect(timerSync).toBeTruthy();
+    expect(timerSync.phase).toBe('hiding');
+    expect(timerSync.phaseEndsAt).toBeTruthy();
+    expect(new Date(timerSync.phaseEndsAt) > new Date()).toBe(true);
+
+    s.gameLoopManager.stopGame('ts-game');
+    vi.useRealTimers();
+  });
+
+  it('broadcasts timer_sync immediately on transition to seeking phase', () => {
+    vi.useFakeTimers();
+    const s = createServer({ tickInterval: 5000, hidingDuration: 120_000, seekingDuration: 600_000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'ts-seek' }));
+    s.gameLoopManager.startGame('ts-seek');
+    s.gameLoopManager.beginHiding('ts-seek');
+    mockWs.send.mockClear();
+
+    s.gameLoopManager.beginSeeking('ts-seek');
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const timerSync = broadcasts.find((b) => b.type === 'timer_sync');
+    expect(timerSync).toBeTruthy();
+    expect(timerSync.phase).toBe('seeking');
+    expect(timerSync.phaseEndsAt).toBeTruthy();
+
+    s.gameLoopManager.stopGame('ts-seek');
+    vi.useRealTimers();
+  });
+
+  it('does not broadcast timer_sync on transition to waiting (no duration)', () => {
+    vi.useFakeTimers();
+    const s = createServer({ tickInterval: 5000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'ts-wait' }));
+    mockWs.send.mockClear();
+
+    // startGame enters WAITING phase — no timer_sync expected
+    s.gameLoopManager.startGame('ts-wait');
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    expect(broadcasts.some((b) => b.type === 'timer_sync')).toBe(false);
+
+    s.gameLoopManager.stopGame('ts-wait');
+    vi.useRealTimers();
+  });
+
+  it('broadcasts timer_sync periodically during seeking phase (30 s throttle)', () => {
+    vi.useFakeTimers();
+    const s = createServer({ tickInterval: 100, hidingDuration: 120_000, seekingDuration: 600_000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'ts-periodic' }));
+    s.gameLoopManager.startGame('ts-periodic');
+    // Manually advance phases so gameLoopManager tracks the correct phase on ticks.
+    s.gameLoopManager.beginHiding('ts-periodic');
+    s.gameLoopManager.beginSeeking('ts-periodic');
+    // Clear all phase-change + phase-entry timer_sync broadcasts.
+    mockWs.send.mockClear();
+
+    // Advance 31 s — periodic timer_sync should fire at least once (throttle = 30 s).
+    vi.advanceTimersByTime(31_000);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const timerSyncs = broadcasts.filter((b) => b.type === 'timer_sync');
+    // At least one sync broadcast, at most a handful (throttled to ~1/30 s).
+    expect(timerSyncs.length).toBeGreaterThan(0);
+    expect(timerSyncs.length).toBeLessThanOrEqual(3);
+    expect(timerSyncs[0].phase).toBe('seeking');
+    expect(timerSyncs[0].phaseEndsAt).toBeTruthy();
+
+    s.gameLoopManager.stopGame('ts-periodic');
+    vi.useRealTimers();
+  });
+
+  it('phaseEndsAt is approximately hidingDuration in the future on phase entry', () => {
+    vi.useFakeTimers();
+    const HIDING = 120_000;
+    const s = createServer({ tickInterval: 5000, hidingDuration: HIDING, seekingDuration: 600_000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'ts-ends' }));
+    s.gameLoopManager.startGame('ts-ends');
+    s.gameLoopManager.beginHiding('ts-ends');
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const timerSync = broadcasts.find((b) => b.type === 'timer_sync' && b.phase === 'hiding');
+    const remainingMs = new Date(timerSync.phaseEndsAt) - Date.now();
+    // Should be very close to HIDING duration (within 1 s for test overhead).
+    expect(remainingMs).toBeGreaterThan(HIDING - 1000);
+    expect(remainingMs).toBeLessThanOrEqual(HIDING);
+
+    s.gameLoopManager.stopGame('ts-ends');
+    vi.useRealTimers();
+  });
+});

@@ -50,6 +50,23 @@ export function _getPhotoStore() { return new Map(_photos); }
 /** Clear all in-process stores (for test isolation). */
 export function _clearStores() { _questions.clear(); _answers.clear(); _photos.clear(); }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget: notify the managed server that a new pending question exists
+ * so it can broadcast a `question_pending` WS event with the expiry deadline.
+ */
+function notifyQuestionPending({ gameId, questionId, expiresAt }, gameServerUrl, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  if (serverUrl && fetchFn) {
+    Promise.resolve(fetchFn(`${serverUrl}/internal/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'question_pending', gameId, questionId, expiresAt }),
+    })).catch(() => { /* intentionally silent */ });
+  }
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 /**
@@ -60,7 +77,7 @@ export function _clearStores() { _questions.clear(); _answers.clear(); _photos.c
  * @param {import('pg').Pool|null} [pool]
  * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
  */
-export function submitQuestion(req, pool = null) {
+export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = globalThis.fetch) {
   if (req.method !== 'POST') {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
@@ -80,6 +97,7 @@ export function submitQuestion(req, pool = null) {
   if (pool) {
     return dbCreateQuestion(pool, { gameId, askerId, targetId, category, text }).then(row => {
       if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
+      notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
       return { status: 201, body: row };
     });
   }
@@ -107,6 +125,7 @@ export function submitQuestion(req, pool = null) {
     createdAt: new Date().toISOString(),
   };
   _questions.set(question.questionId, question);
+  notifyQuestionPending({ gameId, questionId: question.questionId, expiresAt: question.expiresAt }, gameServerUrl, fetchFn);
   return { status: 201, body: question };
 }
 

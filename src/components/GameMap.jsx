@@ -7,8 +7,24 @@ import CardPanel from './CardPanel.jsx';
 import ZoneSelector from './ZoneSelector.jsx';
 
 const LOCATION_INTERVAL_MS = 10_000;
+const TIMER_TICK_MS = 1_000;
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+/**
+ * Format a future ISO timestamp as a MM:SS countdown string.
+ * Returns '0:00' if the deadline has passed, or null if iso is falsy.
+ * @param {string|null} iso
+ */
+function formatCountdown(iso) {
+  if (!iso) return null;
+  const ms = new Date(iso) - Date.now();
+  if (ms <= 0) return '0:00';
+  const totalSecs = Math.floor(ms / 1000);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
 
 /**
  * Compute the centre {lat, lng} of a bounds object.
@@ -53,6 +69,9 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
   const [captureMsg, setCaptureMsg] = useState(null);
   const [qaRefresh, setQaRefresh] = useState(0);   // increments on question_answered WS event
   const [lockedZone, setLockedZone] = useState(null); // zone locked by hider
+  const [phaseEndsAt, setPhaseEndsAt] = useState(null);           // ISO from timer_sync
+  const [pendingQuestionExpiresAt, setPendingQuestionExpiresAt] = useState(null); // ISO from question_pending
+  const [, setTimerTick] = useState(0); // incremented each second to refresh countdown display
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -92,6 +111,12 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
       mapRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 1-second countdown tick to refresh timer display ──────────────────────
+  useEffect(() => {
+    const id = setInterval(() => setTimerTick((n) => n + 1), TIMER_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   // ── Update player markers when players state changes ───────────────────────
   useEffect(() => {
@@ -151,12 +176,20 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
         setPlayers(positions);
       } else if (msg.type === 'phase_change') {
         setPhase(msg.phase);
+        setPendingQuestionExpiresAt(null); // phase change clears any pending question timer
       } else if (msg.type === 'capture') {
         setCaptureMsg(msg.winner === 'seekers' ? 'Seekers win!' : 'Hiders win!');
       } else if (msg.type === 'question_answered') {
         setQaRefresh((n) => n + 1);
+        setPendingQuestionExpiresAt(null);
+      } else if (msg.type === 'question_expired') {
+        setPendingQuestionExpiresAt(null);
       } else if (msg.type === 'zone_locked') {
         setLockedZone(msg.zone ?? null);
+      } else if (msg.type === 'timer_sync') {
+        setPhaseEndsAt(msg.phaseEndsAt ?? null);
+      } else if (msg.type === 'question_pending') {
+        setPendingQuestionExpiresAt(msg.expiresAt ?? null);
       }
     };
 
@@ -207,6 +240,16 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
           {captureMsg}
         </p>
       )}
+
+      {pendingQuestionExpiresAt ? (
+        <p data-testid="timer-banner" style={{ background: '#fef3c7', padding: '0.25rem 0.5rem' }}>
+          Question expires in {formatCountdown(pendingQuestionExpiresAt)}
+        </p>
+      ) : phaseEndsAt && (phase === 'hiding' || phase === 'seeking') ? (
+        <p data-testid="timer-banner" style={{ background: '#e0f2fe', padding: '0.25rem 0.5rem' }}>
+          {phase === 'hiding' ? 'Hiding ends in' : 'Seeking ends in'} {formatCountdown(phaseEndsAt)}
+        </p>
+      ) : null}
 
       <div
         ref={mapContainerRef}

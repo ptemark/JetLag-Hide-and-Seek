@@ -141,6 +141,21 @@ export function createServer({
   wsHandler = new WsHandler(gameLoop, gameStateManager);
   const heartbeatManager = new HeartbeatManager(wss, { interval: heartbeatInterval });
 
+  // Track last timer_sync broadcast time per game to enforce 30 s throttle.
+  const _lastTimerSyncAt = new Map();
+
+  /**
+   * Build a timer_sync payload for a game in a timed phase.
+   * Returns null for phases with no defined duration (waiting/finished).
+   */
+  function buildTimerSync(gameId, phase) {
+    if (phase !== 'hiding' && phase !== 'seeking') return null;
+    const duration = phase === 'hiding' ? hidingDuration : seekingDuration;
+    const elapsed = gameLoopManager.getPhaseElapsed(gameId);
+    const phaseEndsAt = new Date(Date.now() - elapsed + duration).toISOString();
+    return { type: 'timer_sync', gameId, phase, phaseEndsAt };
+  }
+
   // Guard against duplicate capture processing when ticks overlap async work.
   const _capturingGames = new Set();
 
@@ -208,6 +223,12 @@ export function createServer({
   gameLoopManager.onPhaseChange = (gameId, oldPhase, newPhase) => {
     gameStateManager.setGameStatus(gameId, newPhase);
     wsHandler.broadcastToGame(gameId, { type: 'phase_change', gameId, oldPhase, newPhase });
+    // Immediately sync the timer on phase entry so clients can start counting down.
+    const timerMsg = buildTimerSync(gameId, newPhase);
+    if (timerMsg) {
+      wsHandler.broadcastToGame(gameId, timerMsg);
+      _lastTimerSyncAt.set(gameId, Date.now());
+    }
   };
 
   // Dispatch state computation tasks on every game tick
@@ -217,6 +238,15 @@ export function createServer({
     const gameState = gameStateManager.getGameState(gameId);
     if (gameState) {
       stateDispatcher.dispatch(gameState);
+    }
+    // Periodic timer sync — at most every 30 s during timed phases.
+    const lastSync = _lastTimerSyncAt.get(gameId) ?? 0;
+    if (Date.now() - lastSync >= 30_000) {
+      const timerMsg = buildTimerSync(gameId, phase);
+      if (timerMsg) {
+        wsHandler.broadcastToGame(gameId, timerMsg);
+        _lastTimerSyncAt.set(gameId, Date.now());
+      }
     }
     alertManager.checkMetrics(
       metrics.getSnapshot(),

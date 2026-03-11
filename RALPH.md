@@ -94,6 +94,7 @@ Each iteration must follow this sequence:
 6. UX / polish
 7. Documentation
 
+- Do not try to do much in one iteration, if some tasks are tightly coupled do them, otherwise do separate iterations.
 - Mark task as `[~] In Progress`.
 
 ## Step 4 — Plan Implementation

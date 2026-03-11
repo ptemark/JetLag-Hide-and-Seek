@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 58 complete. Progressive Web App; 1012 tests pass._
+_Task 59 complete. Question history; 1022 tests pass._
 
 ---
 
@@ -70,6 +70,7 @@ _Task 58 complete. Progressive Web App; 1012 tests pass._
 | 56 | 2026-03-11 | WebSocket reconnection | server/wsHandler.js, server/wsHandler.test.js, server/index.js, server/server.test.js, server/connection.test.js, server/integration.test.js, src/components/GameMap.jsx, src/components/GameMap.test.jsx | WsHandler 30 s grace period on disconnect; broadcasts player_disconnected immediately then player_left after expiry; cancels timer on rejoin; sends game_state to reconnecting player; broadcasts player_reconnected; reconnectGraceMs createServer param; GameMap exponential backoff (1 s→30 s, 6 attempts); Reconnecting… banner via wsStatus; 12 new tests; 1004 total pass; build clean |
 | 57 | 2026-03-11 | Game invite URL | src/components/WaitingRoom.jsx, src/components/GameForm.jsx, src/components/Lobby.jsx, src/components/Lobby.test.jsx | WaitingRoom shows invite link (?gameId=xxx); GameForm accepts initialTab/initialGameId props; Lobby reads ?gameId from URL and activates join tab with pre-filled ID; 3 new tests; 1007 total pass; build clean |
 | 58 | 2026-03-11 | Progressive Web App | public/manifest.json, public/sw.js, public/icon-192.svg, public/icon-512.svg, index.html, src/registerSW.js, src/main.jsx, src/pwa.test.js | manifest.json (name, icons, theme colour, standalone); minimal SW (install cache app shell, runtime cache assets, navigate fallback); registerServiceWorker module registered in main.jsx; 5 new tests; 1012 total pass; build clean |
+| 59 | 2026-03-11 | Question history | db/gameStore.js, functions/questions.js, functions/questions.test.js, src/api.js, src/components/QuestionPanel.jsx, src/components/AnswerPanel.jsx, src/components/GameMap.jsx, src/components/QA.test.jsx | dbGetQuestionsForGame (LEFT JOIN questions+answers); listQuestions extended to accept gameId (returns full Q&A history) or playerId (hider inbox); listQuestions API fn changed to object param; QuestionPanel fetches history on mount + qaRefresh, displays Q&A pairs with answer text; GameMap passes qaRefresh to QuestionPanel; 10 new tests; 1022 total pass; build clean |
 
 ---
 
@@ -186,4 +187,4 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **58** — Progressive Web App: add `public/manifest.json` (name, icons, theme colour, `display: standalone`) and a minimal service worker that caches the app shell. Register the service worker in `src/main.jsx`. Allows players to add the game to their home screen on iOS/Android.
 
-- [ ] **59** — Question history: seekers should see all previous Q&A pairs (question text, category, answer, timestamp) above the current question form in `QuestionPanel`. Fetch from `GET /api/questions?gameId=` on mount and refresh after each `question_answered` WS event. No new backend endpoint needed — extend the existing `listQuestions` API fn to accept `gameId`.
+- [x] **59** — Question history: seekers should see all previous Q&A pairs (question text, category, answer, timestamp) above the current question form in `QuestionPanel`. Fetch from `GET /api/questions?gameId=` on mount and refresh after each `question_answered` WS event. No new backend endpoint needed — extend the existing `listQuestions` API fn to accept `gameId`.

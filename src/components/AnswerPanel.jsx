@@ -22,7 +22,7 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
   // Reload question list whenever the component mounts or refreshTrigger changes.
   useEffect(() => {
     setLoadError(null);
-    listQuestions(player.playerId)
+    listQuestions({ playerId: player.playerId })
       .then((data) => setQuestions(data.questions ?? []))
       .catch((err) => setLoadError(err.message));
   }, [player.playerId, refreshTrigger]);

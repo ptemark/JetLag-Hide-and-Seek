@@ -72,13 +72,21 @@ export async function submitQuestion({ gameId, askerId, targetId, category, text
 }
 
 /**
- * List all questions addressed to a player (hider's inbox).
- * GET /api/questions?playerId=  → { playerId, questions: [...] }
+ * Fetch questions from the server.
  *
- * @param {string} playerId
+ * Pass `{ playerId }` to get the hider's inbox (questions addressed to them).
+ * Pass `{ gameId }` to get the full Q&A history for a game (seeker history view).
+ *
+ * GET /api/questions?playerId=  → { playerId, questions: [...] }
+ * GET /api/questions?gameId=    → { gameId,   questions: [...] }
+ *
+ * @param {{ playerId?: string, gameId?: string }} options
  */
-export async function listQuestions(playerId) {
-  const res = await fetch(`${BASE_URL}/api/questions?playerId=${encodeURIComponent(playerId)}`);
+export async function listQuestions({ playerId, gameId } = {}) {
+  const params = new URLSearchParams();
+  if (gameId)   params.append('gameId',   gameId);
+  else if (playerId) params.append('playerId', playerId);
+  const res = await fetch(`${BASE_URL}/api/questions?${params}`);
   if (!res.ok) throw new Error(`listQuestions failed: ${res.status}`);
   return res.json();
 }

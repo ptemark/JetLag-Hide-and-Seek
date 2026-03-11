@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { submitQuestion } from '../api.js';
+import { useState, useEffect } from 'react';
+import { submitQuestion, listQuestions } from '../api.js';
 
 const CATEGORIES = ['matching', 'thermometer', 'photo', 'tentacle'];
 
@@ -7,20 +7,38 @@ const CATEGORIES = ['matching', 'thermometer', 'photo', 'tentacle'];
  * QuestionPanel — seeker UI for submitting questions to the hider.
  *
  * Props:
- *   player — { playerId, name, role }
- *   game   — { gameId }
+ *   player      — { playerId, name, role }
+ *   game        — { gameId }
+ *   qaRefresh   — number; increment to force a history re-fetch (e.g. on
+ *                 question_answered WS event). Defaults to 0.
  *
- * Maintains a local list of submitted questions (optimistic). The hider's
- * player ID must be entered manually since the seeker may not know it from
- * the game state alone; it can be shared out-of-band like the game ID.
+ * Maintains a local list of submitted questions (optimistic) merged with the
+ * server-side Q&A history fetched on mount and on each qaRefresh change.
  */
-export default function QuestionPanel({ player, game }) {
+export default function QuestionPanel({ player, game, qaRefresh = 0 }) {
   const [targetId, setTargetId] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [text, setText] = useState('');
-  const [submitted, setSubmitted] = useState([]);  // local history
+  const [submitted, setSubmitted] = useState([]);  // optimistic local submissions
+  const [history, setHistory] = useState([]);       // server-side Q&A history
+  const [historyError, setHistoryError] = useState(null);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Fetch full Q&A history for the game on mount and whenever qaRefresh changes.
+  useEffect(() => {
+    setHistoryError(null);
+    listQuestions({ gameId: game.gameId })
+      .then((data) => {
+        setHistory(data.questions ?? []);
+        // Drop optimistically-submitted questions that are now in the server history.
+        setSubmitted((prev) => {
+          const serverIds = new Set((data.questions ?? []).map(q => q.questionId));
+          return prev.filter(q => !serverIds.has(q.questionId));
+        });
+      })
+      .catch((err) => setHistoryError(err.message));
+  }, [game.gameId, qaRefresh]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -44,6 +62,14 @@ export default function QuestionPanel({ player, game }) {
       setSubmitting(false);
     }
   }
+
+  // Combined list: optimistic submissions first (newest), then server history.
+  // Dedup by questionId so a newly-answered optimistic entry is not shown twice.
+  const historyIds = new Set(history.map(q => q.questionId));
+  const allQuestions = [
+    ...submitted.filter(q => !historyIds.has(q.questionId)),
+    ...history,
+  ];
 
   return (
     <section aria-label="Question panel">
@@ -84,14 +110,19 @@ export default function QuestionPanel({ player, game }) {
         </button>
       </form>
 
-      {submitted.length > 0 && (
-        <div aria-label="Submitted questions">
-          <h4>Your questions</h4>
+      {historyError && <p role="alert">{historyError}</p>}
+
+      {allQuestions.length > 0 && (
+        <div aria-label="Question history">
+          <h4>Question history</h4>
           <ul>
-            {submitted.map((q) => (
+            {allQuestions.map((q) => (
               <li key={q.questionId}>
                 <strong>[{q.category}]</strong> {q.text}{' '}
                 <em aria-label={`status: ${q.status}`}>— {q.status}</em>
+                {q.answer && (
+                  <span aria-label="answer"> → {q.answer.text}</span>
+                )}
               </li>
             ))}
           </ul>

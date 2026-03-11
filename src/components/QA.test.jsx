@@ -14,6 +14,7 @@ vi.mock('../api.js', () => ({
   submitAnswer:         vi.fn(),
   uploadQuestionPhoto:  vi.fn(),
   fetchQuestionPhoto:   vi.fn(),
+  lockZone:             vi.fn(),
 }));
 
 import * as api from '../api.js';
@@ -48,7 +49,8 @@ const QUESTION = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [] });
+  // Default: return empty questions regardless of which param shape is used.
+  api.listQuestions.mockResolvedValue({ questions: [] });
 });
 
 // ── QuestionPanel ─────────────────────────────────────────────────────────────
@@ -149,19 +151,66 @@ describe('QuestionPanel', () => {
     );
   });
 
-  it('shows submitted questions section only after first submission', async () => {
+  it('shows submitted questions section only after first submission (no server history)', async () => {
     const user = userEvent.setup();
     api.submitQuestion.mockResolvedValue(QUESTION);
     render(<QuestionPanel player={SEEKER} game={GAME} />);
 
-    expect(screen.queryByText(/your questions/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/question history/i)).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText(/hider id/i), 'p2');
     await user.type(screen.getByRole('textbox', { name: /question/i }), 'Hello?');
     await user.click(screen.getByRole('button', { name: /submit question/i }));
 
     await waitFor(() =>
-      expect(screen.getByText(/your questions/i)).toBeInTheDocument()
+      expect(screen.getByText(/question history/i)).toBeInTheDocument()
+    );
+  });
+
+  it('fetches Q&A history by gameId on mount', async () => {
+    api.listQuestions.mockResolvedValue({ gameId: 'g1', questions: [] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() =>
+      expect(api.listQuestions).toHaveBeenCalledWith({ gameId: 'g1' })
+    );
+  });
+
+  it('displays server-side Q&A history on mount', async () => {
+    const answeredQ = {
+      ...QUESTION,
+      status: 'answered',
+      answer: { text: 'Yes, near the park.', createdAt: '2026-01-01T00:01:00Z' },
+    };
+    api.listQuestions.mockResolvedValue({ gameId: 'g1', questions: [answeredQ] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => {
+      expect(screen.getByText(/Are you near a park\?/)).toBeInTheDocument();
+      expect(screen.getByText(/Yes, near the park\./)).toBeInTheDocument();
+    });
+  });
+
+  it('shows history section heading when server history is non-empty', async () => {
+    api.listQuestions.mockResolvedValue({ gameId: 'g1', questions: [QUESTION] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByText(/question history/i)).toBeInTheDocument()
+    );
+  });
+
+  it('re-fetches history when qaRefresh increments', async () => {
+    api.listQuestions.mockResolvedValue({ gameId: 'g1', questions: [] });
+    const { rerender } = render(<QuestionPanel player={SEEKER} game={GAME} qaRefresh={0} />);
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledTimes(1));
+
+    rerender(<QuestionPanel player={SEEKER} game={GAME} qaRefresh={1} />);
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows history load error when listQuestions rejects', async () => {
+    api.listQuestions.mockRejectedValue(new Error('history load failed'));
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/history load failed/i)
     );
   });
 });
@@ -180,7 +229,7 @@ describe('AnswerPanel', () => {
   it('fetches questions for the hider on mount', async () => {
     api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [QUESTION] });
     render(<AnswerPanel player={HIDER} game={GAME} />);
-    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledWith('p2'));
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledWith({ playerId: 'p2' }));
   });
 
   it('displays pending questions with category and text', async () => {

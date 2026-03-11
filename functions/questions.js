@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto';
 import {
   dbCreateQuestion,
   dbGetQuestionsForPlayer,
+  dbGetQuestionsForGame,
   dbSubmitAnswer,
   dbDrawCard,
   dbSaveQuestionPhoto,
@@ -130,7 +131,11 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
 }
 
 /**
- * GET /questions?playerId=
+ * GET /questions?playerId= | GET /questions?gameId=
+ *
+ * When `gameId` is provided, returns all Q&A pairs for the game (seeker history).
+ * When `playerId` is provided, returns questions addressed to that player (hider inbox).
+ * At least one of the two params must be present.
  *
  * @param {{ method: string, query?: Record<string, string> }} req
  * @param {import('pg').Pool|null} [pool]
@@ -141,9 +146,33 @@ export function listQuestions(req, pool = null) {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
 
-  const { playerId } = req.query ?? {};
+  const { playerId, gameId } = req.query ?? {};
+
+  // ── gameId path: full Q&A history for a game ─────────────────────────────
+  if (gameId && typeof gameId === 'string') {
+    if (pool) {
+      return dbGetQuestionsForGame(pool, gameId).then(questions => ({
+        status: 200,
+        body: { gameId, questions },
+      }));
+    }
+    // In-process: build history by joining _questions and _answers.
+    const questions = [..._questions.values()]
+      .filter(q => q.gameId === gameId)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+      .map(q => {
+        const answer = [..._answers.values()].find(a => a.questionId === q.questionId) ?? null;
+        return {
+          ...q,
+          answer: answer ? { text: answer.text, createdAt: answer.createdAt } : null,
+        };
+      });
+    return { status: 200, body: { gameId, questions } };
+  }
+
+  // ── playerId path: hider inbox ────────────────────────────────────────────
   if (!playerId || typeof playerId !== 'string') {
-    return { status: 400, body: { error: 'playerId query parameter is required' } };
+    return { status: 400, body: { error: 'playerId or gameId query parameter is required' } };
   }
 
   if (pool) {

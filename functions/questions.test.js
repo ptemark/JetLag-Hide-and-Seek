@@ -255,10 +255,10 @@ describe('listQuestions', () => {
     expect(body.questions).toHaveLength(0);
   });
 
-  it('returns 400 when playerId is missing', () => {
+  it('returns 400 when neither playerId nor gameId is provided', () => {
     const { status, body } = listQuestions({ method: 'GET', query: {} });
     expect(status).toBe(400);
-    expect(body.error).toMatch(/playerId/);
+    expect(body.error).toMatch(/playerId or gameId/);
   });
 
   it('returns 405 for non-GET methods', () => {
@@ -276,6 +276,48 @@ describe('listQuestions', () => {
     const pool = { query: vi.fn().mockResolvedValue({ rows: [] }) };
     const { status, body } = await listQuestions({ method: 'GET', query: { playerId: 'p1' } }, pool);
     expect(status).toBe(200);
+    expect(body.questions).toHaveLength(0);
+    expect(pool.query).toHaveBeenCalledOnce();
+  });
+
+  // ── gameId path ───────────────────────────────────────────────────────────
+
+  it('returns 200 with all questions for the game when gameId is provided', () => {
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'gh-1', askerId: 's1', targetId: 'h1' }) });
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'gh-2', askerId: 's1', targetId: 'h1' }) });
+
+    const { status, body } = listQuestions({ method: 'GET', query: { gameId: 'gh-1' } });
+    expect(status).toBe(200);
+    expect(body.gameId).toBe('gh-1');
+    expect(body.questions).toHaveLength(1);
+    expect(body.questions[0].gameId).toBe('gh-1');
+  });
+
+  it('returns empty questions array when no questions exist for game', () => {
+    const { status, body } = listQuestions({ method: 'GET', query: { gameId: 'no-such-game' } });
+    expect(status).toBe(200);
+    expect(body.questions).toHaveLength(0);
+  });
+
+  it('includes answer data on answered questions when fetching by gameId', async () => {
+    const { body: q } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'gh-ans' }) });
+    await submitAnswer({ method: 'POST', params: { questionId: q.questionId }, body: { responderId: 'h1', text: 'Yes!' } });
+
+    const { body } = listQuestions({ method: 'GET', query: { gameId: 'gh-ans' } });
+    expect(body.questions[0].answer).toEqual(expect.objectContaining({ text: 'Yes!' }));
+  });
+
+  it('returns null answer for pending questions when fetching by gameId', () => {
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'gh-pend' }) });
+    const { body } = listQuestions({ method: 'GET', query: { gameId: 'gh-pend' } });
+    expect(body.questions[0].answer).toBeNull();
+  });
+
+  it('delegates gameId path to pool', async () => {
+    const pool = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const { status, body } = await listQuestions({ method: 'GET', query: { gameId: 'g1' } }, pool);
+    expect(status).toBe(200);
+    expect(body.gameId).toBe('g1');
     expect(body.questions).toHaveLength(0);
     expect(pool.query).toHaveBeenCalledOnce();
   });

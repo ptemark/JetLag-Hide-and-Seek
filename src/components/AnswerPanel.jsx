@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { listQuestions, submitAnswer } from '../api.js';
+import { listQuestions, submitAnswer, uploadQuestionPhoto } from '../api.js';
 
 /**
  * AnswerPanel — hider UI for viewing and answering pending questions.
@@ -14,6 +14,7 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
   const [loadError, setLoadError] = useState(null);
   // Per-question answer text and submission state
   const [answers, setAnswers] = useState({});    // { [questionId]: string }
+  const [photos, setPhotos] = useState({});      // { [questionId]: string } — base64 data URLs
   const [submitting, setSubmitting] = useState({}); // { [questionId]: bool }
   const [errors, setErrors] = useState({});         // { [questionId]: string }
   const [answered, setAnswered] = useState(new Set());
@@ -30,7 +31,19 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
   }
 
-  async function handleAnswer(e, questionId) {
+  function handlePhotoChange(questionId, file) {
+    if (!file) {
+      setPhotos((prev) => ({ ...prev, [questionId]: null }));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPhotos((prev) => ({ ...prev, [questionId]: reader.result }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleAnswer(e, questionId, category) {
     e.preventDefault();
     const text = (answers[questionId] ?? '').trim();
     if (!text) {
@@ -40,6 +53,9 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
     setErrors((prev) => ({ ...prev, [questionId]: null }));
     setSubmitting((prev) => ({ ...prev, [questionId]: true }));
     try {
+      if (category === 'photo' && photos[questionId]) {
+        await uploadQuestionPhoto({ questionId, photoData: photos[questionId] });
+      }
       await submitAnswer({ questionId, responderId: player.playerId, text });
       setAnswered((prev) => new Set([...prev, questionId]));
     } catch (err) {
@@ -71,11 +87,22 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
             <strong>[{q.category}]</strong> {q.text}
           </p>
           <form
-            onSubmit={(e) => handleAnswer(e, q.questionId)}
+            onSubmit={(e) => handleAnswer(e, q.questionId, q.category)}
             aria-label={`Answer form for ${q.questionId}`}
           >
             {errors[q.questionId] && (
               <p role="alert">{errors[q.questionId]}</p>
+            )}
+            {q.category === 'photo' && (
+              <label>
+                Photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  aria-label="Photo upload"
+                  onChange={(e) => handlePhotoChange(q.questionId, e.target.files?.[0] ?? null)}
+                />
+              </label>
             )}
             <label>
               Your answer

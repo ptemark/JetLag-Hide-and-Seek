@@ -6,17 +6,28 @@ import '@testing-library/jest-dom';
 
 // Mock API module before importing components that use it.
 vi.mock('../api.js', () => ({
-  registerPlayer: vi.fn(),
-  createGame:     vi.fn(),
-  lookupGame:     vi.fn(),
-  submitQuestion: vi.fn(),
-  listQuestions:  vi.fn(),
-  submitAnswer:   vi.fn(),
+  registerPlayer:       vi.fn(),
+  createGame:           vi.fn(),
+  lookupGame:           vi.fn(),
+  submitQuestion:       vi.fn(),
+  listQuestions:        vi.fn(),
+  submitAnswer:         vi.fn(),
+  uploadQuestionPhoto:  vi.fn(),
+  fetchQuestionPhoto:   vi.fn(),
 }));
 
 import * as api from '../api.js';
 import QuestionPanel from './QuestionPanel.jsx';
 import AnswerPanel from './AnswerPanel.jsx';
+
+// Stub FileReader so tests can simulate file reads synchronously.
+class StubFileReader {
+  readAsDataURL(_file) {
+    this.result = 'data:image/png;base64,stub';
+    this.onload?.();
+  }
+}
+vi.stubGlobal('FileReader', StubFileReader);
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -280,5 +291,63 @@ describe('AnswerPanel', () => {
 
     rerender(<AnswerPanel player={HIDER} game={GAME} refreshTrigger={1} />);
     await waitFor(() => expect(api.listQuestions).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows a file input for photo questions', async () => {
+    const photoQuestion = { ...QUESTION, questionId: 'q-photo', category: 'photo' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [photoQuestion] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByLabelText(/photo upload/i)).toBeInTheDocument()
+    );
+  });
+
+  it('does not show a file input for non-photo questions', async () => {
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [QUESTION] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.queryByLabelText(/photo upload/i)).not.toBeInTheDocument();
+  });
+
+  it('calls uploadQuestionPhoto before submitAnswer when a photo file is selected', async () => {
+    const user = userEvent.setup();
+    const photoQuestion = { ...QUESTION, questionId: 'q-photo', category: 'photo' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [photoQuestion] });
+    api.uploadQuestionPhoto.mockResolvedValue({ photoId: 'ph-1', questionId: 'q-photo', uploadedAt: '' });
+    api.submitAnswer.mockResolvedValue({ answerId: 'a1', questionId: 'q-photo' });
+
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/photo upload/i));
+
+    // Simulate file selection (FileReader stub will set result synchronously via onload).
+    const file = new File(['img'], 'photo.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText(/photo upload/i), file);
+
+    await user.type(screen.getByLabelText(/your answer/i), 'Here is my photo.');
+    await user.click(screen.getByRole('button', { name: /submit answer/i }));
+
+    await waitFor(() => {
+      expect(api.uploadQuestionPhoto).toHaveBeenCalledWith({
+        questionId: 'q-photo',
+        photoData: 'data:image/png;base64,stub',
+      });
+      expect(api.submitAnswer).toHaveBeenCalled();
+    });
+  });
+
+  it('submits answer without uploadQuestionPhoto when no photo is selected', async () => {
+    const user = userEvent.setup();
+    const photoQuestion = { ...QUESTION, questionId: 'q-photo', category: 'photo' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [photoQuestion] });
+    api.submitAnswer.mockResolvedValue({ answerId: 'a1', questionId: 'q-photo' });
+
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+
+    await user.type(screen.getByLabelText(/your answer/i), 'No photo.');
+    await user.click(screen.getByRole('button', { name: /submit answer/i }));
+
+    await waitFor(() => expect(api.submitAnswer).toHaveBeenCalled());
+    expect(api.uploadQuestionPhoto).not.toHaveBeenCalled();
   });
 });

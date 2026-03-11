@@ -390,6 +390,53 @@ export async function dbSubmitAnswer(pool, { questionId, responderId, text }) {
   };
 }
 
+// ── Question photo store ──────────────────────────────────────────────────────
+
+/**
+ * Insert or update a photo for a question.
+ * On conflict (same question_id) replaces the existing photo.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ questionId: string, photoData: string }} options
+ * @returns {Promise<{ photoId: string, questionId: string, uploadedAt: string }>}
+ */
+export async function dbSaveQuestionPhoto(pool, { questionId, photoData }) {
+  const res = await pool.query(
+    `INSERT INTO question_photos (question_id, photo_data)
+     VALUES ($1, $2)
+     ON CONFLICT (question_id) DO UPDATE
+       SET photo_data  = EXCLUDED.photo_data,
+           uploaded_at = NOW()
+     RETURNING id, question_id, uploaded_at`,
+    [questionId, photoData],
+  );
+  const row = res.rows[0];
+  return { photoId: row.id, questionId: row.question_id, uploadedAt: row.uploaded_at };
+}
+
+/**
+ * Retrieve the photo for a question, or null if none uploaded.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {string} questionId
+ * @returns {Promise<{ photoId: string, questionId: string, photoData: string, uploadedAt: string } | null>}
+ */
+export async function dbGetQuestionPhoto(pool, questionId) {
+  const res = await pool.query(
+    `SELECT id, question_id, photo_data, uploaded_at
+     FROM question_photos WHERE question_id = $1`,
+    [questionId],
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  return {
+    photoId: row.id,
+    questionId: row.question_id,
+    photoData: row.photo_data,
+    uploadedAt: row.uploaded_at,
+  };
+}
+
 // ── Card store ────────────────────────────────────────────────────────────────
 
 /** Maximum cards a player may hold in hand at once. */

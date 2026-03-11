@@ -3,8 +3,11 @@ import {
   submitQuestion,
   listQuestions,
   submitAnswer,
+  uploadQuestionPhoto,
+  getQuestionPhoto,
   _getQuestionStore,
   _getAnswerStore,
+  _getPhotoStore,
   _clearStores,
 } from './questions.js';
 
@@ -450,5 +453,254 @@ describe('question routes via router', () => {
     };
     await handleRequest(req, res, { limiter: { check: () => ({ allowed: true }) } });
     expect(res.writeHead).toHaveBeenCalledWith(201, expect.any(Object));
+  });
+
+  it('POST /questions/:questionId/photo is reachable through router', async () => {
+    const { body: question } = submitQuestion({ method: 'POST', body: makeQuestion() });
+    const { handleRequest } = await import('./router.js');
+    const { Readable } = await import('node:stream');
+
+    const body = JSON.stringify({ photoData: 'data:image/png;base64,abc123' });
+    const req = Object.assign(Readable.from([body]), {
+      method: 'POST', url: `/questions/${question.questionId}/photo`,
+      headers: { host: 'localhost', 'content-type': 'application/json' },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    const chunks = [];
+    const res = {
+      writeHead: vi.fn(),
+      end: (chunk) => { if (chunk) chunks.push(chunk); },
+    };
+    await handleRequest(req, res, { limiter: { check: () => ({ allowed: true }) } });
+    expect(res.writeHead).toHaveBeenCalledWith(201, expect.any(Object));
+    const parsed = JSON.parse(chunks.join(''));
+    expect(parsed.photoId).toBeTruthy();
+  });
+
+  it('GET /questions/:questionId/photo is reachable through router', async () => {
+    const { body: question } = submitQuestion({ method: 'POST', body: makeQuestion() });
+    await uploadQuestionPhoto({
+      method: 'POST', params: { questionId: question.questionId },
+      body: { photoData: 'data:image/png;base64,xyz' },
+    });
+    const { handleRequest } = await import('./router.js');
+    const { Readable } = await import('node:stream');
+
+    const req = Object.assign(Readable.from([]), {
+      method: 'GET', url: `/questions/${question.questionId}/photo`,
+      headers: { host: 'localhost' },
+      socket: { remoteAddress: '127.0.0.1' },
+    });
+    const chunks = [];
+    const res = {
+      writeHead: vi.fn(),
+      end: (chunk) => { if (chunk) chunks.push(chunk); },
+    };
+    await handleRequest(req, res, { limiter: { check: () => ({ allowed: true }) } });
+    expect(res.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
+    const parsed = JSON.parse(chunks.join(''));
+    expect(parsed.photoData).toBe('data:image/png;base64,xyz');
+  });
+});
+
+// ── uploadQuestionPhoto ───────────────────────────────────────────────────────
+
+describe('uploadQuestionPhoto', () => {
+  beforeEach(() => _clearStores());
+
+  function createQuestion() {
+    const { body } = submitQuestion({ method: 'POST', body: makeQuestion() });
+    return body;
+  }
+
+  it('returns 201 and photo record for valid request', async () => {
+    const question = createQuestion();
+    const { status, body } = await uploadQuestionPhoto({
+      method: 'POST',
+      params: { questionId: question.questionId },
+      body: { photoData: 'data:image/png;base64,abc' },
+    });
+    expect(status).toBe(201);
+    expect(body.photoId).toBeTruthy();
+    expect(body.questionId).toBe(question.questionId);
+    expect(body.uploadedAt).toBeTruthy();
+  });
+
+  it('stores photo in the in-process store', async () => {
+    const question = createQuestion();
+    await uploadQuestionPhoto({
+      method: 'POST',
+      params: { questionId: question.questionId },
+      body: { photoData: 'data:image/png;base64,abc' },
+    });
+    expect(_getPhotoStore().has(question.questionId)).toBe(true);
+  });
+
+  it('trims whitespace from photoData', async () => {
+    const question = createQuestion();
+    await uploadQuestionPhoto({
+      method: 'POST',
+      params: { questionId: question.questionId },
+      body: { photoData: '  data:image/png;base64,abc  ' },
+    });
+    const stored = _getPhotoStore().get(question.questionId);
+    expect(stored.photoData).toBe('data:image/png;base64,abc');
+  });
+
+  it('overwrites a previous photo on re-upload', async () => {
+    const question = createQuestion();
+    await uploadQuestionPhoto({
+      method: 'POST', params: { questionId: question.questionId },
+      body: { photoData: 'data:image/png;base64,first' },
+    });
+    await uploadQuestionPhoto({
+      method: 'POST', params: { questionId: question.questionId },
+      body: { photoData: 'data:image/png;base64,second' },
+    });
+    const stored = _getPhotoStore().get(question.questionId);
+    expect(stored.photoData).toBe('data:image/png;base64,second');
+  });
+
+  it('returns 404 for unknown questionId', async () => {
+    const { status, body } = await uploadQuestionPhoto({
+      method: 'POST',
+      params: { questionId: 'no-such-id' },
+      body: { photoData: 'data:image/png;base64,abc' },
+    });
+    expect(status).toBe(404);
+    expect(body.error).toMatch(/not found/);
+  });
+
+  it('returns 400 when questionId param is missing', async () => {
+    const { status, body } = await uploadQuestionPhoto({
+      method: 'POST', params: {}, body: { photoData: 'data:image/png;base64,abc' },
+    });
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/questionId/);
+  });
+
+  it('returns 400 when photoData is missing', async () => {
+    const question = createQuestion();
+    const { status, body } = await uploadQuestionPhoto({
+      method: 'POST', params: { questionId: question.questionId }, body: {},
+    });
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/photoData/);
+  });
+
+  it('returns 400 when photoData is blank', async () => {
+    const question = createQuestion();
+    const { status, body } = await uploadQuestionPhoto({
+      method: 'POST', params: { questionId: question.questionId }, body: { photoData: '   ' },
+    });
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/photoData/);
+  });
+
+  it('returns 405 for non-POST methods', async () => {
+    const { status } = await uploadQuestionPhoto({
+      method: 'GET', params: { questionId: 'any' }, body: {},
+    });
+    expect(status).toBe(405);
+  });
+
+  it('delegates to pool when provided', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValue({
+        rows: [{ id: 'ph-1', question_id: 'q-1', uploaded_at: new Date().toISOString() }],
+      }),
+    };
+    const { status, body } = await uploadQuestionPhoto({
+      method: 'POST',
+      params: { questionId: 'q-1' },
+      body: { photoData: 'data:image/png;base64,abc' },
+    }, pool);
+    expect(status).toBe(201);
+    expect(body.photoId).toBe('ph-1');
+    expect(body.questionId).toBe('q-1');
+  });
+});
+
+// ── getQuestionPhoto ──────────────────────────────────────────────────────────
+
+describe('getQuestionPhoto', () => {
+  beforeEach(() => _clearStores());
+
+  function createQuestionWithPhoto() {
+    const { body: question } = submitQuestion({ method: 'POST', body: makeQuestion() });
+    uploadQuestionPhoto({
+      method: 'POST',
+      params: { questionId: question.questionId },
+      body: { photoData: 'data:image/png;base64,testdata' },
+    });
+    return question;
+  }
+
+  it('returns 200 and photo record for existing photo', async () => {
+    const question = createQuestionWithPhoto();
+    const { status, body } = await getQuestionPhoto({
+      method: 'GET',
+      params: { questionId: question.questionId },
+    });
+    expect(status).toBe(200);
+    expect(body.photoId).toBeTruthy();
+    expect(body.questionId).toBe(question.questionId);
+    expect(body.photoData).toBe('data:image/png;base64,testdata');
+    expect(body.uploadedAt).toBeTruthy();
+  });
+
+  it('returns 404 when no photo exists', async () => {
+    const { body: question } = submitQuestion({ method: 'POST', body: makeQuestion() });
+    const { status, body } = await getQuestionPhoto({
+      method: 'GET',
+      params: { questionId: question.questionId },
+    });
+    expect(status).toBe(404);
+    expect(body.error).toMatch(/not found/);
+  });
+
+  it('returns 404 for unknown questionId', async () => {
+    const { status, body } = await getQuestionPhoto({
+      method: 'GET',
+      params: { questionId: 'no-such' },
+    });
+    expect(status).toBe(404);
+    expect(body.error).toMatch(/not found/);
+  });
+
+  it('returns 400 when questionId param is missing', async () => {
+    const { status, body } = await getQuestionPhoto({ method: 'GET', params: {} });
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/questionId/);
+  });
+
+  it('returns 405 for non-GET methods', async () => {
+    const { status } = await getQuestionPhoto({ method: 'POST', params: { questionId: 'q1' } });
+    expect(status).toBe(405);
+  });
+
+  it('delegates to pool when provided', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValue({
+        rows: [{
+          id: 'ph-1', question_id: 'q-1',
+          photo_data: 'data:image/png;base64,abc',
+          uploaded_at: new Date().toISOString(),
+        }],
+      }),
+    };
+    const { status, body } = await getQuestionPhoto({
+      method: 'GET', params: { questionId: 'q-1' },
+    }, pool);
+    expect(status).toBe(200);
+    expect(body.photoData).toBe('data:image/png;base64,abc');
+  });
+
+  it('returns 404 via pool when photo does not exist', async () => {
+    const pool = { query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const { status } = await getQuestionPhoto({
+      method: 'GET', params: { questionId: 'missing' },
+    }, pool);
+    expect(status).toBe(404);
   });
 });

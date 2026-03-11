@@ -130,6 +130,36 @@ export async function playCardApi({ cardId, playerId }) {
 }
 
 /**
+ * Upload a base64-encoded photo for a photo question.
+ * POST /api/questions/:questionId/photo  { photoData }
+ *   → { photoId, questionId, uploadedAt }
+ *
+ * @param {{ questionId: string, photoData: string }} options
+ */
+export async function uploadQuestionPhoto({ questionId, photoData }) {
+  const res = await fetch(`${BASE_URL}/api/questions/${encodeURIComponent(questionId)}/photo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoData }),
+  });
+  if (!res.ok) throw new Error(`uploadQuestionPhoto failed: ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Fetch the photo for a question.
+ * GET /api/questions/:questionId/photo
+ *   → { photoId, questionId, photoData, uploadedAt }
+ *
+ * @param {string} questionId
+ */
+export async function fetchQuestionPhoto(questionId) {
+  const res = await fetch(`${BASE_URL}/api/questions/${encodeURIComponent(questionId)}/photo`);
+  if (!res.ok) throw new Error(`fetchQuestionPhoto failed: ${res.status}`);
+  return res.json();
+}
+
+/**
  * Lock the hider's chosen hiding zone for a game.
  * POST /api/games/:gameId/zone  { stationId, lat, lon, radiusM, playerId }
  *   → { zoneId, gameId, stationId, lat, lon, radiusM, lockedAt }

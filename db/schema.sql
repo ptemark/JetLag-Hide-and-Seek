@@ -111,6 +111,19 @@ CREATE TABLE IF NOT EXISTS game_zones (
 );
 
 -- -------------------------------------------------------------------------
+-- question_photos
+-- Optional photo uploaded by the hider for a photo-category question.
+-- One photo per question (enforced by unique constraint).
+-- photo_data: base64-encoded image string.
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS question_photos (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  question_id  UUID        NOT NULL UNIQUE REFERENCES questions(id) ON DELETE CASCADE,
+  photo_data   TEXT        NOT NULL,
+  uploaded_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- -------------------------------------------------------------------------
 -- scores
 -- Outcome record written at the end of each game.
 -- score_seconds = total time the hider survived (higher is better for hider).

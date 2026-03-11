@@ -22,6 +22,8 @@ import {
   dbGetQuestionsForPlayer,
   dbSubmitAnswer,
   dbDrawCard,
+  dbSaveQuestionPhoto,
+  dbGetQuestionPhoto,
 } from '../db/gameStore.js';
 import { drawCardInProcess, randomCardDescriptor } from './cards.js';
 
@@ -34,6 +36,7 @@ const VALID_CATEGORIES = ['matching', 'thermometer', 'photo', 'tentacle'];
 
 const _questions = new Map();
 const _answers   = new Map();
+const _photos    = new Map(); // Map<questionId, { photoId, questionId, photoData, uploadedAt }>
 
 /** Return a copy of the in-process question store (for testing). */
 export function _getQuestionStore() { return new Map(_questions); }
@@ -41,8 +44,11 @@ export function _getQuestionStore() { return new Map(_questions); }
 /** Return a copy of the in-process answer store (for testing). */
 export function _getAnswerStore() { return new Map(_answers); }
 
-/** Clear both in-process stores (for test isolation). */
-export function _clearStores() { _questions.clear(); _answers.clear(); }
+/** Return a copy of the in-process photo store (for testing). */
+export function _getPhotoStore() { return new Map(_photos); }
+
+/** Clear all in-process stores (for test isolation). */
+export function _clearStores() { _questions.clear(); _answers.clear(); _photos.clear(); }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -219,4 +225,79 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
   }
 
   return { status: 201, body: answer };
+}
+
+/**
+ * POST /questions/:questionId/photo
+ * Body: { photoData } — base64-encoded image string.
+ *
+ * Stores the photo associated with a question. Idempotent: re-uploading
+ * replaces the previous photo.
+ *
+ * @param {{ method: string, params: { questionId: string }, body: unknown }} req
+ * @param {import('pg').Pool|null} [pool]
+ * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
+ */
+export async function uploadQuestionPhoto(req, pool = null) {
+  if (req.method !== 'POST') {
+    return { status: 405, body: { error: 'Method Not Allowed' } };
+  }
+
+  const { questionId } = req.params ?? {};
+  if (!questionId || typeof questionId !== 'string') {
+    return { status: 400, body: { error: 'questionId param is required' } };
+  }
+
+  const { photoData } = req.body ?? {};
+  if (!photoData || typeof photoData !== 'string' || !photoData.trim()) {
+    return { status: 400, body: { error: 'photoData is required' } };
+  }
+
+  if (pool) {
+    const photo = await dbSaveQuestionPhoto(pool, { questionId, photoData: photoData.trim() });
+    return { status: 201, body: photo };
+  }
+
+  // In-process store: verify question exists.
+  if (!_questions.has(questionId)) {
+    return { status: 404, body: { error: 'question not found' } };
+  }
+  const photo = {
+    photoId: randomUUID(),
+    questionId,
+    photoData: photoData.trim(),
+    uploadedAt: new Date().toISOString(),
+  };
+  _photos.set(questionId, photo);
+  return { status: 201, body: { photoId: photo.photoId, questionId, uploadedAt: photo.uploadedAt } };
+}
+
+/**
+ * GET /questions/:questionId/photo
+ *
+ * Returns the photo record for a question, or 404 if no photo has been uploaded.
+ *
+ * @param {{ method: string, params: { questionId: string } }} req
+ * @param {import('pg').Pool|null} [pool]
+ * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
+ */
+export async function getQuestionPhoto(req, pool = null) {
+  if (req.method !== 'GET') {
+    return { status: 405, body: { error: 'Method Not Allowed' } };
+  }
+
+  const { questionId } = req.params ?? {};
+  if (!questionId || typeof questionId !== 'string') {
+    return { status: 400, body: { error: 'questionId param is required' } };
+  }
+
+  if (pool) {
+    const photo = await dbGetQuestionPhoto(pool, questionId);
+    if (!photo) return { status: 404, body: { error: 'photo not found' } };
+    return { status: 200, body: photo };
+  }
+
+  const photo = _photos.get(questionId);
+  if (!photo) return { status: 404, body: { error: 'photo not found' } };
+  return { status: 200, body: photo };
 }

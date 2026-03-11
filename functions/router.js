@@ -25,9 +25,11 @@
  *   POST   /questions            → submitQuestion
  *   GET    /questions            → listQuestions
  *   POST   /answers/:questionId  → submitAnswer
- *   GET    /cards                → getCards
- *   POST   /cards/:cardId/play   → playCard
- *   POST   /games/:gameId/zone   → lockHiderZone
+ *   GET    /cards                             → getCards
+ *   POST   /cards/:cardId/play               → playCard
+ *   POST   /games/:gameId/zone               → lockHiderZone
+ *   POST   /questions/:questionId/photo      → uploadQuestionPhoto
+ *   GET    /questions/:questionId/photo      → getQuestionPhoto
  */
 
 import { registerPlayer } from './players.js';
@@ -37,7 +39,7 @@ import { initiateSession, terminateSession } from './sessions.js';
 import { getLiveState } from './liveState.js';
 import { getAdminStatus } from './admin.js';
 import { getZones } from './zones.js';
-import { submitQuestion, listQuestions, submitAnswer } from './questions.js';
+import { submitQuestion, listQuestions, submitAnswer, uploadQuestionPhoto, getQuestionPhoto } from './questions.js';
 import { getCards, playCard } from './cards.js';
 import { lockHiderZone } from './gameZone.js';
 import { defaultLimiter } from './rateLimiter.js';
@@ -88,6 +90,8 @@ const ROUTES = [
   { method: 'GET',    pattern: /^\/cards$/, handler: getCards },
   { method: 'POST',   pattern: /^\/cards\/(?<cardId>[^/]+)\/play$/, handler: playCard },
   { method: 'POST',   pattern: /^\/games\/(?<gameId>[^/]+)\/zone$/, handler: lockHiderZone },
+  { method: 'POST',   pattern: /^\/questions\/(?<questionId>[^/]+)\/photo$/, handler: uploadQuestionPhoto },
+  { method: 'GET',    pattern: /^\/questions\/(?<questionId>[^/]+)\/photo$/, handler: getQuestionPhoto },
 ];
 
 /**

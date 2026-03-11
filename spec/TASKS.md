@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 59 complete. Question history; 1022 tests pass._
+_Task 60 complete. Measuring and transit question categories; 1024 tests pass._
 
 ---
 
@@ -71,6 +71,7 @@ _Task 59 complete. Question history; 1022 tests pass._
 | 57 | 2026-03-11 | Game invite URL | src/components/WaitingRoom.jsx, src/components/GameForm.jsx, src/components/Lobby.jsx, src/components/Lobby.test.jsx | WaitingRoom shows invite link (?gameId=xxx); GameForm accepts initialTab/initialGameId props; Lobby reads ?gameId from URL and activates join tab with pre-filled ID; 3 new tests; 1007 total pass; build clean |
 | 58 | 2026-03-11 | Progressive Web App | public/manifest.json, public/sw.js, public/icon-192.svg, public/icon-512.svg, index.html, src/registerSW.js, src/main.jsx, src/pwa.test.js | manifest.json (name, icons, theme colour, standalone); minimal SW (install cache app shell, runtime cache assets, navigate fallback); registerServiceWorker module registered in main.jsx; 5 new tests; 1012 total pass; build clean |
 | 59 | 2026-03-11 | Question history | db/gameStore.js, functions/questions.js, functions/questions.test.js, src/api.js, src/components/QuestionPanel.jsx, src/components/AnswerPanel.jsx, src/components/GameMap.jsx, src/components/QA.test.jsx | dbGetQuestionsForGame (LEFT JOIN questions+answers); listQuestions extended to accept gameId (returns full Q&A history) or playerId (hider inbox); listQuestions API fn changed to object param; QuestionPanel fetches history on mount + qaRefresh, displays Q&A pairs with answer text; GameMap passes qaRefresh to QuestionPanel; 10 new tests; 1022 total pass; build clean |
+| 60 | 2026-03-11 | Measuring and transit question categories | functions/questions.js, functions/questions.test.js, src/components/QuestionPanel.jsx, src/components/QA.test.jsx, spec/TASKS.md | Added 'measuring' and 'transit' to VALID_CATEGORIES (backend) and CATEGORIES array (frontend) to align with all 6 RULES.md question types; added CATEGORY_HINTS map; hint shown as <small aria-label="question type hint"> below selector; 2 new tests (hint renders, hint updates on select); 1024 total pass; build clean |
 
 ---
 
@@ -188,3 +189,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 - [x] **58** — Progressive Web App: add `public/manifest.json` (name, icons, theme colour, `display: standalone`) and a minimal service worker that caches the app shell. Register the service worker in `src/main.jsx`. Allows players to add the game to their home screen on iOS/Android.
 
 - [x] **59** — Question history: seekers should see all previous Q&A pairs (question text, category, answer, timestamp) above the current question form in `QuestionPanel`. Fetch from `GET /api/questions?gameId=` on mount and refresh after each `question_answered` WS event. No new backend endpoint needed — extend the existing `listQuestions` API fn to accept `gameId`.
+
+### Phase 15 — Rules Completeness
+
+- [x] **60** — Add measuring and transit question categories: `RULES.md` defines 6 question categories (Matching, Measuring, Transit, Photo, Thermometer, Tentacle) but the backend and frontend only recognise 4 (`matching`, `thermometer`, `photo`, `tentacle`). Add `'measuring'` and `'transit'` to `VALID_CATEGORIES` in `functions/questions.js` and to the `CATEGORIES` array in `src/components/QuestionPanel.jsx`. Add a `CATEGORY_HINTS` map in `QuestionPanel` so each option shows a one-line description (e.g. "Measuring — Am I closer to X than you?"). Show the hint as a `<small>` element below the select. Update tests in `functions/questions.test.js` and `src/components/QA.test.jsx` to cover the two new categories.

@@ -31,7 +31,7 @@ import { drawCardInProcess, randomCardDescriptor } from './cards.js';
 /** Answer deadline in milliseconds by category. Photo: 15 min; others: 5 min. */
 const QUESTION_EXPIRY_MS = { photo: 15 * 60 * 1000, default: 5 * 60 * 1000 };
 
-const VALID_CATEGORIES = ['matching', 'thermometer', 'photo', 'tentacle'];
+const VALID_CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
 // ── In-process stores (no DB pool) ───────────────────────────────────────────
 

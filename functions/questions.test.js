@@ -59,7 +59,7 @@ describe('submitQuestion', () => {
   });
 
   it('accepts all valid categories', () => {
-    for (const [i, category] of ['matching', 'thermometer', 'photo', 'tentacle'].entries()) {
+    for (const [i, category] of ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'].entries()) {
       const { status } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: `game-cat-${i}`, category }) });
       expect(status).toBe(201);
     }

@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react';
 import { submitQuestion, listQuestions } from '../api.js';
 
-const CATEGORIES = ['matching', 'thermometer', 'photo', 'tentacle'];
+const CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
+
+/** One-line hint shown below the category selector to guide the seeker. */
+const CATEGORY_HINTS = {
+  matching:    'Is your nearest [landmark] the same as mine?',
+  measuring:   'Am I closer to [place] than you are?',
+  transit:     'Is my station on your current transit route?',
+  thermometer: 'Am I warmer or colder relative to [reference]?',
+  photo:       'Send a photo matching the specified criteria.',
+  tentacle:    'Is [location] within X km of me?',
+};
 
 /**
  * QuestionPanel — seeker UI for submitting questions to the hider.
@@ -94,6 +104,7 @@ export default function QuestionPanel({ player, game, qaRefresh = 0 }) {
             ))}
           </select>
         </label>
+        <small aria-label="question type hint">{CATEGORY_HINTS[category]}</small>
 
         <label>
           Question

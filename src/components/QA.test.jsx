@@ -64,13 +64,25 @@ describe('QuestionPanel', () => {
     expect(screen.getByRole('button', { name: /submit question/i })).toBeInTheDocument();
   });
 
-  it('renders all four category options', () => {
+  it('renders all six category options', () => {
     render(<QuestionPanel player={SEEKER} game={GAME} />);
     const select = screen.getByLabelText(/category/i);
     expect(select).toBeInTheDocument();
-    ['matching', 'thermometer', 'photo', 'tentacle'].forEach((cat) => {
+    ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'].forEach((cat) => {
       expect(screen.getByRole('option', { name: cat })).toBeInTheDocument();
     });
+  });
+
+  it('shows a question type hint below the selector', () => {
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    expect(screen.getByLabelText(/question type hint/i)).toBeInTheDocument();
+  });
+
+  it('updates the hint when a different category is selected', async () => {
+    const user = userEvent.setup();
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await user.selectOptions(screen.getByLabelText(/category/i), 'measuring');
+    expect(screen.getByLabelText(/question type hint/i)).toHaveTextContent(/closer/i);
   });
 
   it('shows error when submitting with empty hider ID', async () => {

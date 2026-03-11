@@ -56,8 +56,8 @@ describe('submitQuestion', () => {
   });
 
   it('accepts all valid categories', () => {
-    for (const category of ['matching', 'thermometer', 'photo', 'tentacle']) {
-      const { status } = submitQuestion({ method: 'POST', body: makeQuestion({ category }) });
+    for (const [i, category] of ['matching', 'thermometer', 'photo', 'tentacle'].entries()) {
+      const { status } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: `game-cat-${i}`, category }) });
       expect(status).toBe(201);
     }
   });
@@ -103,20 +103,72 @@ describe('submitQuestion', () => {
     expect(status).toBe(405);
   });
 
+  it('returns 409 when a pending question already exists for the same game', () => {
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'game-1' }) });
+    const { status, body } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'game-1' }) });
+    expect(status).toBe(409);
+    expect(body.error).toMatch(/pending/i);
+  });
+
+  it('allows a new question in a different game even if one game has a pending question', () => {
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'game-1' }) });
+    const { status } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'game-2' }) });
+    expect(status).toBe(201);
+  });
+
+  it('includes expiresAt in the returned question', () => {
+    const { body } = submitQuestion({ method: 'POST', body: makeQuestion({ category: 'matching' }) });
+    expect(body.expiresAt).toBeTruthy();
+    const diff = new Date(body.expiresAt) - new Date(body.createdAt);
+    expect(diff).toBeGreaterThan(0);
+  });
+
+  it('sets a longer expiresAt for photo questions than for non-photo', () => {
+    const { body: photo } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'gp', category: 'photo' }) });
+    _clearStores();
+    const { body: standard } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'gs', category: 'matching' }) });
+    const photoExpiry = new Date(photo.expiresAt) - new Date(photo.createdAt);
+    const standardExpiry = new Date(standard.expiresAt) - new Date(standard.createdAt);
+    expect(photoExpiry).toBeGreaterThan(standardExpiry);
+  });
+
+  it('allows a new question after the previous one is answered', async () => {
+    const { body: q } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'game-3' }) });
+    await submitAnswer(
+      { method: 'POST', params: { questionId: q.questionId }, body: { responderId: 'hider-1', text: 'Yes.' } },
+    );
+    const { status } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'game-3' }) });
+    expect(status).toBe(201);
+  });
+
   it('delegates to pool when provided', async () => {
+    const expiresAt = new Date(Date.now() + 300_000).toISOString();
     const mockRow = {
       questionId: 'q-1', gameId: 'g-1', askerId: 'a-1', targetId: 't-1',
-      category: 'photo', text: 'test', status: 'pending', createdAt: new Date().toISOString(),
+      category: 'photo', text: 'test', status: 'pending', expiresAt, createdAt: new Date().toISOString(),
     };
-    const pool = { query: vi.fn().mockResolvedValue({ rows: [
-      { id: mockRow.questionId, game_id: mockRow.gameId, asker_id: mockRow.askerId,
-        target_id: mockRow.targetId, category: mockRow.category, text: mockRow.text,
-        status: mockRow.status, created_at: mockRow.createdAt }
-    ] }) };
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })  // pending check returns none
+        .mockResolvedValueOnce({ rows: [
+          { id: mockRow.questionId, game_id: mockRow.gameId, asker_id: mockRow.askerId,
+            target_id: mockRow.targetId, category: mockRow.category, text: mockRow.text,
+            status: mockRow.status, expires_at: mockRow.expiresAt, created_at: mockRow.createdAt }
+        ] }),
+    };
     const result = await submitQuestion({ method: 'POST', body: makeQuestion() }, pool);
     expect(result.status).toBe(201);
     expect(result.body.questionId).toBe('q-1');
-    expect(pool.query).toHaveBeenCalledOnce();
+    expect(result.body.expiresAt).toBeTruthy();
+  });
+
+  it('returns 409 via pool when a pending question exists for the game', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [{ id: 'existing-q' }] }),  // pending check returns one
+    };
+    const result = await submitQuestion({ method: 'POST', body: makeQuestion() }, pool);
+    expect(result.status).toBe(409);
+    expect(result.body.error).toMatch(/pending/i);
   });
 });
 
@@ -126,9 +178,10 @@ describe('listQuestions', () => {
   beforeEach(() => _clearStores());
 
   it('returns 200 and all questions for the target player', () => {
-    submitQuestion({ method: 'POST', body: makeQuestion({ targetId: 'hider-1' }) });
-    submitQuestion({ method: 'POST', body: makeQuestion({ targetId: 'hider-1' }) });
-    submitQuestion({ method: 'POST', body: makeQuestion({ targetId: 'hider-2' }) });
+    // Use distinct gameIds so each question is not blocked by the pending-question constraint.
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'gl-1', targetId: 'hider-1' }) });
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'gl-2', targetId: 'hider-1' }) });
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'gl-3', targetId: 'hider-2' }) });
 
     const { status, body } = listQuestions({ method: 'GET', query: { playerId: 'hider-1' } });
     expect(status).toBe(200);
@@ -151,6 +204,12 @@ describe('listQuestions', () => {
   it('returns 405 for non-GET methods', () => {
     const { status } = listQuestions({ method: 'POST', query: { playerId: 'p1' } });
     expect(status).toBe(405);
+  });
+
+  it('includes expiresAt in questions returned from in-process store', () => {
+    submitQuestion({ method: 'POST', body: makeQuestion({ targetId: 'hider-x' }) });
+    const { body } = listQuestions({ method: 'GET', query: { playerId: 'hider-x' } });
+    expect(body.questions[0].expiresAt).toBeTruthy();
   });
 
   it('delegates to pool when provided', async () => {

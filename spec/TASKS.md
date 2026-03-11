@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 49 complete. Hider zone selection implemented; 880 tests pass._
+_Task 50 in progress. Question timing enforcement._
 
 ---
 
@@ -157,7 +157,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **49** — Hider zone selection: during the hiding phase the hider must tap a transit station on the map to lock their hiding zone. Add `POST /api/games/:gameId/zone` serverless endpoint (body: `{ stationId, lat, lon, radius }`); persist in a new `game_zones` table column or extend `games`; broadcast `zone_locked` WS event so the game server's `captureDetector` uses the chosen zone instead of a default. Frontend: highlight selectable stations during hiding phase, tap-to-select with confirm dialog, disable re-selection once confirmed.
 
-- [ ] **50** — Question timing enforcement: the rules require seekers to wait for the current question to be answered before asking a new one, and the hider must answer within time limits (5 min standard, 10–20 min photo). Add `status` (`pending|answered|expired`) and `expires_at` columns to the `questions` table. `POST /questions` rejects with 409 if a pending question exists for that game. A game-loop StateDispatcher task (or serverless cron) marks questions `expired` when deadline passes and broadcasts a `question_expired` WS event. `GET /questions` returns `status` and `expires_at` so the frontend can show a countdown.
+- [~] **50** — Question timing enforcement: the rules require seekers to wait for the current question to be answered before asking a new one, and the hider must answer within time limits (5 min standard, 10–20 min photo). Add `status` (`pending|answered|expired`) and `expires_at` columns to the `questions` table. `POST /questions` rejects with 409 if a pending question exists for that game. A game-loop StateDispatcher task (or serverless cron) marks questions `expired` when deadline passes and broadcasts a `question_expired` WS event. `GET /questions` returns `status` and `expires_at` so the frontend can show a countdown.
 
 - [ ] **51** — Photo question support: photo questions require the hider to upload a photo. Add `POST /api/questions/:questionId/photo` endpoint accepting a base64-encoded image in the JSON body; store in a new `question_photos` table (or a `photo_data` column on `questions`). Add `GET /api/questions/:questionId/photo` to retrieve it. Frontend `AnswerPanel`: when `category === 'photo'`, show a file-input that reads the file as base64 and calls the upload endpoint before submitting the text answer.
 

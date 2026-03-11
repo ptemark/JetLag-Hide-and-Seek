@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS questions (
                 CHECK (category IN ('matching', 'thermometer', 'photo', 'tentacle')),
   text        TEXT        NOT NULL,
   status      TEXT        NOT NULL DEFAULT 'pending'
-                CHECK (status IN ('pending', 'answered')),
+                CHECK (status IN ('pending', 'answered', 'expired')),
+  expires_at  TIMESTAMPTZ NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

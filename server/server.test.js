@@ -737,3 +737,64 @@ describe('createServer — autoScaler integration', () => {
     vi.useRealTimers();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Question expiry — StateDispatcher task
+// ---------------------------------------------------------------------------
+
+describe('createServer — question expiry task', () => {
+  it('calls store.dbExpireStaleQuestions on each seeking tick', () => {
+    vi.useFakeTimers();
+    const expireFn = vi.fn().mockResolvedValue([]);
+    const s = createServer({
+      tickInterval: 100,
+      store: { dbExpireStaleQuestions: ({ gameId }) => expireFn(gameId) },
+    });
+
+    s.gameLoopManager.startGame('exp-game');
+    s.gameStateManager.createGame('exp-game', { status: 'seeking' });
+
+    vi.advanceTimersByTime(250);
+
+    expect(expireFn).toHaveBeenCalledWith('exp-game');
+
+    s.gameLoopManager.stopGame('exp-game');
+    vi.useRealTimers();
+  });
+
+  it('broadcasts question_expired for each expired question returned', async () => {
+    // Test the stateDispatcher task directly to avoid timer-loop complexity.
+    const expiredQ = { questionId: 'q-dead', gameId: 'qe-game', askerId: 'a1' };
+    const expireFn = vi.fn().mockResolvedValueOnce([expiredQ]).mockResolvedValue([]);
+    const s = createServer({
+      tickInterval: 5000,
+      store: { dbExpireStaleQuestions: ({ gameId }) => expireFn(gameId) },
+    });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'qe-game' }));
+    mockWs.send.mockClear();
+
+    // The join_game WS message already created the game with 'waiting' status.
+    // Advance it to 'seeking' so the question_expiry task fires.
+    s.gameStateManager.setGameStatus('qe-game', 'seeking');
+    const gameState = s.gameStateManager.getGameState('qe-game');
+
+    // Dispatch directly — no timer loop needed.
+    await s.stateDispatcher.dispatch(gameState);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    expect(broadcasts.some(b => b.type === 'question_expired' && b.questionId === 'q-dead')).toBe(true);
+  });
+
+  it('does not throw when store.dbExpireStaleQuestions is absent', () => {
+    vi.useFakeTimers();
+    const s = createServer({ tickInterval: 100, store: null });
+    s.gameLoopManager.startGame('no-store-game');
+    s.gameStateManager.createGame('no-store-game', { status: 'seeking' });
+    expect(() => vi.advanceTimersByTime(250)).not.toThrow();
+    s.gameLoopManager.stopGame('no-store-game');
+    vi.useRealTimers();
+  });
+});

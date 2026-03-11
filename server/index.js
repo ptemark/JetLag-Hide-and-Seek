@@ -22,7 +22,7 @@ export function createServer({
   metrics       = new MetricsCollector(),
   alertManager  = nullAlertManager,
   autoScaler    = nullAutoScaler,
-  store         = null,   // optional: { dbUpdateGameStatus, dbSubmitScore }
+  store         = null,   // optional: { dbUpdateGameStatus, dbSubmitScore, dbExpireStaleQuestions }
 } = {}) {
   // Declare gameStateManager/gameLoopManager/wsHandler before using them in
   // the HTTP handler below. Variables are assigned immediately after; the
@@ -185,6 +185,23 @@ export function createServer({
 
     gameLoopManager.finishGame(gameId);
     return { captured: true, winner: 'seekers', seekersInZone };
+  });
+
+  // Register question expiry task for the SEEKING phase.
+  stateDispatcher.register('seeking', 'question_expiry', async (gameState) => {
+    const { gameId } = gameState;
+    if (!store?.dbExpireStaleQuestions) return { expired: 0 };
+    let expired;
+    try {
+      expired = await store.dbExpireStaleQuestions({ gameId });
+    } catch (err) {
+      logger.error(LogCategory.ERROR, 'question_expiry_error', { gameId, error: err?.message });
+      return { expired: 0 };
+    }
+    for (const q of expired) {
+      wsHandler.broadcastToGame(gameId, { type: 'question_expired', gameId, questionId: q.questionId });
+    }
+    return { expired: expired.length };
   });
 
   // Broadcast phase changes to all players in the affected game

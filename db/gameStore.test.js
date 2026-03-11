@@ -9,6 +9,9 @@ import {
   dbJoinGame,
   dbSubmitScore,
   dbGetGameScores,
+  dbCreateQuestion,
+  dbGetQuestionsForPlayer,
+  dbExpireStaleQuestions,
   createInstrumentedStore,
 } from './gameStore.js';
 import { MetricsCollector, MetricKey } from '../server/monitoring.js';
@@ -533,5 +536,140 @@ describe('submitScore with pool', () => {
     );
     const callArgs = pool.query.mock.calls[0][1];
     expect(callArgs[3]).not.toBeNull(); // capturedAt is set
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbCreateQuestion — pending-question conflict check and expires_at
+// ---------------------------------------------------------------------------
+
+describe('dbCreateQuestion', () => {
+  it('returns conflict:true when a pending question already exists for the game', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [{ id: 'existing-q' }] }),
+    };
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'test',
+    });
+    expect(result).toEqual({ conflict: true });
+    expect(pool.query).toHaveBeenCalledOnce();
+  });
+
+  it('inserts and returns a question with expiresAt when no pending question exists', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })  // pending check
+        .mockResolvedValueOnce({ rows: [{
+          id: 'q-1', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+          category: 'matching', text: 'test', status: 'pending',
+          expires_at: expiresAt, created_at: new Date(),
+        }] }),
+    };
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'test',
+    });
+    expect(result.questionId).toBe('q-1');
+    expect(result.expiresAt).toBeDefined();
+    expect(result.status).toBe('pending');
+  });
+
+  it('passes a longer expires_at for photo category than for standard', async () => {
+    const capturedExpiry = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockImplementationOnce((sql, params) => {
+          capturedExpiry.photo = params[5];
+          return Promise.resolve({ rows: [{
+            id: 'q-p', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'photo', text: 'snap', status: 'pending',
+            expires_at: params[5], created_at: new Date(),
+          }] });
+        }),
+    };
+    const pool2 = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockImplementationOnce((sql, params) => {
+          capturedExpiry.standard = params[5];
+          return Promise.resolve({ rows: [{
+            id: 'q-s', game_id: 'g2', asker_id: 'a1', target_id: 't1',
+            category: 'matching', text: 'test', status: 'pending',
+            expires_at: params[5], created_at: new Date(),
+          }] });
+        }),
+    };
+    await dbCreateQuestion(pool, { gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'photo', text: 'snap' });
+    await dbCreateQuestion(pool2, { gameId: 'g2', askerId: 'a1', targetId: 't1', category: 'matching', text: 'test' });
+    expect(new Date(capturedExpiry.photo) > new Date(capturedExpiry.standard)).toBe(true);
+  });
+
+  it('propagates query errors from pending check', async () => {
+    const pool = makeMockPool(() => Promise.reject(new Error('db error')));
+    await expect(dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'test',
+    })).rejects.toThrow('db error');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForPlayer — includes expiresAt
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForPlayer', () => {
+  it('returns questions with expiresAt field', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-1', game_id: 'g1', asker_id: 'a1', target_id: 'p1',
+        category: 'matching', text: 'hello', status: 'pending',
+        expires_at: expiresAt, created_at: new Date(),
+      }] }),
+    );
+    const questions = await dbGetQuestionsForPlayer(pool, 'p1');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].expiresAt).toBeDefined();
+    expect(questions[0].questionId).toBe('q-1');
+  });
+
+  it('returns empty array when player has no questions', async () => {
+    const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
+    const questions = await dbGetQuestionsForPlayer(pool, 'nobody');
+    expect(questions).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbExpireStaleQuestions
+// ---------------------------------------------------------------------------
+
+describe('dbExpireStaleQuestions', () => {
+  it('updates expired questions and returns their ids', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [
+        { id: 'q-exp-1', game_id: 'g1', asker_id: 'a1' },
+        { id: 'q-exp-2', game_id: 'g1', asker_id: 'a2' },
+      ] }),
+    );
+    const result = await dbExpireStaleQuestions(pool, 'g1');
+    expect(result).toHaveLength(2);
+    expect(result[0].questionId).toBe('q-exp-1');
+    expect(result[1].questionId).toBe('q-exp-2');
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining("status = 'expired'"),
+      ['g1'],
+    );
+  });
+
+  it('returns empty array when no questions have expired', async () => {
+    const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
+    const result = await dbExpireStaleQuestions(pool, 'g-no-exp');
+    expect(result).toEqual([]);
+  });
+
+  it('propagates query errors', async () => {
+    const pool = makeMockPool(() => Promise.reject(new Error('timeout')));
+    await expect(dbExpireStaleQuestions(pool, 'g1')).rejects.toThrow('timeout');
   });
 });

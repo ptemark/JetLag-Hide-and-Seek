@@ -25,6 +25,9 @@ import {
 } from '../db/gameStore.js';
 import { drawCardInProcess, randomCardDescriptor } from './cards.js';
 
+/** Answer deadline in milliseconds by category. Photo: 15 min; others: 5 min. */
+const QUESTION_EXPIRY_MS = { photo: 15 * 60 * 1000, default: 5 * 60 * 1000 };
+
 const VALID_CATEGORIES = ['matching', 'thermometer', 'photo', 'tentacle'];
 
 // ── In-process stores (no DB pool) ───────────────────────────────────────────
@@ -69,12 +72,23 @@ export function submitQuestion(req, pool = null) {
   }
 
   if (pool) {
-    return dbCreateQuestion(pool, { gameId, askerId, targetId, category, text }).then(row => ({
-      status: 201,
-      body: row,
-    }));
+    return dbCreateQuestion(pool, { gameId, askerId, targetId, category, text }).then(row => {
+      if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
+      return { status: 201, body: row };
+    });
   }
 
+  // Enforce one-pending-question-at-a-time per game in the in-process store.
+  const hasPending = [..._questions.values()].some(
+    q => q.gameId === gameId && q.status === 'pending',
+  );
+  if (hasPending) {
+    return { status: 409, body: { error: 'A pending question already exists for this game' } };
+  }
+
+  const expiresAt = new Date(
+    Date.now() + (category === 'photo' ? QUESTION_EXPIRY_MS.photo : QUESTION_EXPIRY_MS.default),
+  ).toISOString();
   const question = {
     questionId: randomUUID(),
     gameId,
@@ -83,6 +97,7 @@ export function submitQuestion(req, pool = null) {
     category,
     text: text.trim(),
     status: 'pending',
+    expiresAt,
     createdAt: new Date().toISOString(),
   };
   _questions.set(question.questionId, question);

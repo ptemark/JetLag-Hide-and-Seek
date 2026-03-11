@@ -262,19 +262,33 @@ export async function dbGetGameZone(pool, gameId) {
 
 // ── Question / Answer store ───────────────────────────────────────────────────
 
+/** Answer deadline in milliseconds by category. Photo questions get 15 min; all others get 5 min. */
+const QUESTION_EXPIRY_MS = { photo: 15 * 60 * 1000, default: 5 * 60 * 1000 };
+
 /**
  * Insert a new question record.
+ * Rejects with 409 if a pending question already exists for the same game.
  *
  * @param {import('pg').Pool} pool
  * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string }} options
- * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, createdAt: string }>}
+ * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string } | { conflict: true }>}
  */
 export async function dbCreateQuestion(pool, { gameId, askerId, targetId, category, text }) {
+  // Enforce one-pending-question-at-a-time per game.
+  const pending = await pool.query(
+    `SELECT id FROM questions WHERE game_id = $1 AND status = 'pending' LIMIT 1`,
+    [gameId],
+  );
+  if (pending.rows.length > 0) return { conflict: true };
+
+  const expiresAt = new Date(
+    Date.now() + (category === 'photo' ? QUESTION_EXPIRY_MS.photo : QUESTION_EXPIRY_MS.default),
+  );
   const res = await pool.query(
-    `INSERT INTO questions (game_id, asker_id, target_id, category, text)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, game_id, asker_id, target_id, category, text, status, created_at`,
-    [gameId, askerId, targetId, category, text],
+    `INSERT INTO questions (game_id, asker_id, target_id, category, text, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, game_id, asker_id, target_id, category, text, status, expires_at, created_at`,
+    [gameId, askerId, targetId, category, text, expiresAt],
   );
   const row = res.rows[0];
   return {
@@ -285,6 +299,7 @@ export async function dbCreateQuestion(pool, { gameId, askerId, targetId, catego
     category: row.category,
     text: row.text,
     status: row.status,
+    expiresAt: row.expires_at,
     createdAt: row.created_at,
   };
 }
@@ -294,11 +309,11 @@ export async function dbCreateQuestion(pool, { gameId, askerId, targetId, catego
  *
  * @param {import('pg').Pool} pool
  * @param {string} playerId
- * @returns {Promise<Array<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, createdAt: string }>>}
+ * @returns {Promise<Array<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string }>>}
  */
 export async function dbGetQuestionsForPlayer(pool, playerId) {
   const res = await pool.query(
-    `SELECT id, game_id, asker_id, target_id, category, text, status, created_at
+    `SELECT id, game_id, asker_id, target_id, category, text, status, expires_at, created_at
      FROM questions
      WHERE target_id = $1
      ORDER BY created_at DESC`,
@@ -312,7 +327,31 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
     category: row.category,
     text: row.text,
     status: row.status,
+    expiresAt: row.expires_at,
     createdAt: row.created_at,
+  }));
+}
+
+/**
+ * Mark all pending questions for a game that have passed their deadline as 'expired'.
+ * Returns the expired question records so callers can broadcast events.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {string} gameId
+ * @returns {Promise<Array<{ questionId: string, gameId: string, askerId: string }>>}
+ */
+export async function dbExpireStaleQuestions(pool, gameId) {
+  const res = await pool.query(
+    `UPDATE questions
+     SET status = 'expired'
+     WHERE game_id = $1 AND status = 'pending' AND expires_at <= NOW()
+     RETURNING id, game_id, asker_id`,
+    [gameId],
+  );
+  return res.rows.map(row => ({
+    questionId: row.id,
+    gameId: row.game_id,
+    askerId: row.asker_id,
   }));
 }
 

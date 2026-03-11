@@ -1,0 +1,124 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom';
+
+vi.mock('../api.js', () => ({
+  fetchLeaderboard: vi.fn(),
+}));
+
+import * as api from '../api.js';
+import Leaderboard from './Leaderboard.jsx';
+
+const SCORES = [
+  { rank: 1, playerName: 'Alice', scale: 'large',  scoreSeconds: 3600, bonusSeconds: 0, createdAt: '2026-01-01T00:00:00Z' },
+  { rank: 2, playerName: 'Bob',   scale: 'medium', scoreSeconds: 1800, bonusSeconds: 60, createdAt: '2026-01-02T00:00:00Z' },
+  { rank: 3, playerName: 'Carol', scale: 'small',  scoreSeconds: 90,   bonusSeconds: 0, createdAt: '2026-01-03T00:00:00Z' },
+];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('Leaderboard', () => {
+  it('shows loading text initially', () => {
+    api.fetchLeaderboard.mockReturnValue(new Promise(() => {})); // never resolves
+    render(<Leaderboard />);
+    expect(screen.getByText(/loading leaderboard/i)).toBeInTheDocument();
+  });
+
+  it('renders a table with leaderboard label after fetch', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: SCORES });
+    render(<Leaderboard />);
+    await waitFor(() =>
+      expect(screen.getByRole('table', { name: /leaderboard/i })).toBeInTheDocument()
+    );
+  });
+
+  it('renders column headers: Rank, Player, Scale, Hiding Time', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: SCORES });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByRole('table', { name: /leaderboard/i }));
+    expect(screen.getByText('Rank')).toBeInTheDocument();
+    expect(screen.getByText('Player')).toBeInTheDocument();
+    expect(screen.getByText('Scale')).toBeInTheDocument();
+    expect(screen.getByText('Hiding Time')).toBeInTheDocument();
+  });
+
+  it('renders one row per score', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: SCORES });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByRole('table', { name: /leaderboard/i }));
+    const rows = screen.getAllByRole('row');
+    // 1 header row + 3 data rows
+    expect(rows).toHaveLength(4);
+  });
+
+  it('displays player names', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: SCORES });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByText('Alice'));
+    expect(screen.getByText('Bob')).toBeInTheDocument();
+    expect(screen.getByText('Carol')).toBeInTheDocument();
+  });
+
+  it('displays scale values', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: SCORES });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByText('large'));
+    expect(screen.getByText('medium')).toBeInTheDocument();
+    expect(screen.getByText('small')).toBeInTheDocument();
+  });
+
+  it('formats hiding time as MM:SS', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: SCORES });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByText('60:00')); // 3600s → 60:00
+    expect(screen.getByText('30:00')).toBeInTheDocument(); // 1800s
+    expect(screen.getByText('01:30')).toBeInTheDocument(); // 90s
+  });
+
+  it('displays ranks', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: SCORES });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByRole('table', { name: /leaderboard/i }));
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('shows "No scores yet." when scores array is empty', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: [] });
+    render(<Leaderboard />);
+    await waitFor(() => expect(screen.getByText(/no scores yet/i)).toBeInTheDocument());
+  });
+
+  it('shows error message when fetch fails', async () => {
+    api.fetchLeaderboard.mockRejectedValue(new Error('network error'));
+    render(<Leaderboard />);
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/network error/i)
+    );
+  });
+
+  it('renders dash for null scale', async () => {
+    const scores = [{ rank: 1, playerName: 'X', scale: null, scoreSeconds: 60, bonusSeconds: 0, createdAt: '' }];
+    api.fetchLeaderboard.mockResolvedValue({ scores });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByRole('table', { name: /leaderboard/i }));
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('calls fetchLeaderboard with limit 20 and no gameId by default', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: [] });
+    render(<Leaderboard />);
+    await waitFor(() => expect(api.fetchLeaderboard).toHaveBeenCalledWith({ limit: 20, gameId: undefined }));
+  });
+
+  it('passes gameId prop to fetchLeaderboard', async () => {
+    api.fetchLeaderboard.mockResolvedValue({ scores: [] });
+    render(<Leaderboard gameId="g42" />);
+    await waitFor(() => expect(api.fetchLeaderboard).toHaveBeenCalledWith({ limit: 20, gameId: 'g42' }));
+  });
+});

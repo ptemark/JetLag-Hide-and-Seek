@@ -177,6 +177,21 @@ export async function submitScore({ playerId, gameId, hidingTimeMs, captured, bo
 }
 
 /**
+ * Fetch ranked leaderboard scores with player name and game scale.
+ * GET /api/scores?limit=20[&gameId=]
+ *   → { scores: [{ rank, playerName, scale, scoreSeconds, bonusSeconds, createdAt }] }
+ *
+ * @param {{ limit?: number, gameId?: string }} options
+ */
+export async function fetchLeaderboard({ limit = 20, gameId } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (gameId) params.append('gameId', gameId);
+  const res = await fetch(`${BASE_URL}/api/scores?${params}`);
+  if (!res.ok) throw new Error(`fetchLeaderboard failed: ${res.status}`);
+  return res.json();
+}
+
+/**
  * Lock the hider's chosen hiding zone for a game.
  * POST /api/games/:gameId/zone  { stationId, lat, lon, radiusM, playerId }
  *   → { zoneId, gameId, stationId, lat, lon, radiusM, lockedAt }

@@ -17,6 +17,7 @@
  *   POST   /games                → handleCreateGame
  *   GET    /games/:id            → getGame
  *   POST   /scores               → submitScore
+ *   GET    /scores               → getLeaderboard
  *   POST   /sessions             → initiateSession
  *   DELETE /sessions/:sessionId  → terminateSession
  *   GET    /live/:gameId         → getLiveState
@@ -34,7 +35,7 @@
 
 import { registerPlayer } from './players.js';
 import { getGame, handleCreateGame } from './games.js';
-import { submitScore } from './scores.js';
+import { submitScore, getLeaderboard } from './scores.js';
 import { initiateSession, terminateSession } from './sessions.js';
 import { getLiveState } from './liveState.js';
 import { getAdminStatus } from './admin.js';
@@ -79,6 +80,7 @@ const ROUTES = [
   { method: 'POST',   pattern: /^\/games$/, handler: handleCreateGame },
   { method: 'GET',    pattern: /^\/games\/(?<id>[^/]+)$/, handler: getGame },
   { method: 'POST',   pattern: /^\/scores$/, handler: submitScore },
+  { method: 'GET',    pattern: /^\/scores$/, handler: getLeaderboard },
   { method: 'POST',   pattern: /^\/sessions$/, handler: initiateSession },
   { method: 'DELETE', pattern: /^\/sessions\/(?<sessionId>[^/]+)$/, handler: terminateSession },
   { method: 'GET',    pattern: /^\/live\/(?<gameId>[^/]+)$/, handler: getLiveState },

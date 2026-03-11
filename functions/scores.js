@@ -14,7 +14,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { dbSubmitScore } from '../db/gameStore.js';
+import { dbSubmitScore, dbGetLeaderboard } from '../db/gameStore.js';
 
 // In-process store — used when no DB pool is provided (tests / local dev).
 const _scores = new Map();
@@ -82,6 +82,51 @@ export function submitScore(req, pool = null) {
 
   _scores.set(score.scoreId, score);
   return { status: 201, body: score };
+}
+
+/**
+ * Return ranked leaderboard scores with player name and game scale.
+ *
+ * GET /scores?limit=20&gameId=<optional>
+ *   → { scores: [{ rank, playerName, scale, scoreSeconds, bonusSeconds, createdAt }] }
+ *
+ * Without a DB pool, results are derived from the in-process store (no name/scale resolution).
+ *
+ * @param {{ method: string, query: { limit?: string, gameId?: string } }} req
+ * @param {import('pg').Pool|null} [pool]
+ * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
+ */
+export function getLeaderboard(req, pool = null) {
+  if (req.method !== 'GET') {
+    return { status: 405, body: { error: 'Method Not Allowed' } };
+  }
+
+  const rawLimit = parseInt(req.query?.limit ?? '20', 10);
+  const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 20 : rawLimit, 100);
+  const gameId = req.query?.gameId || null;
+
+  if (pool) {
+    return dbGetLeaderboard(pool, { limit, gameId }).then(scores => ({
+      status: 200,
+      body: { scores },
+    }));
+  }
+
+  // In-process fallback: sort by hidingTimeMs; no name/scale resolution available.
+  const entries = [..._scores.values()]
+    .filter(s => !gameId || s.gameId === gameId)
+    .sort((a, b) => b.hidingTimeMs - a.hidingTimeMs)
+    .slice(0, limit)
+    .map((s, i) => ({
+      rank: i + 1,
+      playerName: s.playerId,
+      scale: null,
+      scoreSeconds: Math.round(s.hidingTimeMs / 1000),
+      bonusSeconds: s.bonusSeconds,
+      createdAt: s.submittedAt,
+    }));
+
+  return { status: 200, body: { scores: entries } };
 }
 
 /** Return a copy of the in-process score store (for testing). */

@@ -535,6 +535,41 @@ export async function dbPlayCard(pool, { cardId, playerId }) {
   };
 }
 
+// ── Leaderboard query ─────────────────────────────────────────────────────────
+
+/**
+ * Retrieve ranked scores joined with player names and game scale.
+ * Results are ordered by score_seconds descending (highest hidden time first).
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ limit?: number, gameId?: string|null }} options
+ * @returns {Promise<Array<{ rank: number, playerName: string, scale: string, scoreSeconds: number, bonusSeconds: number, createdAt: string }>>}
+ */
+export async function dbGetLeaderboard(pool, { limit = 20, gameId = null } = {}) {
+  const params = [limit];
+  const whereClause = gameId ? 'WHERE s.game_id = $2' : '';
+  if (gameId) params.push(gameId);
+
+  const res = await pool.query(
+    `SELECT p.name AS player_name, g.size, s.score_seconds, s.bonus_seconds, s.created_at
+     FROM scores s
+     JOIN players p ON p.id = s.player_id
+     JOIN games g ON g.id = s.game_id
+     ${whereClause}
+     ORDER BY s.score_seconds DESC
+     LIMIT $1`,
+    params,
+  );
+  return res.rows.map((row, i) => ({
+    rank: i + 1,
+    playerName: row.player_name,
+    scale: row.size,
+    scoreSeconds: row.score_seconds,
+    bonusSeconds: row.bonus_seconds,
+    createdAt: row.created_at,
+  }));
+}
+
 // ── Instrumented store ────────────────────────────────────────────────────────
 
 /**

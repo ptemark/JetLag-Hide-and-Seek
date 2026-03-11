@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 52 complete. Game timer display; 938 tests pass._
+_Task 53 complete. Post-game results screen; 953 tests pass._
 
 ---
 
@@ -64,6 +64,7 @@ _Task 52 complete. Game timer display; 938 tests pass._
 | 50 | 2026-03-11 | Question timing enforcement | db/schema.sql, db/gameStore.js, db/gameStore.test.js, functions/questions.js, functions/questions.test.js, server/index.js, server/server.test.js | expires_at column + 'expired' status on questions; dbCreateQuestion enforces one-pending-at-a-time (409 conflict); dbExpireStaleQuestions marks overdue questions; seeking-phase StateDispatcher task expires questions + broadcasts question_expired WS event; 19 new tests; 899 total pass; build clean |
 | 52 | 2026-03-11 | Game timer display | server/index.js, functions/questions.js, src/components/GameMap.jsx, server/server.test.js, src/components/GameMap.test.jsx, functions/questions.test.js | timer_sync WS broadcast on phase change + 30 s periodic; question_pending WS notify from submitQuestion; GameMap countdown banner (MM:SS); 16 new tests; 938 total pass; build clean |
 | 51 | 2026-03-11 | Photo question support | db/schema.sql, db/gameStore.js, functions/questions.js, functions/questions.test.js, functions/router.js, src/api.js, src/components/AnswerPanel.jsx, src/components/QA.test.jsx | question_photos table; dbSaveQuestionPhoto/dbGetQuestionPhoto; POST+GET /questions/:questionId/photo handlers with in-process store; router updated; AnswerPanel shows file-input for photo questions, reads as base64 via FileReader, uploads before text answer; 23 new tests; 922 total pass; build clean |
+| 53 | 2026-03-11 | Post-game results screen | db/schema.sql, db/gameStore.js, db/gameStore.test.js, db/lifecycle.test.js, functions/scores.js, src/api.js, src/components/ResultsScreen.jsx, src/components/ResultsScreen.test.jsx, src/components/CardPanel.jsx, src/components/GameMap.jsx, src/components/Lobby.jsx | bonus_seconds column on scores; ResultsScreen full-screen overlay (winner, elapsed, bonus, final score, Play Again); CardPanel onTimeBonusPlayed callback; GameMap tracks hidingStartedAt + captureWinnerRef; submitScore API fn; Lobby Play Again resets game/playing but keeps player; 15 new tests; 953 total pass; build clean |
 
 ---
 
@@ -166,7 +167,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **52** — Game timer display: players need to see how much hiding time remains and, during seeking, how long until each question expires. The game server should broadcast a `timer_sync` WS message on phase change (and periodically, at most every 30 s) containing `{ phaseEndsAt: <ISO timestamp> }`. Frontend `GameMap` receives `timer_sync` and shows a countdown banner: "Hiding ends in 23:47" during hiding, "Question expires in 4:12" when a pending question exists. Derive phase duration from game scale (small: 30 min, medium: 60 min, large: 180 min).
 
-- [ ] **53** — Post-game results screen: when the frontend receives `phase_change` → `finished`, display a full-screen results overlay showing: winner (Hider or Seekers), elapsed hiding time, card time-bonuses applied, and final score. Score calculation: base = elapsed seconds hidden; bonus = sum of time_bonus card values played. `POST /api/scores` should accept and persist `bonus_seconds`. Add a "Play Again" button that resets state to the lobby (re-uses same `playerId`).
+- [x] **53** — Post-game results screen: when the frontend receives `phase_change` → `finished`, display a full-screen results overlay showing: winner (Hider or Seekers), elapsed hiding time, card time-bonuses applied, and final score. Score calculation: base = elapsed seconds hidden; bonus = sum of time_bonus card values played. `POST /api/scores` should accept and persist `bonus_seconds`. Add a "Play Again" button that resets state to the lobby (re-uses same `playerId`).
 
 - [ ] **54** — Leaderboard: add `GET /api/scores?limit=20&gameId=` serverless endpoint returning ranked scores with player name and scale; backed by a JOIN across `scores`, `players`, and `games`. Add a leaderboard tab/modal to the lobby frontend showing top scores across all games with columns: rank, player name, scale, hiding time (formatted mm:ss).
 

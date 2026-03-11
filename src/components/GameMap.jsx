@@ -5,6 +5,8 @@ import QuestionPanel from './QuestionPanel.jsx';
 import AnswerPanel from './AnswerPanel.jsx';
 import CardPanel from './CardPanel.jsx';
 import ZoneSelector from './ZoneSelector.jsx';
+import ResultsScreen from './ResultsScreen.jsx';
+import { submitScore } from '../api.js';
 
 const LOCATION_INTERVAL_MS = 10_000;
 const TIMER_TICK_MS = 1_000;
@@ -41,10 +43,11 @@ function boundsCenter(bounds) {
  * GameMap — shows the Leaflet/OSM map for an active game.
  *
  * Props:
- *   player    — { playerId, name, role }
- *   game      — { gameId, size, status, bounds: { lat_min, lat_max, lon_min, lon_max } }
- *   zones     — array of { stationId, name, lat, lon, radiusM } transit zones (optional)
- *   serverUrl — WebSocket server base URL (e.g. "ws://localhost:3001")
+ *   player       — { playerId, name, role }
+ *   game         — { gameId, size, status, bounds: { lat_min, lat_max, lon_min, lon_max } }
+ *   zones        — array of { stationId, name, lat, lon, radiusM } transit zones (optional)
+ *   serverUrl    — WebSocket server base URL (e.g. "ws://localhost:3001")
+ *   onPlayAgain  — callback invoked when the player taps "Play Again" on the results screen
  *
  * Responsibilities:
  *   - Render an OSM Leaflet map centred on game bounds.
@@ -57,12 +60,16 @@ function boundsCenter(bounds) {
  *   - Update player markers on state change; redraw only when data changes.
  *   - Render ZoneSelector for hiders during hiding phase (before zone is locked).
  *   - Render QuestionPanel for seekers and AnswerPanel for hiders below the map.
+ *   - Show full-screen ResultsScreen when phase transitions to 'finished'.
  */
-export default function GameMap({ player, game, zones = [], serverUrl }) {
+export default function GameMap({ player, game, zones = [], serverUrl, onPlayAgain }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef({});   // { [playerId]: L.circleMarker }
   const wsRef = useRef(null);
+  const hidingStartedAtRef = useRef(null); // timestamp (ms) when hiding phase began
+  const bonusSecondsRef = useRef(0);       // accumulated time_bonus card seconds
+  const captureWinnerRef = useRef(null);   // winner string from capture event (avoids stale closure)
 
   const [players, setPlayers] = useState({});      // { [playerId]: { lat, lon } }
   const [phase, setPhase] = useState(game.status);
@@ -72,6 +79,7 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
   const [phaseEndsAt, setPhaseEndsAt] = useState(null);           // ISO from timer_sync
   const [pendingQuestionExpiresAt, setPendingQuestionExpiresAt] = useState(null); // ISO from question_pending
   const [, setTimerTick] = useState(0); // incremented each second to refresh countdown display
+  const [gameResult, setGameResult] = useState(null); // { winner, elapsedMs, bonusSeconds } on finish
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -177,7 +185,25 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
       } else if (msg.type === 'phase_change') {
         setPhase(msg.phase);
         setPendingQuestionExpiresAt(null); // phase change clears any pending question timer
+        if (msg.newPhase === 'hiding' || msg.phase === 'hiding') {
+          hidingStartedAtRef.current = Date.now();
+        }
+        if (msg.newPhase === 'finished' || msg.phase === 'finished') {
+          const elapsedMs = hidingStartedAtRef.current
+            ? Date.now() - hidingStartedAtRef.current
+            : 0;
+          const winner = msg.winner ?? captureWinnerRef.current ?? 'hider';
+          setGameResult({ winner, elapsedMs, bonusSeconds: bonusSecondsRef.current });
+          submitScore({
+            playerId: player.playerId,
+            gameId: game.gameId,
+            hidingTimeMs: elapsedMs,
+            captured: winner === 'seekers',
+            bonusSeconds: bonusSecondsRef.current,
+          }).catch(() => { /* fire-and-forget */ });
+        }
       } else if (msg.type === 'capture') {
+        captureWinnerRef.current = msg.winner ?? 'seekers';
         setCaptureMsg(msg.winner === 'seekers' ? 'Seekers win!' : 'Hiders win!');
       } else if (msg.type === 'question_answered') {
         setQaRefresh((n) => n + 1);
@@ -275,7 +301,21 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
       )}
 
       {player.role === 'hider' && (
-        <CardPanel player={player} game={game} refreshTrigger={qaRefresh} />
+        <CardPanel
+          player={player}
+          game={game}
+          refreshTrigger={qaRefresh}
+          onTimeBonusPlayed={(mins) => { bonusSecondsRef.current += mins * 60; }}
+        />
+      )}
+
+      {gameResult && (
+        <ResultsScreen
+          winner={gameResult.winner}
+          elapsedMs={gameResult.elapsedMs}
+          bonusSeconds={gameResult.bonusSeconds}
+          onPlayAgain={onPlayAgain}
+        />
       )}
     </div>
   );

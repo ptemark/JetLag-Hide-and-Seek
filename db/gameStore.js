@@ -147,21 +147,22 @@ export async function dbJoinGame(pool, { gameId, playerId, role }) {
 
 /**
  * Insert or update a score for a player in a game.
- * On conflict (same game + player pair), updates score_seconds and captured_at.
+ * On conflict (same game + player pair), updates score_seconds, bonus_seconds, and captured_at.
  *
  * @param {import('pg').Pool} pool
- * @param {{ gameId: string, playerId: string, scoreSeconds: number, capturedAt?: Date|string|null }} options
- * @returns {Promise<{ scoreId: string, gameId: string, playerId: string, scoreSeconds: number, capturedAt: string|null, createdAt: string }>}
+ * @param {{ gameId: string, playerId: string, scoreSeconds: number, bonusSeconds?: number, capturedAt?: Date|string|null }} options
+ * @returns {Promise<{ scoreId: string, gameId: string, playerId: string, scoreSeconds: number, bonusSeconds: number, capturedAt: string|null, createdAt: string }>}
  */
-export async function dbSubmitScore(pool, { gameId, playerId, scoreSeconds, capturedAt = null }) {
+export async function dbSubmitScore(pool, { gameId, playerId, scoreSeconds, bonusSeconds = 0, capturedAt = null }) {
   const res = await pool.query(
-    `INSERT INTO scores (game_id, player_id, score_seconds, captured_at)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO scores (game_id, player_id, score_seconds, bonus_seconds, captured_at)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (game_id, player_id) DO UPDATE
        SET score_seconds = EXCLUDED.score_seconds,
+           bonus_seconds = EXCLUDED.bonus_seconds,
            captured_at   = EXCLUDED.captured_at
-     RETURNING id, game_id, player_id, score_seconds, captured_at, created_at`,
-    [gameId, playerId, scoreSeconds, capturedAt],
+     RETURNING id, game_id, player_id, score_seconds, bonus_seconds, captured_at, created_at`,
+    [gameId, playerId, scoreSeconds, bonusSeconds, capturedAt],
   );
   const row = res.rows[0];
   return {
@@ -169,6 +170,7 @@ export async function dbSubmitScore(pool, { gameId, playerId, scoreSeconds, capt
     gameId: row.game_id,
     playerId: row.player_id,
     scoreSeconds: row.score_seconds,
+    bonusSeconds: row.bonus_seconds,
     capturedAt: row.captured_at,
     createdAt: row.created_at,
   };
@@ -179,11 +181,11 @@ export async function dbSubmitScore(pool, { gameId, playerId, scoreSeconds, capt
  *
  * @param {import('pg').Pool} pool
  * @param {string} gameId
- * @returns {Promise<Array<{ scoreId: string, gameId: string, playerId: string, scoreSeconds: number, capturedAt: string|null, createdAt: string }>>}
+ * @returns {Promise<Array<{ scoreId: string, gameId: string, playerId: string, scoreSeconds: number, bonusSeconds: number, capturedAt: string|null, createdAt: string }>>}
  */
 export async function dbGetGameScores(pool, gameId) {
   const res = await pool.query(
-    `SELECT id, game_id, player_id, score_seconds, captured_at, created_at
+    `SELECT id, game_id, player_id, score_seconds, bonus_seconds, captured_at, created_at
      FROM scores
      WHERE game_id = $1
      ORDER BY score_seconds DESC`,
@@ -194,6 +196,7 @@ export async function dbGetGameScores(pool, gameId) {
     gameId: row.game_id,
     playerId: row.player_id,
     scoreSeconds: row.score_seconds,
+    bonusSeconds: row.bonus_seconds,
     capturedAt: row.captured_at,
     createdAt: row.created_at,
   }));

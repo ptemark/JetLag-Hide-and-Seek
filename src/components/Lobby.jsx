@@ -42,6 +42,7 @@ export default function Lobby() {
           player={player}
           game={game}
           serverUrl={SERVER_URL}
+          onPlayAgain={() => { setGame(null); setPlaying(false); }}
         />
       )}
     </div>

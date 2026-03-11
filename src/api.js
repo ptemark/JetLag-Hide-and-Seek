@@ -160,6 +160,23 @@ export async function fetchQuestionPhoto(questionId) {
 }
 
 /**
+ * Submit a score for a completed game.
+ * POST /api/scores  { playerId, gameId, hidingTimeMs, captured, bonusSeconds? }
+ *   → { scoreId, playerId, gameId, hidingTimeMs, bonusSeconds, captured, submittedAt }
+ *
+ * @param {{ playerId: string, gameId: string, hidingTimeMs: number, captured: boolean, bonusSeconds?: number }} options
+ */
+export async function submitScore({ playerId, gameId, hidingTimeMs, captured, bonusSeconds = 0 }) {
+  const res = await fetch(`${BASE_URL}/api/scores`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId, gameId, hidingTimeMs, captured, bonusSeconds }),
+  });
+  if (!res.ok) throw new Error(`submitScore failed: ${res.status}`);
+  return res.json();
+}
+
+/**
  * Lock the hider's chosen hiding zone for a game.
  * POST /api/games/:gameId/zone  { stationId, lat, lon, radiusM, playerId }
  *   → { zoneId, gameId, stationId, lat, lon, radiusM, lockedAt }

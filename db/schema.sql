@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS scores (
   game_id        UUID        NOT NULL REFERENCES games(id)   ON DELETE CASCADE,
   player_id      UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   score_seconds  INTEGER     NOT NULL DEFAULT 0,
+  bonus_seconds  INTEGER     NOT NULL DEFAULT 0,
   captured_at    TIMESTAMPTZ,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (game_id, player_id)

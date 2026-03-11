@@ -1,14 +1,15 @@
 /**
  * scores.js — Serverless handler for score submission.
  *
- * POST /scores  { playerId, gameId, hidingTimeMs, captured }
- *            →  { scoreId, playerId, gameId, hidingTimeMs, captured, submittedAt }
+ * POST /scores  { playerId, gameId, hidingTimeMs, captured, bonusSeconds? }
+ *            →  { scoreId, playerId, gameId, hidingTimeMs, bonusSeconds, captured, submittedAt }
  *
  * Pass a pg Pool as the second argument to persist to the database.
  * Omit the pool to use the in-process Map (tests / local dev).
  *
  * DB mapping:
  *   hidingTimeMs  → score_seconds (rounded to nearest second)
+ *   bonusSeconds  → bonus_seconds (default 0)
  *   captured=true → captured_at = NOW(); false → captured_at = null
  */
 
@@ -34,7 +35,7 @@ export function submitScore(req, pool = null) {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
 
-  const { playerId, gameId, hidingTimeMs, captured } = req.body ?? {};
+  const { playerId, gameId, hidingTimeMs, captured, bonusSeconds = 0 } = req.body ?? {};
 
   if (!playerId || typeof playerId !== 'string') {
     return { status: 400, body: { error: 'playerId is required' } };
@@ -48,17 +49,21 @@ export function submitScore(req, pool = null) {
   if (typeof captured !== 'boolean') {
     return { status: 400, body: { error: 'captured must be a boolean' } };
   }
+  if (typeof bonusSeconds !== 'number' || bonusSeconds < 0) {
+    return { status: 400, body: { error: 'bonusSeconds must be a non-negative number' } };
+  }
 
   if (pool) {
     const scoreSeconds = Math.round(hidingTimeMs / 1000);
     const capturedAt = captured ? new Date().toISOString() : null;
-    return dbSubmitScore(pool, { gameId, playerId, scoreSeconds, capturedAt }).then(row => ({
+    return dbSubmitScore(pool, { gameId, playerId, scoreSeconds, bonusSeconds, capturedAt }).then(row => ({
       status: 201,
       body: {
         scoreId: row.scoreId,
         playerId: row.playerId,
         gameId: row.gameId,
         hidingTimeMs,
+        bonusSeconds: row.bonusSeconds,
         captured,
         submittedAt: row.createdAt,
       },
@@ -70,6 +75,7 @@ export function submitScore(req, pool = null) {
     playerId,
     gameId,
     hidingTimeMs,
+    bonusSeconds,
     captured,
     submittedAt: new Date().toISOString(),
   };

@@ -27,7 +27,7 @@ const CARD_COLORS = {
  *   game           — { gameId, ... }
  *   refreshTrigger — number, increment to re-fetch hand
  */
-export default function CardPanel({ player, game, refreshTrigger = 0 }) {
+export default function CardPanel({ player, game, refreshTrigger = 0, onTimeBonusPlayed }) {
   const [hand, setHand] = useState([]);
   const [loadError, setLoadError] = useState(null);
   const [playingId, setPlayingId] = useState(null);
@@ -51,6 +51,9 @@ export default function CardPanel({ player, game, refreshTrigger = 0 }) {
       const played = await playCardApi({ cardId: card.cardId, playerId: player.playerId });
       setHand((prev) => prev.filter((c) => c.cardId !== card.cardId));
       setConfirmation(played);
+      if (played.type === 'time_bonus' && onTimeBonusPlayed) {
+        onTimeBonusPlayed(played.effect?.minutesAdded ?? 10);
+      }
     } catch (err) {
       setPlayError(err.message);
     } finally {

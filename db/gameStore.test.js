@@ -231,7 +231,7 @@ describe('dbSubmitScore', () => {
       Promise.resolve({
         rows: [{
           id: 's1', game_id: 'g1', player_id: 'p1',
-          score_seconds: 3600, captured_at: '2026-01-01T01:00:00Z', created_at: '2026-01-01T00:00:00Z',
+          score_seconds: 3600, bonus_seconds: 0, captured_at: '2026-01-01T01:00:00Z', created_at: '2026-01-01T00:00:00Z',
         }],
       }),
     );
@@ -240,22 +240,22 @@ describe('dbSubmitScore', () => {
     });
     expect(result).toEqual({
       scoreId: 's1', gameId: 'g1', playerId: 'p1',
-      scoreSeconds: 3600, capturedAt: '2026-01-01T01:00:00Z', createdAt: '2026-01-01T00:00:00Z',
+      scoreSeconds: 3600, bonusSeconds: 0, capturedAt: '2026-01-01T01:00:00Z', createdAt: '2026-01-01T00:00:00Z',
     });
     expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO scores'),
-      ['g1', 'p1', 3600, '2026-01-01T01:00:00Z'],
+      ['g1', 'p1', 3600, 0, '2026-01-01T01:00:00Z'],
     );
   });
 
   it('passes null capturedAt when hider was not caught', async () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
-        rows: [{ id: 's2', game_id: 'g2', player_id: 'p2', score_seconds: 7200, captured_at: null, created_at: '' }],
+        rows: [{ id: 's2', game_id: 'g2', player_id: 'p2', score_seconds: 7200, bonus_seconds: 0, captured_at: null, created_at: '' }],
       }),
     );
     await dbSubmitScore(pool, { gameId: 'g2', playerId: 'p2', scoreSeconds: 7200 });
-    expect(pool.query).toHaveBeenCalledWith(expect.any(String), ['g2', 'p2', 7200, null]);
+    expect(pool.query).toHaveBeenCalledWith(expect.any(String), ['g2', 'p2', 7200, 0, null]);
   });
 
   it('propagates query errors', async () => {
@@ -273,8 +273,8 @@ describe('dbGetGameScores', () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
         rows: [
-          { id: 's1', game_id: 'g1', player_id: 'p1', score_seconds: 7200, captured_at: null, created_at: '2026-01-01' },
-          { id: 's2', game_id: 'g1', player_id: 'p2', score_seconds: 3600, captured_at: '2026-01-01T01:00:00Z', created_at: '2026-01-01' },
+          { id: 's1', game_id: 'g1', player_id: 'p1', score_seconds: 7200, bonus_seconds: 0, captured_at: null, created_at: '2026-01-01' },
+          { id: 's2', game_id: 'g1', player_id: 'p2', score_seconds: 3600, bonus_seconds: 0, captured_at: '2026-01-01T01:00:00Z', created_at: '2026-01-01' },
         ],
       }),
     );
@@ -494,7 +494,7 @@ describe('submitScore with pool', () => {
       Promise.resolve({
         rows: [{
           id: 'db-s1', game_id: 'g1', player_id: 'p1',
-          score_seconds: 3600, captured_at: null, created_at: '2026-01-01',
+          score_seconds: 3600, bonus_seconds: 0, captured_at: null, created_at: '2026-01-01',
         }],
       }),
     );
@@ -511,7 +511,7 @@ describe('submitScore with pool', () => {
   it('converts hidingTimeMs to scoreSeconds correctly', async () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
-        rows: [{ id: 's', game_id: 'g', player_id: 'p', score_seconds: 90, captured_at: null, created_at: '' }],
+        rows: [{ id: 's', game_id: 'g', player_id: 'p', score_seconds: 90, bonus_seconds: 0, captured_at: null, created_at: '' }],
       }),
     );
     await submitScore(
@@ -520,14 +520,14 @@ describe('submitScore with pool', () => {
     );
     expect(pool.query).toHaveBeenCalledWith(
       expect.any(String),
-      ['g', 'p', 90, null],
+      ['g', 'p', 90, 0, null],
     );
   });
 
   it('sets capturedAt when captured=true', async () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
-        rows: [{ id: 's', game_id: 'g', player_id: 'p', score_seconds: 60, captured_at: '2026-01-01T01:01:00Z', created_at: '' }],
+        rows: [{ id: 's', game_id: 'g', player_id: 'p', score_seconds: 60, bonus_seconds: 0, captured_at: '2026-01-01T01:01:00Z', created_at: '' }],
       }),
     );
     await submitScore(
@@ -535,7 +535,7 @@ describe('submitScore with pool', () => {
       pool,
     );
     const callArgs = pool.query.mock.calls[0][1];
-    expect(callArgs[3]).not.toBeNull(); // capturedAt is set
+    expect(callArgs[4]).not.toBeNull(); // capturedAt is set (index 4 after bonusSeconds)
   });
 });
 

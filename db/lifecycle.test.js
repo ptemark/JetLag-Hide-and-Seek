@@ -197,14 +197,14 @@ describe('Score lifecycle — submit and retrieve', () => {
       {
         rows: [{
           id: 'score-1', game_id: gameId, player_id: p1Id,
-          score_seconds: 3600, captured_at: null, created_at: NOW,
+          score_seconds: 3600, bonus_seconds: 0, captured_at: null, created_at: NOW,
         }],
       },
       // dbGetGameScores SELECT
       {
         rows: [{
           id: 'score-1', game_id: gameId, player_id: p1Id,
-          score_seconds: 3600, captured_at: null, created_at: NOW,
+          score_seconds: 3600, bonus_seconds: 0, captured_at: null, created_at: NOW,
         }],
       },
     );
@@ -223,9 +223,9 @@ describe('Score lifecycle — submit and retrieve', () => {
   it('scores are ordered highest to lowest by score_seconds', async () => {
     const pool = makeQueuedPool({
       rows: [
-        { id: 's3', game_id: gameId, player_id: 'p3', score_seconds: 7200, captured_at: null, created_at: NOW },
-        { id: 's1', game_id: gameId, player_id: p1Id, score_seconds: 3600, captured_at: null, created_at: NOW },
-        { id: 's2', game_id: gameId, player_id: p2Id, score_seconds: 1800, captured_at: '2026-03-05T11:00:00Z', created_at: NOW },
+        { id: 's3', game_id: gameId, player_id: 'p3', score_seconds: 7200, bonus_seconds: 0, captured_at: null, created_at: NOW },
+        { id: 's1', game_id: gameId, player_id: p1Id, score_seconds: 3600, bonus_seconds: 0, captured_at: null, created_at: NOW },
+        { id: 's2', game_id: gameId, player_id: p2Id, score_seconds: 1800, bonus_seconds: 0, captured_at: '2026-03-05T11:00:00Z', created_at: NOW },
       ],
     });
 
@@ -242,14 +242,14 @@ describe('Score lifecycle — submit and retrieve', () => {
       {
         rows: [{
           id: 'score-x', game_id: gameId, player_id: p1Id,
-          score_seconds: 3600, captured_at: null, created_at: NOW,
+          score_seconds: 3600, bonus_seconds: 0, captured_at: null, created_at: NOW,
         }],
       },
       // second submit (upsert updates to 5400)
       {
         rows: [{
           id: 'score-x', game_id: gameId, player_id: p1Id,
-          score_seconds: 5400, captured_at: null, created_at: NOW,
+          score_seconds: 5400, bonus_seconds: 0, captured_at: null, created_at: NOW,
         }],
       },
     );
@@ -265,21 +265,21 @@ describe('Score lifecycle — submit and retrieve', () => {
 
   it('capturedAt is null when player was not caught', async () => {
     const pool = makeQueuedPool({
-      rows: [{ id: 's', game_id: gameId, player_id: p1Id, score_seconds: 9000, captured_at: null, created_at: NOW }],
+      rows: [{ id: 's', game_id: gameId, player_id: p1Id, score_seconds: 9000, bonus_seconds: 0, captured_at: null, created_at: NOW }],
     });
     await dbSubmitScore(pool, { gameId, playerId: p1Id, scoreSeconds: 9000 });
     const [, params] = pool.query.mock.calls[0];
-    expect(params[3]).toBeNull();
+    expect(params[4]).toBeNull(); // capturedAt is at index 4 (after bonusSeconds)
   });
 
   it('capturedAt is a timestamp when player was caught', async () => {
     const capturedAt = '2026-03-05T11:30:00Z';
     const pool = makeQueuedPool({
-      rows: [{ id: 's', game_id: gameId, player_id: p2Id, score_seconds: 600, captured_at: capturedAt, created_at: NOW }],
+      rows: [{ id: 's', game_id: gameId, player_id: p2Id, score_seconds: 600, bonus_seconds: 0, captured_at: capturedAt, created_at: NOW }],
     });
     await dbSubmitScore(pool, { gameId, playerId: p2Id, scoreSeconds: 600, capturedAt });
     const [, params] = pool.query.mock.calls[0];
-    expect(params[3]).toBe(capturedAt);
+    expect(params[4]).toBe(capturedAt); // capturedAt is at index 4 (after bonusSeconds)
   });
 
   it('empty game returns no scores', async () => {
@@ -316,16 +316,16 @@ describe('Full game workflow — player registration through score submission', 
       // 7. Status → seeking
       { rows: [{ id: gameId, status: 'seeking' }] },
       // 8. Hider score (not captured)
-      { rows: [{ id: 'hs', game_id: gameId, player_id: hiderId, score_seconds: 7200, captured_at: null, created_at: NOW }] },
+      { rows: [{ id: 'hs', game_id: gameId, player_id: hiderId, score_seconds: 7200, bonus_seconds: 0, captured_at: null, created_at: NOW }] },
       // 9. Seeker score (captured at some point)
-      { rows: [{ id: 'ss', game_id: gameId, player_id: seekerId, score_seconds: 3600, captured_at: capturedAt, created_at: NOW }] },
+      { rows: [{ id: 'ss', game_id: gameId, player_id: seekerId, score_seconds: 3600, bonus_seconds: 0, captured_at: capturedAt, created_at: NOW }] },
       // 10. Status → finished
       { rows: [{ id: gameId, status: 'finished' }] },
       // 11. Get final scores
       {
         rows: [
-          { id: 'hs', game_id: gameId, player_id: hiderId, score_seconds: 7200, captured_at: null, created_at: NOW },
-          { id: 'ss', game_id: gameId, player_id: seekerId, score_seconds: 3600, captured_at: capturedAt, created_at: NOW },
+          { id: 'hs', game_id: gameId, player_id: hiderId, score_seconds: 7200, bonus_seconds: 0, captured_at: null, created_at: NOW },
+          { id: 'ss', game_id: gameId, player_id: seekerId, score_seconds: 3600, bonus_seconds: 0, captured_at: capturedAt, created_at: NOW },
         ],
       },
     );

@@ -94,6 +94,22 @@ CREATE TABLE IF NOT EXISTS cards (
 );
 
 -- -------------------------------------------------------------------------
+-- game_zones
+-- The hiding zone chosen by the hider during the hiding phase.
+-- One row per game (hider locks exactly one station).
+-- stationId: OSM node id (string); lat/lon: station coordinates; radiusM: zone radius in metres.
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS game_zones (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id     UUID        NOT NULL UNIQUE REFERENCES games(id) ON DELETE CASCADE,
+  station_id  TEXT        NOT NULL,
+  lat         DOUBLE PRECISION NOT NULL,
+  lon         DOUBLE PRECISION NOT NULL,
+  radius_m    INTEGER     NOT NULL,
+  locked_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- -------------------------------------------------------------------------
 -- scores
 -- Outcome record written at the end of each game.
 -- score_seconds = total time the hider survived (higher is better for hider).

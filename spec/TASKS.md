@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 48 complete. Vercel catch-all consolidation done; deployment unblocked._
+_Task 49 complete. Hider zone selection implemented; 880 tests pass._
 
 ---
 
@@ -60,6 +60,7 @@ _Task 48 complete. Vercel catch-all consolidation done; deployment unblocked._
 | 46 | 2026-03-10 | Build frontend question/answer UI | src/api.js, src/components/QuestionPanel.jsx, src/components/AnswerPanel.jsx, src/components/GameMap.jsx, src/components/QA.test.jsx, src/components/GameMap.test.jsx | Seeker QuestionPanel (category selector, targetId field, optimistic question list); Hider AnswerPanel (fetches inbox, per-question answer form, answered-count feedback); GameMap handles question_answered WS event via qaRefresh counter; 20 new tests; 833 total pass; build clean |
 | 47 | 2026-03-10 | Build frontend hider card panel | src/api.js, src/components/CardPanel.jsx, src/components/CardPanel.test.jsx, src/components/GameMap.jsx, src/components/GameMap.test.jsx | fetchCards/playCardApi API fns; CardPanel (hand display max 6, tap-to-play, effect confirmation, load/play errors, refreshTrigger); wired into GameMap for hiders below AnswerPanel; 15 new tests; 848 total pass; build clean |
 | 48 | 2026-03-11 | Fix Vercel 12-function limit | vercel.json, spec/DESIGN.md | Individual api/ adapters already deleted (commit feddf74); updated vercel.json functions glob from api/**/*.js to api/[...path].js; updated DESIGN.md sections 16, 17, 18, 20 to remove stale adapter file references; 848 tests pass; build clean |
+| 49 | 2026-03-11 | Hider zone selection | db/schema.sql, db/gameStore.js, functions/gameZone.js, functions/gameZone.test.js, functions/router.js, src/api.js, src/components/ZoneSelector.jsx, src/components/ZoneSelector.test.jsx, src/components/GameMap.jsx, src/components/GameMap.test.jsx | game_zones table; dbSetGameZone/dbGetGameZone; POST /games/:gameId/zone handler; ZoneSelector component (tap-to-select + confirm dialog); GameMap shows ZoneSelector for hiders in hiding phase + handles zone_locked WS event; 880 tests pass; build clean |
 
 ---
 
@@ -154,7 +155,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **48** — Fix Vercel 12-function limit: `api/[...path].js` catch-all was already created and `functions/router.js` already accepts `opts.pool`. Delete the 13 individual `api/` adapter files (`api/players.js`, `api/games/[id].js`, `api/scores.js`, `api/sessions.js`, `api/liveState.js`, `api/admin.js`, `api/zones.js`, `api/questions.js`, `api/answers/[questionId].js`, `api/cards.js`, `api/cards/[cardId]/play.js`, `api/games/index.js`, `api/api.test.js`). Update `vercel.json` functions glob from `api/**/*.js` to `api/[...path].js`. Update DESIGN.md section 17 and 20 to remove stale adapter file references. This is a deployment blocker.
 
-- [ ] **49** — Hider zone selection: during the hiding phase the hider must tap a transit station on the map to lock their hiding zone. Add `POST /api/games/:gameId/zone` serverless endpoint (body: `{ stationId, lat, lon, radius }`); persist in a new `game_zones` table column or extend `games`; broadcast `zone_locked` WS event so the game server's `captureDetector` uses the chosen zone instead of a default. Frontend: highlight selectable stations during hiding phase, tap-to-select with confirm dialog, disable re-selection once confirmed.
+- [x] **49** — Hider zone selection: during the hiding phase the hider must tap a transit station on the map to lock their hiding zone. Add `POST /api/games/:gameId/zone` serverless endpoint (body: `{ stationId, lat, lon, radius }`); persist in a new `game_zones` table column or extend `games`; broadcast `zone_locked` WS event so the game server's `captureDetector` uses the chosen zone instead of a default. Frontend: highlight selectable stations during hiding phase, tap-to-select with confirm dialog, disable re-selection once confirmed.
 
 - [ ] **50** — Question timing enforcement: the rules require seekers to wait for the current question to be answered before asking a new one, and the hider must answer within time limits (5 min standard, 10–20 min photo). Add `status` (`pending|answered|expired`) and `expires_at` columns to the `questions` table. `POST /questions` rejects with 409 if a pending question exists for that game. A game-loop StateDispatcher task (or serverless cron) marks questions `expired` when deadline passes and broadcasts a `question_expired` WS event. `GET /questions` returns `status` and `expires_at` so the frontend can show a countdown.
 

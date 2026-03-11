@@ -13,6 +13,7 @@ vi.mock('../api.js', () => ({
   submitAnswer:   vi.fn(),
   fetchCards:     vi.fn().mockResolvedValue({ hand: [] }),
   playCardApi:    vi.fn(),
+  lockZone:       vi.fn(),
 }));
 
 // ── Hoist mock objects so they're available inside vi.mock factory ─────────────
@@ -97,8 +98,11 @@ describe('GameMap', () => {
 
   it('renders the game header with phase and player name', () => {
     render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
-    expect(screen.getByText(/hiding/i)).toBeInTheDocument();
+    // Phase appears in the header <strong> element inside the game info bar
+    expect(screen.getAllByText(/hiding/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Alice/i)).toBeInTheDocument();
+    const strong = document.querySelector('strong');
+    expect(strong?.textContent).toMatch(/hiding/i);
   });
 
   it('renders the map container div', () => {
@@ -163,7 +167,7 @@ describe('GameMap', () => {
     await act(async () => {
       MockWebSocket.last.onmessage?.({ data: 'not-json{{{' });
     });
-    expect(screen.getByText(/hiding/i)).toBeInTheDocument();
+    expect(screen.getByTestId('map-container')).toBeInTheDocument();
   });
 
   it('handles player_location message without crashing', async () => {
@@ -173,7 +177,7 @@ describe('GameMap', () => {
         data: JSON.stringify({ type: 'player_location', playerId: 'p2', lat: 51.06, lon: -0.06 }),
       });
     });
-    expect(screen.getByText(/hiding/i)).toBeInTheDocument();
+    expect(screen.getByTestId('map-container')).toBeInTheDocument();
   });
 
   it('handles game_state message without crashing', async () => {
@@ -189,7 +193,7 @@ describe('GameMap', () => {
         }),
       });
     });
-    expect(screen.getByText(/hiding/i)).toBeInTheDocument();
+    expect(screen.getByTestId('map-container')).toBeInTheDocument();
   });
 
   it('sets up GPS polling on 10 s interval', () => {
@@ -269,5 +273,41 @@ describe('GameMap', () => {
   it('renders game bounds rectangle on the Leaflet map', () => {
     render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
     expect(mockL.rectangle).toHaveBeenCalled();
+  });
+
+  it('shows ZoneSelector for hider during hiding phase when zone is not locked', () => {
+    const hidingGame = { ...game, status: 'hiding' };
+    render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.getByTestId('zone-selector')).toBeInTheDocument();
+  });
+
+  it('does not show ZoneSelector for seekers', () => {
+    const seeker = { ...player, role: 'seeker' };
+    const hidingGame = { ...game, status: 'hiding' };
+    render(<GameMap player={seeker} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('zone-selector')).not.toBeInTheDocument();
+  });
+
+  it('does not show ZoneSelector when phase is not hiding', () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('zone-selector')).not.toBeInTheDocument();
+  });
+
+  it('hides ZoneSelector after zone_locked WS event is received', async () => {
+    const hidingGame = { ...game, status: 'hiding' };
+    render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.getByTestId('zone-selector')).toBeInTheDocument();
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({
+          type: 'zone_locked',
+          gameId: 'g1',
+          zone: { stationId: 's1', lat: 51.05, lon: -0.05, radiusM: 500 },
+        }),
+      });
+    });
+    expect(screen.queryByTestId('zone-selector')).not.toBeInTheDocument();
   });
 });

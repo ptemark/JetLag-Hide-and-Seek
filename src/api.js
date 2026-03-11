@@ -128,3 +128,20 @@ export async function playCardApi({ cardId, playerId }) {
   if (!res.ok) throw new Error(`playCard failed: ${res.status}`);
   return res.json();
 }
+
+/**
+ * Lock the hider's chosen hiding zone for a game.
+ * POST /api/games/:gameId/zone  { stationId, lat, lon, radiusM, playerId }
+ *   → { zoneId, gameId, stationId, lat, lon, radiusM, lockedAt }
+ *
+ * @param {{ gameId: string, stationId: string, lat: number, lon: number, radiusM: number, playerId: string }} options
+ */
+export async function lockZone({ gameId, stationId, lat, lon, radiusM, playerId }) {
+  const res = await fetch(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/zone`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stationId, lat, lon, radiusM, playerId }),
+  });
+  if (!res.ok) throw new Error(`lockZone failed: ${res.status}`);
+  return res.json();
+}

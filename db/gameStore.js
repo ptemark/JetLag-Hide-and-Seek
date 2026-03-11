@@ -199,6 +199,67 @@ export async function dbGetGameScores(pool, gameId) {
   }));
 }
 
+// ── Game zone store ───────────────────────────────────────────────────────────
+
+/**
+ * Persist the hider's chosen hiding zone for a game.
+ * Idempotent: on conflict (same game_id) updates the zone row.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ gameId: string, stationId: string, lat: number, lon: number, radiusM: number }} options
+ * @returns {Promise<{ zoneId: string, gameId: string, stationId: string, lat: number, lon: number, radiusM: number, lockedAt: string }>}
+ */
+export async function dbSetGameZone(pool, { gameId, stationId, lat, lon, radiusM }) {
+  const res = await pool.query(
+    `INSERT INTO game_zones (game_id, station_id, lat, lon, radius_m)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (game_id) DO UPDATE
+       SET station_id = EXCLUDED.station_id,
+           lat        = EXCLUDED.lat,
+           lon        = EXCLUDED.lon,
+           radius_m   = EXCLUDED.radius_m,
+           locked_at  = NOW()
+     RETURNING id, game_id, station_id, lat, lon, radius_m, locked_at`,
+    [gameId, stationId, lat, lon, radiusM],
+  );
+  const row = res.rows[0];
+  return {
+    zoneId:    row.id,
+    gameId:    row.game_id,
+    stationId: row.station_id,
+    lat:       row.lat,
+    lon:       row.lon,
+    radiusM:   row.radius_m,
+    lockedAt:  row.locked_at,
+  };
+}
+
+/**
+ * Retrieve the locked hiding zone for a game, or null if not yet set.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {string} gameId
+ * @returns {Promise<{ zoneId: string, gameId: string, stationId: string, lat: number, lon: number, radiusM: number, lockedAt: string } | null>}
+ */
+export async function dbGetGameZone(pool, gameId) {
+  const res = await pool.query(
+    `SELECT id, game_id, station_id, lat, lon, radius_m, locked_at
+     FROM game_zones WHERE game_id = $1`,
+    [gameId],
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  return {
+    zoneId:    row.id,
+    gameId:    row.game_id,
+    stationId: row.station_id,
+    lat:       row.lat,
+    lon:       row.lon,
+    radiusM:   row.radius_m,
+    lockedAt:  row.locked_at,
+  };
+}
+
 // ── Question / Answer store ───────────────────────────────────────────────────
 
 /**

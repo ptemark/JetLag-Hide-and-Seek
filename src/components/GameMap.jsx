@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import QuestionPanel from './QuestionPanel.jsx';
 import AnswerPanel from './AnswerPanel.jsx';
 import CardPanel from './CardPanel.jsx';
+import ZoneSelector from './ZoneSelector.jsx';
 
 const LOCATION_INTERVAL_MS = 10_000;
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -26,7 +27,7 @@ function boundsCenter(bounds) {
  * Props:
  *   player    — { playerId, name, role }
  *   game      — { gameId, size, status, bounds: { lat_min, lat_max, lon_min, lon_max } }
- *   zones     — array of { lat, lon, radius } hiding zones (optional)
+ *   zones     — array of { stationId, name, lat, lon, radiusM } transit zones (optional)
  *   serverUrl — WebSocket server base URL (e.g. "ws://localhost:3001")
  *
  * Responsibilities:
@@ -36,8 +37,9 @@ function boundsCenter(bounds) {
  *   - Connect to the managed game server via WebSocket.
  *   - Poll GPS every 10 s and send location_update messages.
  *   - Receive player_location / game_state / phase_change / capture /
- *     question_answered messages.
+ *     question_answered / zone_locked messages.
  *   - Update player markers on state change; redraw only when data changes.
+ *   - Render ZoneSelector for hiders during hiding phase (before zone is locked).
  *   - Render QuestionPanel for seekers and AnswerPanel for hiders below the map.
  */
 export default function GameMap({ player, game, zones = [], serverUrl }) {
@@ -50,6 +52,7 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
   const [phase, setPhase] = useState(game.status);
   const [captureMsg, setCaptureMsg] = useState(null);
   const [qaRefresh, setQaRefresh] = useState(0);   // increments on question_answered WS event
+  const [lockedZone, setLockedZone] = useState(null); // zone locked by hider
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -152,6 +155,8 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
         setCaptureMsg(msg.winner === 'seekers' ? 'Seekers win!' : 'Hiders win!');
       } else if (msg.type === 'question_answered') {
         setQaRefresh((n) => n + 1);
+      } else if (msg.type === 'zone_locked') {
+        setLockedZone(msg.zone ?? null);
       }
     };
 
@@ -211,6 +216,15 @@ export default function GameMap({ player, game, zones = [], serverUrl }) {
 
       {player.role === 'seeker' && (
         <QuestionPanel player={player} game={game} />
+      )}
+
+      {player.role === 'hider' && phase === 'hiding' && !lockedZone && (
+        <ZoneSelector
+          player={player}
+          game={game}
+          zones={zones}
+          onZoneLocked={(zone) => setLockedZone(zone)}
+        />
       )}
 
       {player.role === 'hider' && (

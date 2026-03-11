@@ -9,6 +9,7 @@
  */
 export default function WaitingRoom({ game, player, onStart }) {
   const showTeam = (game.seekerTeams ?? 0) >= 2 && player?.role === 'seeker' && player?.team;
+  const inviteUrl = `${window.location.origin}${window.location.pathname}?gameId=${game.gameId}`;
 
   return (
     <div aria-label="Waiting room">
@@ -26,7 +27,10 @@ export default function WaitingRoom({ game, player, onStart }) {
           Your team: <strong>Team {player.team}</strong>
         </p>
       )}
-      <p>Share the Game ID with other players so they can join.</p>
+      <p>
+        Invite link:{' '}
+        <a href={inviteUrl} aria-label="Invite link">{inviteUrl}</a>
+      </p>
       {onStart && (
         <button onClick={onStart}>Start Game</button>
       )}

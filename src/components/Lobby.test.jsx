@@ -194,6 +194,17 @@ describe('GameForm', () => {
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/game not found/i));
   });
+
+  it('opens join tab when initialTab="join" is provided', () => {
+    render(<GameForm player={PLAYER} onGameReady={() => {}} initialTab="join" />);
+    expect(screen.getByRole('tab', { name: /join game/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText(/game id/i)).toBeInTheDocument();
+  });
+
+  it('pre-fills gameId input when initialGameId is provided', () => {
+    render(<GameForm player={PLAYER} onGameReady={() => {}} initialTab="join" initialGameId="abc123" />);
+    expect(screen.getByLabelText(/game id/i)).toHaveValue('abc123');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -216,9 +227,11 @@ describe('WaitingRoom', () => {
     expect(screen.getByText(/Status: waiting/i)).toBeInTheDocument();
   });
 
-  it('shows sharing instruction', () => {
+  it('shows invite link containing the gameId', () => {
     render(<WaitingRoom game={GAME} />);
-    expect(screen.getByText(/share/i)).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: /invite link/i });
+    expect(link).toBeInTheDocument();
+    expect(link.href).toContain('gameId=g1');
   });
 });
 
@@ -290,5 +303,22 @@ describe('Lobby', () => {
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: /waiting room/i })).toBeInTheDocument()
     );
+  });
+
+  it('activates join tab and pre-fills gameId when ?gameId is in URL', async () => {
+    vi.stubGlobal('location', { ...window.location, search: '?gameId=invite99' });
+    api.registerPlayer.mockResolvedValue(PLAYER);
+    render(<Lobby />);
+
+    // Register player so GameForm renders
+    await userEvent.setup().type(screen.getByLabelText(/name/i), 'Alice');
+    await userEvent.setup().click(screen.getByRole('button', { name: /register/i }));
+    await waitFor(() => screen.getByRole('tab', { name: /join game/i }));
+
+    // Join tab should be active and game ID pre-filled
+    expect(screen.getByRole('tab', { name: /join game/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText(/game id/i)).toHaveValue('invite99');
+
+    vi.unstubAllGlobals();
   });
 });

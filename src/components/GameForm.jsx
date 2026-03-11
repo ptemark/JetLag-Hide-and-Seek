@@ -12,15 +12,17 @@ const EMPTY_BOUNDS = { lat_min: '', lat_max: '', lon_min: '', lon_max: '' };
  * Join tab: game ID input.
  *
  * Props:
- *   player  — registered player record { playerId, name, role }
+ *   player        — registered player record { playerId, name, role }
  *   onGameReady(game) — called with the game record when ready to proceed.
+ *   initialTab    — which tab to show first: 'create' (default) or 'join'
+ *   initialGameId — pre-fill the join Game ID input (e.g. from invite URL)
  */
-export default function GameForm({ player, onGameReady }) {
-  const [tab, setTab] = useState('create');
+export default function GameForm({ player, onGameReady, initialTab = 'create', initialGameId = '' }) {
+  const [tab, setTab] = useState(initialTab);
   const [scale, setScale] = useState('medium');
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
   const [seekerTeams, setSeekerTeams] = useState(0);
-  const [gameId, setGameId] = useState('');
+  const [gameId, setGameId] = useState(initialGameId);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 

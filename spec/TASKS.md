@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 56 complete. WebSocket reconnection with exponential backoff; 1004 tests pass._
+_Task 57 complete. Game invite URL; 1007 tests pass._
 
 ---
 
@@ -68,6 +68,7 @@ _Task 56 complete. WebSocket reconnection with exponential backoff; 1004 tests p
 | 54 | 2026-03-11 | Leaderboard | db/gameStore.js, functions/scores.js, functions/scores.test.js, functions/router.js, src/api.js, src/components/Leaderboard.jsx, src/components/Leaderboard.test.jsx, src/components/Lobby.jsx | dbGetLeaderboard JOIN query (scores+players+games); GET /scores endpoint with limit+gameId query params; fetchLeaderboard API fn; Leaderboard component (rank, player, scale, MM:SS hiding time); Leaderboard toggle button in Lobby; 24 new tests; 977 total pass; build clean |
 | 55 | 2026-03-11 | Two-teams seeker variant | db/schema.sql, db/gameStore.js, db/gameStore.test.js, db/lifecycle.test.js, functions/games.js, server/gameState.js, server/wsHandler.js, server/wsHandler.test.js, server/captureDetector.js, server/captureDetector.test.js, server/index.js, server/gameState.test.js, server/server.test.js, src/api.js, src/components/GameForm.jsx, src/components/WaitingRoom.jsx, src/components/GameMap.jsx, src/components/Lobby.jsx | seeker_teams on games (0=off, 2=two teams); team on game_players (auto-balanced A/B for seekers); team-scoped pending question check; WsHandler team auto-assignment + team-scoped location broadcasts; checkCapture two-team mode (first team all in zone wins); GameMap join_game on open + team-colored markers; GameForm seeker_teams selector; WaitingRoom team display; 15 new tests; 992 total pass; build clean |
 | 56 | 2026-03-11 | WebSocket reconnection | server/wsHandler.js, server/wsHandler.test.js, server/index.js, server/server.test.js, server/connection.test.js, server/integration.test.js, src/components/GameMap.jsx, src/components/GameMap.test.jsx | WsHandler 30 s grace period on disconnect; broadcasts player_disconnected immediately then player_left after expiry; cancels timer on rejoin; sends game_state to reconnecting player; broadcasts player_reconnected; reconnectGraceMs createServer param; GameMap exponential backoff (1 s→30 s, 6 attempts); Reconnecting… banner via wsStatus; 12 new tests; 1004 total pass; build clean |
+| 57 | 2026-03-11 | Game invite URL | src/components/WaitingRoom.jsx, src/components/GameForm.jsx, src/components/Lobby.jsx, src/components/Lobby.test.jsx | WaitingRoom shows invite link (?gameId=xxx); GameForm accepts initialTab/initialGameId props; Lobby reads ?gameId from URL and activates join tab with pre-filled ID; 3 new tests; 1007 total pass; build clean |
 
 ---
 
@@ -180,7 +181,7 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **56** — WebSocket reconnection: when a player's WS connection drops mid-game, the frontend should automatically attempt to reconnect with exponential backoff (1 s, 2 s, 4 s … up to 30 s). Show a "Reconnecting…" banner while disconnected. On reconnect, re-send `join_game` to restore server-side game membership. Server-side: give disconnected players a 30 s grace period before removing them from game state, and broadcast `player_disconnected` (not `player_left`) during the grace window; cancel the timer if the player reconnects. This prevents mid-game reconnects from appearing as a full leave+rejoin to other players.
 
-- [ ] **57** — Game invite URL: after a game is created, display a shareable link (e.g. `?gameId=xxx`) that pre-fills the Join tab in the lobby. Parse `?gameId` on page load and activate the Join tab automatically. No backend changes needed — purely frontend.
+- [x] **57** — Game invite URL: after a game is created, display a shareable link (e.g. `?gameId=xxx`) that pre-fills the Join tab in the lobby. Parse `?gameId` on page load and activate the Join tab automatically. No backend changes needed — purely frontend.
 
 - [ ] **58** — Progressive Web App: add `public/manifest.json` (name, icons, theme colour, `display: standalone`) and a minimal service worker that caches the app shell. Register the service worker in `src/main.jsx`. Allows players to add the game to their home screen on iOS/Android.
 

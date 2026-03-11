@@ -929,3 +929,117 @@ describe('createServer — timer sync', () => {
     vi.useRealTimers();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Hider timeout victory
+// ---------------------------------------------------------------------------
+
+describe('createServer — hider timeout victory', () => {
+  it('broadcasts capture event with winner hider when seeking phase expires without capture', () => {
+    vi.useFakeTimers();
+    const SEEKING = 500;
+    const s = createServer({ tickInterval: 100, hidingDuration: 10_000, seekingDuration: SEEKING });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'timeout-game' }));
+    s.gameLoopManager.startGame('timeout-game');
+    s.gameLoopManager.beginHiding('timeout-game');
+    s.gameLoopManager.beginSeeking('timeout-game');
+    mockWs.send.mockClear();
+
+    // Advance past seeking duration so the timer auto-finishes the game.
+    vi.advanceTimersByTime(SEEKING + 200);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const captureEvent = broadcasts.find((b) => b.type === 'capture');
+    expect(captureEvent).toBeTruthy();
+    expect(captureEvent.winner).toBe('hider');
+    expect(captureEvent.seekersInZone).toEqual([]);
+    expect(captureEvent.captureTeam).toBeNull();
+    expect(typeof captureEvent.seekingElapsedMs).toBe('number');
+    expect(captureEvent.seekingElapsedMs).toBeGreaterThanOrEqual(SEEKING);
+
+    vi.useRealTimers();
+  });
+
+  it('calls store.dbUpdateGameStatus with finished when hider wins by timeout', async () => {
+    vi.useFakeTimers();
+    const SEEKING = 300;
+    const updateStatusFn = vi.fn().mockResolvedValue(undefined);
+    const s = createServer({
+      tickInterval: 50,
+      hidingDuration: 10_000,
+      seekingDuration: SEEKING,
+      store: { dbUpdateGameStatus: updateStatusFn, dbExpireStaleQuestions: vi.fn().mockResolvedValue([]) },
+    });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'timeout-db-game' }));
+    s.gameLoopManager.startGame('timeout-db-game');
+    s.gameLoopManager.beginHiding('timeout-db-game');
+    s.gameLoopManager.beginSeeking('timeout-db-game');
+
+    vi.advanceTimersByTime(SEEKING + 100);
+
+    // Allow async store call to resolve.
+    await Promise.resolve();
+
+    expect(updateStatusFn).toHaveBeenCalledWith({ gameId: 'timeout-db-game', status: 'finished' });
+
+    vi.useRealTimers();
+  });
+
+  it('does not broadcast second capture event when seekers capture (no double-broadcast)', async () => {
+    vi.useFakeTimers();
+    const s = createServer({ tickInterval: 5000, seekingDuration: 600_000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'no-double-game', role: 'seeker' }));
+    s.gameLoopManager.startGame('no-double-game');
+    s.gameLoopManager.beginHiding('no-double-game');
+    s.gameLoopManager.beginSeeking('no-double-game');
+
+    // Set up a hider in zone so capture_check triggers.
+    s.gameStateManager.addPlayerToGame('no-double-game', 'hider1', 'hider');
+    s.gameStateManager.updatePlayerLocation('no-double-game', 'hider1', 0, 0);
+    s.gameStateManager.updatePlayerLocation('no-double-game', 'p1', 0, 0);
+    s.gameStateManager.setGameZones('no-double-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+
+    mockWs.send.mockClear();
+
+    // Dispatch the capture task directly.
+    const gameState = s.gameStateManager.getGameState('no-double-game');
+    await s.stateDispatcher.dispatch(gameState);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const captureEvents = broadcasts.filter((b) => b.type === 'capture');
+
+    // Exactly one capture event, with winner 'seekers'.
+    expect(captureEvents.length).toBe(1);
+    expect(captureEvents[0].winner).toBe('seekers');
+
+    vi.useRealTimers();
+  });
+
+  it('does not broadcast capture event when game is stopped without playing (stopGame)', () => {
+    vi.useFakeTimers();
+    const s = createServer({ tickInterval: 5000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'stop-game' }));
+    s.gameLoopManager.startGame('stop-game');
+    mockWs.send.mockClear();
+
+    // stopGame does NOT trigger onPhaseChange — no capture event expected.
+    s.gameLoopManager.stopGame('stop-game');
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    expect(broadcasts.some((b) => b.type === 'capture')).toBe(false);
+
+    vi.useRealTimers();
+  });
+});

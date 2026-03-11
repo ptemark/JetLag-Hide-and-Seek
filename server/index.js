@@ -145,6 +145,9 @@ export function createServer({
   // Track last timer_sync broadcast time per game to enforce 30 s throttle.
   const _lastTimerSyncAt = new Map();
 
+  // Track when each game enters the seeking phase so elapsed time is available on timeout.
+  const _seekingStartedAt = new Map();
+
   /**
    * Build a timer_sync payload for a game in a timed phase.
    * Returns null for phases with no defined duration (waiting/finished).
@@ -225,6 +228,41 @@ export function createServer({
   gameLoopManager.onPhaseChange = (gameId, oldPhase, newPhase) => {
     gameStateManager.setGameStatus(gameId, newPhase);
     wsHandler.broadcastToGame(gameId, { type: 'phase_change', gameId, oldPhase, newPhase });
+
+    if (newPhase === 'seeking') {
+      _seekingStartedAt.set(gameId, Date.now());
+    }
+
+    if (newPhase === 'finished') {
+      const wasCapture = _capturingGames.has(gameId);
+      _capturingGames.delete(gameId);
+
+      if (!wasCapture) {
+        // Hider wins by timeout — seekers never captured.
+        const seekingStarted = _seekingStartedAt.get(gameId);
+        const seekingElapsedMs = seekingStarted ? Date.now() - seekingStarted : seekingDuration;
+
+        wsHandler.broadcastToGame(gameId, {
+          type: 'capture',
+          gameId,
+          winner: 'hider',
+          captureTeam: null,
+          hiderZone: null,
+          seekersInZone: [],
+          seekingElapsedMs,
+        });
+
+        if (store) {
+          store.dbUpdateGameStatus({ gameId, status: 'finished' }).catch((err) => {
+            logger.error(LogCategory.ERROR, 'timeout_db_error', { gameId, error: err?.message });
+          });
+        }
+      }
+
+      _seekingStartedAt.delete(gameId);
+      _lastTimerSyncAt.delete(gameId);
+    }
+
     // Immediately sync the timer on phase entry so clients can start counting down.
     const timerMsg = buildTimerSync(gameId, newPhase);
     if (timerMsg) {

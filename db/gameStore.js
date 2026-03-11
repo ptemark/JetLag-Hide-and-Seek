@@ -47,13 +47,15 @@ export async function dbGetPlayer(pool, id) {
  * Insert a new game record.
  *
  * @param {import('pg').Pool} pool
- * @param {{ size: string, bounds?: object }} options
- * @returns {Promise<{ gameId: string, size: string, bounds: object, status: string, createdAt: string }>}
+ * @param {{ size: string, bounds?: object, seekerTeams?: number }} options
+ * @returns {Promise<{ gameId: string, size: string, bounds: object, status: string, seekerTeams: number, createdAt: string }>}
  */
-export async function dbCreateGame(pool, { size, bounds = {} }) {
+export async function dbCreateGame(pool, { size, bounds = {}, seekerTeams = 0 }) {
   const res = await pool.query(
-    'INSERT INTO games (size, bounds) VALUES ($1, $2) RETURNING id, size, bounds, status, created_at',
-    [size, JSON.stringify(bounds)],
+    `INSERT INTO games (size, bounds, seeker_teams)
+     VALUES ($1, $2, $3)
+     RETURNING id, size, bounds, status, seeker_teams, created_at`,
+    [size, JSON.stringify(bounds), seekerTeams],
   );
   const row = res.rows[0];
   return {
@@ -61,6 +63,7 @@ export async function dbCreateGame(pool, { size, bounds = {} }) {
     size: row.size,
     bounds: row.bounds,
     status: row.status,
+    seekerTeams: row.seeker_teams,
     createdAt: row.created_at,
   };
 }
@@ -74,14 +77,14 @@ export async function dbCreateGame(pool, { size, bounds = {} }) {
  */
 export async function dbGetGame(pool, id) {
   const gameRes = await pool.query(
-    'SELECT id, size, bounds, status, created_at FROM games WHERE id = $1',
+    'SELECT id, size, bounds, status, seeker_teams, created_at FROM games WHERE id = $1',
     [id],
   );
   if (gameRes.rows.length === 0) return null;
   const g = gameRes.rows[0];
 
   const playersRes = await pool.query(
-    `SELECT p.id, p.name, gp.role, gp.joined_at
+    `SELECT p.id, p.name, gp.role, gp.team, gp.joined_at
      FROM game_players gp
      JOIN players p ON p.id = gp.player_id
      WHERE gp.game_id = $1
@@ -92,6 +95,7 @@ export async function dbGetGame(pool, id) {
     playerId: r.id,
     name: r.name,
     role: r.role,
+    team: r.team ?? null,
     joinedAt: r.joined_at,
   }));
 
@@ -100,6 +104,7 @@ export async function dbGetGame(pool, id) {
     size: g.size,
     bounds: g.bounds,
     status: g.status,
+    seekerTeams: g.seeker_teams,
     createdAt: g.created_at,
     players,
   };
@@ -123,24 +128,53 @@ export async function dbUpdateGameStatus(pool, { gameId, status }) {
 }
 
 /**
- * Add a player to a game with a specific role.
+ * Add a player to a game with a specific role and optional team assignment.
+ *
+ * When `team` is provided it is persisted.  When omitted and the game has
+ * seeker_teams = 2, the function auto-assigns the seeker to whichever team
+ * currently has fewer members (A if equal).
  *
  * @param {import('pg').Pool} pool
- * @param {{ gameId: string, playerId: string, role: string }} options
- * @returns {Promise<{ gameId: string, playerId: string, role: string, joinedAt: string }>}
+ * @param {{ gameId: string, playerId: string, role: string, team?: string|null }} options
+ * @returns {Promise<{ gameId: string, playerId: string, role: string, team: string|null, joinedAt: string }>}
  */
-export async function dbJoinGame(pool, { gameId, playerId, role }) {
+export async function dbJoinGame(pool, { gameId, playerId, role, team = null }) {
+  let assignedTeam = team;
+
+  // Auto-assign team for seekers when the game uses two teams.
+  if (!assignedTeam && role === 'seeker') {
+    const gameRes = await pool.query(
+      'SELECT seeker_teams FROM games WHERE id = $1',
+      [gameId],
+    );
+    const seekerTeams = gameRes.rows[0]?.seeker_teams ?? 0;
+    if (seekerTeams >= 2) {
+      const countRes = await pool.query(
+        `SELECT team, COUNT(*) AS cnt FROM game_players
+         WHERE game_id = $1 AND role = 'seeker' AND team IS NOT NULL
+         GROUP BY team`,
+        [gameId],
+      );
+      const counts = { A: 0, B: 0 };
+      for (const r of countRes.rows) {
+        if (r.team === 'A' || r.team === 'B') counts[r.team] = Number(r.cnt);
+      }
+      assignedTeam = counts.B < counts.A ? 'B' : 'A';
+    }
+  }
+
   const res = await pool.query(
-    `INSERT INTO game_players (game_id, player_id, role)
-     VALUES ($1, $2, $3)
-     RETURNING game_id, player_id, role, joined_at`,
-    [gameId, playerId, role],
+    `INSERT INTO game_players (game_id, player_id, role, team)
+     VALUES ($1, $2, $3, $4)
+     RETURNING game_id, player_id, role, team, joined_at`,
+    [gameId, playerId, role, assignedTeam],
   );
   const row = res.rows[0];
   return {
     gameId: row.game_id,
     playerId: row.player_id,
     role: row.role,
+    team: row.team ?? null,
     joinedAt: row.joined_at,
   };
 }
@@ -270,18 +304,32 @@ const QUESTION_EXPIRY_MS = { photo: 15 * 60 * 1000, default: 5 * 60 * 1000 };
 
 /**
  * Insert a new question record.
- * Rejects with 409 if a pending question already exists for the same game.
+ * Rejects with 409 if a pending question already exists for the same game (or
+ * the same seeker team when the game uses two seeker teams).
  *
  * @param {import('pg').Pool} pool
- * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string }} options
+ * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null }} options
  * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string } | { conflict: true }>}
  */
-export async function dbCreateQuestion(pool, { gameId, askerId, targetId, category, text }) {
-  // Enforce one-pending-question-at-a-time per game.
-  const pending = await pool.query(
-    `SELECT id FROM questions WHERE game_id = $1 AND status = 'pending' LIMIT 1`,
-    [gameId],
-  );
+export async function dbCreateQuestion(pool, { gameId, askerId, targetId, category, text, askerTeam = null }) {
+  // Enforce one-pending-question-at-a-time.  When the game uses two teams,
+  // scope the check to the asker's team so both teams can ask independently.
+  let pending;
+  if (askerTeam) {
+    // Scope pending check to questions from the same seeker team.
+    pending = await pool.query(
+      `SELECT q.id FROM questions q
+       JOIN game_players gp ON gp.player_id = q.asker_id AND gp.game_id = q.game_id
+       WHERE q.game_id = $1 AND q.status = 'pending' AND gp.team = $2
+       LIMIT 1`,
+      [gameId, askerTeam],
+    );
+  } else {
+    pending = await pool.query(
+      `SELECT id FROM questions WHERE game_id = $1 AND status = 'pending' LIMIT 1`,
+      [gameId],
+    );
+  }
   if (pending.rows.length > 0) return { conflict: true };
 
   const expiresAt = new Date(

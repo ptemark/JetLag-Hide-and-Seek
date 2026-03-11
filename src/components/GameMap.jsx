@@ -71,7 +71,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const bonusSecondsRef = useRef(0);       // accumulated time_bonus card seconds
   const captureWinnerRef = useRef(null);   // winner string from capture event (avoids stale closure)
 
-  const [players, setPlayers] = useState({});      // { [playerId]: { lat, lon } }
+  const [players, setPlayers] = useState({});      // { [playerId]: { lat, lon, team? } }
+  const [myTeam, setMyTeam] = useState(null);       // 'A' | 'B' | null (assigned by server in two-team mode)
   const [phase, setPhase] = useState(game.status);
   const [captureMsg, setCaptureMsg] = useState(null);
   const [qaRefresh, setQaRefresh] = useState(0);   // increments on question_answered WS event
@@ -79,7 +80,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [phaseEndsAt, setPhaseEndsAt] = useState(null);           // ISO from timer_sync
   const [pendingQuestionExpiresAt, setPendingQuestionExpiresAt] = useState(null); // ISO from question_pending
   const [, setTimerTick] = useState(0); // incremented each second to refresh countdown display
-  const [gameResult, setGameResult] = useState(null); // { winner, elapsedMs, bonusSeconds } on finish
+  const [gameResult, setGameResult] = useState(null); // { winner, elapsedMs, bonusSeconds, captureTeam? } on finish
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -131,19 +132,29 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     const map = mapRef.current;
     if (!map) return;
 
+    // Colour palette: Team A = blue, Team B = green, no team / hider = red.
+    function markerColor(pid, team) {
+      if (pid === player.playerId) return '#0000ff';
+      if (team === 'A') return '#1d6db5';
+      if (team === 'B') return '#16a34a';
+      return '#cc0000';
+    }
+
     // Add or move existing markers
     for (const [pid, pos] of Object.entries(players)) {
       if (markersRef.current[pid]) {
         markersRef.current[pid].setLatLng([pos.lat, pos.lon]);
       } else {
         const isMe = pid === player.playerId;
+        const color = markerColor(pid, pos.team ?? null);
+        const label = isMe ? `You${myTeam ? ` (Team ${myTeam})` : ''}` : pid;
         markersRef.current[pid] = L.circleMarker([pos.lat, pos.lon], {
           radius: isMe ? 10 : 7,
-          color: isMe ? '#0000ff' : '#cc0000',
-          fillColor: isMe ? '#0000ff' : '#cc0000',
+          color,
+          fillColor: color,
           fillOpacity: 0.7,
         })
-          .bindTooltip(isMe ? 'You' : pid, { permanent: false })
+          .bindTooltip(label, { permanent: false })
           .addTo(map);
       }
     }
@@ -155,7 +166,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         delete markersRef.current[pid];
       }
     }
-  }, [players, player.playerId]);
+  }, [players, player.playerId, myTeam]);
 
   // ── WebSocket connection ───────────────────────────────────────────────────
   useEffect(() => {
@@ -165,11 +176,23 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
+    ws.onopen = () => {
+      // Register with the game server so the player is added to game broadcasts.
+      ws.send(JSON.stringify({
+        type: 'join_game',
+        gameId: game.gameId,
+        role: player.role,
+      }));
+    };
+
     ws.onmessage = (evt) => {
       let msg;
       try { msg = JSON.parse(evt.data); } catch { return; }
 
-      if (msg.type === 'player_location') {
+      if (msg.type === 'joined_game' && msg.playerId === player.playerId) {
+        // Server may assign a team in two-team mode.
+        if (msg.team) setMyTeam(msg.team);
+      } else if (msg.type === 'player_location') {
         setPlayers((prev) => ({
           ...prev,
           [msg.playerId]: { lat: msg.lat, lon: msg.lon },
@@ -204,7 +227,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         }
       } else if (msg.type === 'capture') {
         captureWinnerRef.current = msg.winner ?? 'seekers';
-        setCaptureMsg(msg.winner === 'seekers' ? 'Seekers win!' : 'Hiders win!');
+        const teamLabel = msg.captureTeam ? ` (Team ${msg.captureTeam})` : '';
+        setCaptureMsg(msg.winner === 'seekers' ? `Seekers win!${teamLabel}` : 'Hiders win!');
       } else if (msg.type === 'question_answered') {
         setQaRefresh((n) => n + 1);
         setPendingQuestionExpiresAt(null);
@@ -258,7 +282,9 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         <span>
           Game: <code>{game.gameId}</code> · Phase: <strong>{phase}</strong>
         </span>
-        <span>{player.name} ({player.role})</span>
+        <span>
+          {player.name} ({player.role}){myTeam ? ` · Team ${myTeam}` : ''}
+        </span>
       </div>
 
       {captureMsg && (

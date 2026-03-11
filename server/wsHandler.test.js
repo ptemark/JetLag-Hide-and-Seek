@@ -45,7 +45,8 @@ function makeGsm() {
     addPlayerToGame: vi.fn(),
     removePlayerFromGame: vi.fn(),
     updatePlayerLocation: vi.fn(),
-    getGameState: vi.fn().mockReturnValue({ status: 'waiting', players: {} }),
+    getGameState: vi.fn().mockReturnValue({ status: 'waiting', seekerTeams: 0, players: {} }),
+    getSeekerTeams: vi.fn().mockReturnValue(0),
   };
 }
 
@@ -228,7 +229,7 @@ describe('WsHandler — message routing — join_game', () => {
   it('sends joined_game confirmation to the joining player', () => {
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
     const msgs = sentMessages(ws);
-    expect(msgs).toContainEqual({ type: 'joined_game', gameId: 'g1', playerId: 'p1', role: 'seeker' });
+    expect(msgs).toContainEqual({ type: 'joined_game', gameId: 'g1', playerId: 'p1', role: 'seeker', team: null });
   });
 
   it('defaults role to hider when not specified', () => {
@@ -250,7 +251,7 @@ describe('WsHandler — message routing — join_game', () => {
 
   it('calls gsm.addPlayerToGame when GSM is present', () => {
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
-    expect(gsm.addPlayerToGame).toHaveBeenCalledWith('g1', 'p1', 'seeker');
+    expect(gsm.addPlayerToGame).toHaveBeenCalledWith('g1', 'p1', 'seeker', null);
   });
 
   it('notifies existing players with player_joined', () => {
@@ -263,7 +264,7 @@ describe('WsHandler — message routing — join_game', () => {
     // p1 now joins
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
     const msgs = sentMessages(ws2);
-    expect(msgs).toContainEqual({ type: 'player_joined', gameId: 'g1', playerId: 'p1' });
+    expect(msgs).toContainEqual({ type: 'player_joined', gameId: 'g1', playerId: 'p1', team: null });
   });
 
   it('returns error when gameId is missing', () => {

@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 54 complete. Leaderboard endpoint + UI; 977 tests pass._
+_Task 55 complete. Two-teams seeker variant; 992 tests pass._
 
 ---
 
@@ -66,6 +66,7 @@ _Task 54 complete. Leaderboard endpoint + UI; 977 tests pass._
 | 51 | 2026-03-11 | Photo question support | db/schema.sql, db/gameStore.js, functions/questions.js, functions/questions.test.js, functions/router.js, src/api.js, src/components/AnswerPanel.jsx, src/components/QA.test.jsx | question_photos table; dbSaveQuestionPhoto/dbGetQuestionPhoto; POST+GET /questions/:questionId/photo handlers with in-process store; router updated; AnswerPanel shows file-input for photo questions, reads as base64 via FileReader, uploads before text answer; 23 new tests; 922 total pass; build clean |
 | 53 | 2026-03-11 | Post-game results screen | db/schema.sql, db/gameStore.js, db/gameStore.test.js, db/lifecycle.test.js, functions/scores.js, src/api.js, src/components/ResultsScreen.jsx, src/components/ResultsScreen.test.jsx, src/components/CardPanel.jsx, src/components/GameMap.jsx, src/components/Lobby.jsx | bonus_seconds column on scores; ResultsScreen full-screen overlay (winner, elapsed, bonus, final score, Play Again); CardPanel onTimeBonusPlayed callback; GameMap tracks hidingStartedAt + captureWinnerRef; submitScore API fn; Lobby Play Again resets game/playing but keeps player; 15 new tests; 953 total pass; build clean |
 | 54 | 2026-03-11 | Leaderboard | db/gameStore.js, functions/scores.js, functions/scores.test.js, functions/router.js, src/api.js, src/components/Leaderboard.jsx, src/components/Leaderboard.test.jsx, src/components/Lobby.jsx | dbGetLeaderboard JOIN query (scores+players+games); GET /scores endpoint with limit+gameId query params; fetchLeaderboard API fn; Leaderboard component (rank, player, scale, MM:SS hiding time); Leaderboard toggle button in Lobby; 24 new tests; 977 total pass; build clean |
+| 55 | 2026-03-11 | Two-teams seeker variant | db/schema.sql, db/gameStore.js, db/gameStore.test.js, db/lifecycle.test.js, functions/games.js, server/gameState.js, server/wsHandler.js, server/wsHandler.test.js, server/captureDetector.js, server/captureDetector.test.js, server/index.js, server/gameState.test.js, server/server.test.js, src/api.js, src/components/GameForm.jsx, src/components/WaitingRoom.jsx, src/components/GameMap.jsx, src/components/Lobby.jsx | seeker_teams on games (0=off, 2=two teams); team on game_players (auto-balanced A/B for seekers); team-scoped pending question check; WsHandler team auto-assignment + team-scoped location broadcasts; checkCapture two-team mode (first team all in zone wins); GameMap join_game on open + team-colored markers; GameForm seeker_teams selector; WaitingRoom team display; 15 new tests; 992 total pass; build clean |
 
 ---
 
@@ -172,4 +173,4 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **54** — Leaderboard: add `GET /api/scores?limit=20&gameId=` serverless endpoint returning ranked scores with player name and scale; backed by a JOIN across `scores`, `players`, and `games`. Add a leaderboard tab/modal to the lobby frontend showing top scores across all games with columns: rank, player name, scale, hiding time (formatted mm:ss).
 
-- [ ] **55** — Two-teams seeker variant: optional gameplay mode where seekers are split into two competing teams. Add a `seeker_teams` config field to game creation (0 = off, 2 = two teams). Game server tracks team membership; questions and location updates are scoped per team; capture is credited to the first team to spot the hider. Frontend lobby shows team assignment on game join.
+- [x] **55** — Two-teams seeker variant: optional gameplay mode where seekers are split into two competing teams. Add a `seeker_teams` config field to game creation (0 = off, 2 = two teams). Game server tracks team membership; questions and location updates are scoped per team; capture is credited to the first team to spot the hider. Frontend lobby shows team assignment on game join.

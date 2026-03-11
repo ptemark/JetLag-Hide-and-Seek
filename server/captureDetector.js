@@ -34,21 +34,29 @@ export function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Check whether all seekers with known locations are within the hider's zone.
+ * Check whether seekers have captured the hider.
+ *
+ * In single-team mode (seekerTeams = 0), all seekers with known locations
+ * must be within the hider's zone simultaneously.
+ *
+ * In two-team mode (seekerTeams = 2), each team is evaluated independently.
+ * The first team whose entire membership (with known locations) is inside the
+ * zone wins.  The result includes a `captureTeam` field ('A', 'B', or null).
  *
  * @param {object} gameState
  *   Snapshot from GameStateManager.getGameState():
- *   { gameId, status, players: { [playerId]: { lat, lon, role } } }
+ *   { gameId, status, seekerTeams?: number, players: { [playerId]: { lat, lon, role, team } } }
  * @param {Array<{ stationId: string, lat: number, lon: number, radiusM: number }>} zones
  *   Hiding zones for the game (from the zone calculation service).
  * @returns {{
  *   captured:      boolean,
  *   hiderZone:     object | null,
  *   seekersInZone: string[],
+ *   captureTeam:   string | null,
  * }}
  */
 export function checkCapture(gameState, zones) {
-  const empty = { captured: false, hiderZone: null, seekersInZone: [] };
+  const empty = { captured: false, hiderZone: null, seekersInZone: [], captureTeam: null };
   if (!gameState || !zones || zones.length === 0) return empty;
 
   const players = Object.entries(gameState.players ?? {});
@@ -65,12 +73,29 @@ export function checkCapture(gameState, zones) {
 
   if (!hiderZone) return empty;
 
-  // All seekers with known locations must be inside the same zone.
+  const inZone = (s) =>
+    haversineDistance(s.lat, s.lon, hiderZone.lat, hiderZone.lon) <= hiderZone.radiusM;
+
+  // Two-team mode: check each team independently.
+  const seekerTeams = gameState.seekerTeams ?? 0;
+  if (seekerTeams >= 2) {
+    const teams = [...new Set(seekers.map(([, s]) => s.team).filter(Boolean))];
+    for (const team of teams) {
+      const teamSeekers = seekers.filter(([, s]) => s.team === team);
+      if (teamSeekers.length === 0) continue;
+      const inZoneIds = teamSeekers.filter(([, s]) => inZone(s)).map(([id]) => id);
+      if (inZoneIds.length === teamSeekers.length) {
+        return { captured: true, hiderZone, seekersInZone: inZoneIds, captureTeam: team };
+      }
+    }
+    return { captured: false, hiderZone, seekersInZone: [], captureTeam: null };
+  }
+
+  // Single-team mode: all seekers must be in zone.
   const seekersInZone = seekers
-    .filter(([, s]) => haversineDistance(s.lat, s.lon, hiderZone.lat, hiderZone.lon) <= hiderZone.radiusM)
+    .filter(([, s]) => inZone(s))
     .map(([id]) => id);
 
   const captured = seekersInZone.length === seekers.length;
-
-  return { captured, hiderZone, seekersInZone };
+  return { captured, hiderZone, seekersInZone, captureTeam: null };
 }

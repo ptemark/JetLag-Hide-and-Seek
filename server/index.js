@@ -165,7 +165,7 @@ export function createServer({
     if (_capturingGames.has(gameId)) return { captured: false };
 
     const zones = gameStateManager.getGameZones(gameId);
-    const { captured, hiderZone, seekersInZone } = checkCapture(gameState, zones);
+    const { captured, hiderZone, seekersInZone, captureTeam } = checkCapture(gameState, zones);
     if (!captured) return { captured: false };
 
     _capturingGames.add(gameId);
@@ -193,6 +193,7 @@ export function createServer({
       type: 'capture',
       gameId,
       winner: 'seekers',
+      captureTeam,
       hiderZone,
       seekersInZone,
       seekingElapsedMs,

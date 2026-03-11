@@ -244,7 +244,7 @@ describe('WsHandler — game routing', () => {
     ws.send.mockClear();
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
     expect(ws.send).toHaveBeenCalledWith(
-      JSON.stringify({ type: 'joined_game', gameId: 'g1', playerId: 'p1', role: 'seeker' })
+      JSON.stringify({ type: 'joined_game', gameId: 'g1', playerId: 'p1', role: 'seeker', team: null })
     );
   });
 
@@ -269,7 +269,7 @@ describe('WsHandler — game routing', () => {
     ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
 
     expect(ws1.send).toHaveBeenCalledWith(
-      JSON.stringify({ type: 'player_joined', gameId: 'g1', playerId: 'p2' })
+      JSON.stringify({ type: 'player_joined', gameId: 'g1', playerId: 'p2', team: null })
     );
   });
 

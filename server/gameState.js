@@ -6,13 +6,24 @@
  */
 export class GameStateManager {
   constructor() {
-    // gameId -> { status: string, players: Map<playerId, PlayerState> }
+    // gameId -> { status: string, seekerTeams: number, players: Map<playerId, PlayerState> }
     this._games = new Map();
   }
 
-  createGame(gameId, { status = 'waiting' } = {}) {
+  createGame(gameId, { status = 'waiting', seekerTeams = 0 } = {}) {
     if (this._games.has(gameId)) return;
-    this._games.set(gameId, { status, players: new Map(), zones: [] });
+    this._games.set(gameId, { status, seekerTeams, players: new Map(), zones: [] });
+  }
+
+  setSeekerTeams(gameId, seekerTeams) {
+    const game = this._games.get(gameId);
+    if (!game) return false;
+    game.seekerTeams = seekerTeams;
+    return true;
+  }
+
+  getSeekerTeams(gameId) {
+    return this._games.get(gameId)?.seekerTeams ?? 0;
   }
 
   removeGame(gameId) {
@@ -23,13 +34,13 @@ export class GameStateManager {
     return this._games.has(gameId);
   }
 
-  addPlayerToGame(gameId, playerId, role = 'hider') {
+  addPlayerToGame(gameId, playerId, role = 'hider', team = null) {
     if (!this._games.has(gameId)) {
       this.createGame(gameId);
     }
     const game = this._games.get(gameId);
     if (!game.players.has(playerId)) {
-      game.players.set(playerId, { lat: null, lon: null, role });
+      game.players.set(playerId, { lat: null, lon: null, role, team });
     }
   }
 
@@ -76,6 +87,7 @@ export class GameStateManager {
     return {
       gameId,
       status: game.status,
+      seekerTeams: game.seekerTeams,
       players: Object.fromEntries(
         Array.from(game.players.entries()).map(([id, data]) => [id, { ...data }])
       ),

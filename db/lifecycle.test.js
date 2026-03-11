@@ -96,9 +96,9 @@ describe('Game lifecycle — create, join players, update status', () => {
   it('new game has status "waiting" and empty players list', async () => {
     const pool = makeQueuedPool(
       // dbCreateGame INSERT
-      { rows: [{ id: gameId, size: 'medium', bounds: {}, status: 'waiting', created_at: NOW }] },
+      { rows: [{ id: gameId, size: 'medium', bounds: {}, status: 'waiting', seeker_teams: 0, created_at: NOW }] },
       // dbGetGame SELECT games
-      { rows: [{ id: gameId, size: 'medium', bounds: {}, status: 'waiting', created_at: NOW }] },
+      { rows: [{ id: gameId, size: 'medium', bounds: {}, status: 'waiting', seeker_teams: 0, created_at: NOW }] },
       // dbGetGame SELECT game_players
       { rows: [] },
     );
@@ -114,17 +114,18 @@ describe('Game lifecycle — create, join players, update status', () => {
 
   it('after joining, game contains both players with correct roles', async () => {
     const pool = makeQueuedPool(
-      // dbJoinGame for p1
-      { rows: [{ game_id: gameId, player_id: p1Id, role: 'hider', joined_at: NOW }] },
-      // dbJoinGame for p2
-      { rows: [{ game_id: gameId, player_id: p2Id, role: 'seeker', joined_at: NOW }] },
+      // dbJoinGame for p1 (hider — no seeker_teams lookup, just INSERT)
+      { rows: [{ game_id: gameId, player_id: p1Id, role: 'hider', team: null, joined_at: NOW }] },
+      // dbJoinGame for p2 (seeker — 2 queries: seeker_teams lookup + INSERT; count skipped when teams=0)
+      { rows: [{ seeker_teams: 0 }] },            // seeker_teams lookup → 0 means no auto-assign
+      { rows: [{ game_id: gameId, player_id: p2Id, role: 'seeker', team: null, joined_at: NOW }] },
       // dbGetGame SELECT games
-      { rows: [{ id: gameId, size: 'medium', bounds: {}, status: 'hiding', created_at: NOW }] },
+      { rows: [{ id: gameId, size: 'medium', bounds: {}, status: 'hiding', seeker_teams: 0, created_at: NOW }] },
       // dbGetGame SELECT game_players (both players present)
       {
         rows: [
-          { id: p1Id, name: 'Hider', role: 'hider', joined_at: NOW },
-          { id: p2Id, name: 'Seeker', role: 'seeker', joined_at: NOW },
+          { id: p1Id, name: 'Hider',  role: 'hider',  team: null, joined_at: NOW },
+          { id: p2Id, name: 'Seeker', role: 'seeker', team: null, joined_at: NOW },
         ],
       },
     );
@@ -306,11 +307,12 @@ describe('Full game workflow — player registration through score submission', 
       // 2. Create seeker player
       { rows: [{ id: seekerId, name: 'Seeker', created_at: NOW }] },
       // 3. Create game
-      { rows: [{ id: gameId, size: 'small', bounds: {}, status: 'waiting', created_at: NOW }] },
-      // 4. Hider joins
-      { rows: [{ game_id: gameId, player_id: hiderId, role: 'hider', joined_at: NOW }] },
-      // 5. Seeker joins
-      { rows: [{ game_id: gameId, player_id: seekerId, role: 'seeker', joined_at: NOW }] },
+      { rows: [{ id: gameId, size: 'small', bounds: {}, status: 'waiting', seeker_teams: 0, created_at: NOW }] },
+      // 4. Hider joins (1 query: INSERT)
+      { rows: [{ game_id: gameId, player_id: hiderId, role: 'hider', team: null, joined_at: NOW }] },
+      // 5. Seeker joins (2 queries: seeker_teams SELECT + INSERT)
+      { rows: [{ seeker_teams: 0 }] },
+      { rows: [{ game_id: gameId, player_id: seekerId, role: 'seeker', team: null, joined_at: NOW }] },
       // 6. Status → hiding
       { rows: [{ id: gameId, status: 'hiding' }] },
       // 7. Status → seeking
@@ -368,8 +370,8 @@ describe('Full game workflow — player registration through score submission', 
     expect(scores[0].scoreSeconds).toBeGreaterThan(scores[1].scoreSeconds);
     expect(scores[0].playerId).toBe(hiderId);
 
-    // Ensure every interaction touched the DB
-    expect(pool.query).toHaveBeenCalledTimes(11);
+    // Ensure every interaction touched the DB (seeker join adds 1 extra for seeker_teams lookup)
+    expect(pool.query).toHaveBeenCalledTimes(12);
   });
 });
 
@@ -426,7 +428,7 @@ describe('SQL structure — correct tables and parameterisation', () => {
   });
 
   it('dbCreateGame targets the games table', async () => {
-    const pool = makeQueuedPool({ rows: [{ id: 'g', size: 'small', bounds: {}, status: 'waiting', created_at: NOW }] });
+    const pool = makeQueuedPool({ rows: [{ id: 'g', size: 'small', bounds: {}, status: 'waiting', seeker_teams: 0, created_at: NOW }] });
     await dbCreateGame(pool, { size: 'small' });
     const [sql] = pool.query.mock.calls[0];
     expect(sql).toMatch(/INTO games/i);
@@ -434,7 +436,7 @@ describe('SQL structure — correct tables and parameterisation', () => {
 
   it('dbGetGame queries games then game_players with a JOIN', async () => {
     const pool = makeQueuedPool(
-      { rows: [{ id: 'g', size: 'small', bounds: {}, status: 'waiting', created_at: NOW }] },
+      { rows: [{ id: 'g', size: 'small', bounds: {}, status: 'waiting', seeker_teams: 0, created_at: NOW }] },
       { rows: [] },
     );
     await dbGetGame(pool, 'g');
@@ -444,11 +446,12 @@ describe('SQL structure — correct tables and parameterisation', () => {
   });
 
   it('dbJoinGame targets the game_players table', async () => {
-    const pool = makeQueuedPool({ rows: [{ game_id: 'g', player_id: 'p', role: 'seeker', joined_at: NOW }] });
-    await dbJoinGame(pool, { gameId: 'g', playerId: 'p', role: 'seeker' });
+    // Use hider role to avoid seeker_teams lookup (only one query issued).
+    const pool = makeQueuedPool({ rows: [{ game_id: 'g', player_id: 'p', role: 'hider', team: null, joined_at: NOW }] });
+    await dbJoinGame(pool, { gameId: 'g', playerId: 'p', role: 'hider' });
     const [sql, params] = pool.query.mock.calls[0];
     expect(sql).toMatch(/INTO game_players/i);
-    expect(params).toEqual(['g', 'p', 'seeker']);
+    expect(params).toEqual(['g', 'p', 'hider', null]);
   });
 
   it('dbSubmitScore uses ON CONFLICT upsert targeting the scores table', async () => {

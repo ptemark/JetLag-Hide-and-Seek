@@ -85,31 +85,47 @@ describe('dbCreateGame', () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
         rows: [{
-          id: 'game-1', size: 'medium', bounds: {}, status: 'waiting', created_at: '2026-01-01T00:00:00Z',
+          id: 'game-1', size: 'medium', bounds: {}, status: 'waiting',
+          seeker_teams: 0, created_at: '2026-01-01T00:00:00Z',
         }],
       }),
     );
     const game = await dbCreateGame(pool, { size: 'medium' });
     expect(game).toEqual({
-      gameId: 'game-1', size: 'medium', bounds: {}, status: 'waiting', createdAt: '2026-01-01T00:00:00Z',
+      gameId: 'game-1', size: 'medium', bounds: {}, status: 'waiting',
+      seekerTeams: 0, createdAt: '2026-01-01T00:00:00Z',
     });
     expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO games'),
-      ['medium', JSON.stringify({})],
+      ['medium', JSON.stringify({}), 0],
+    );
+  });
+
+  it('stores seekerTeams = 2 for two-team games', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({
+        rows: [{ id: 'game-t', size: 'medium', bounds: {}, status: 'waiting', seeker_teams: 2, created_at: '' }],
+      }),
+    );
+    const game = await dbCreateGame(pool, { size: 'medium', seekerTeams: 2 });
+    expect(game.seekerTeams).toBe(2);
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.any(String),
+      ['medium', JSON.stringify({}), 2],
     );
   });
 
   it('serialises custom bounds to JSON', async () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
-        rows: [{ id: 'game-2', size: 'large', bounds: { lat_min: 1 }, status: 'waiting', created_at: '' }],
+        rows: [{ id: 'game-2', size: 'large', bounds: { lat_min: 1 }, status: 'waiting', seeker_teams: 0, created_at: '' }],
       }),
     );
     const bounds = { lat_min: 1, lat_max: 2, lon_min: 3, lon_max: 4 };
     await dbCreateGame(pool, { size: 'large', bounds });
     expect(pool.query).toHaveBeenCalledWith(
       expect.any(String),
-      ['large', JSON.stringify(bounds)],
+      ['large', JSON.stringify(bounds), 0],
     );
   });
 
@@ -134,31 +150,33 @@ describe('dbGetGame', () => {
   it('returns game with empty players list when no one has joined', async () => {
     const mockQuery = vi.fn()
       .mockResolvedValueOnce({
-        rows: [{ id: 'g1', size: 'small', bounds: {}, status: 'waiting', created_at: '2026-01-01' }],
+        rows: [{ id: 'g1', size: 'small', bounds: {}, status: 'waiting', seeker_teams: 0, created_at: '2026-01-01' }],
       })
       .mockResolvedValueOnce({ rows: [] });
     const poolWithPlayers = { query: mockQuery };
     const game = await dbGetGame(poolWithPlayers, 'g1');
     expect(game.gameId).toBe('g1');
     expect(game.players).toEqual([]);
+    expect(game.seekerTeams).toBe(0);
   });
 
-  it('includes players joined to the game', async () => {
+  it('includes players joined to the game with team field', async () => {
     const mockQuery = vi.fn()
       .mockResolvedValueOnce({
-        rows: [{ id: 'g2', size: 'medium', bounds: {}, status: 'hiding', created_at: '2026-02-01' }],
+        rows: [{ id: 'g2', size: 'medium', bounds: {}, status: 'hiding', seeker_teams: 2, created_at: '2026-02-01' }],
       })
       .mockResolvedValueOnce({
         rows: [
-          { id: 'p1', name: 'Alice', role: 'hider', joined_at: '2026-02-01T01:00:00Z' },
-          { id: 'p2', name: 'Bob', role: 'seeker', joined_at: '2026-02-01T01:01:00Z' },
+          { id: 'p1', name: 'Alice', role: 'hider', team: null, joined_at: '2026-02-01T01:00:00Z' },
+          { id: 'p2', name: 'Bob', role: 'seeker', team: 'A',   joined_at: '2026-02-01T01:01:00Z' },
         ],
       });
     const pool = { query: mockQuery };
     const game = await dbGetGame(pool, 'g2');
     expect(game.players).toHaveLength(2);
-    expect(game.players[0]).toEqual({ playerId: 'p1', name: 'Alice', role: 'hider', joinedAt: '2026-02-01T01:00:00Z' });
-    expect(game.players[1]).toEqual({ playerId: 'p2', name: 'Bob', role: 'seeker', joinedAt: '2026-02-01T01:01:00Z' });
+    expect(game.players[0]).toEqual({ playerId: 'p1', name: 'Alice', role: 'hider', team: null, joinedAt: '2026-02-01T01:00:00Z' });
+    expect(game.players[1]).toEqual({ playerId: 'p2', name: 'Bob', role: 'seeker', team: 'A', joinedAt: '2026-02-01T01:01:00Z' });
+    expect(game.seekerTeams).toBe(2);
   });
 
   it('propagates errors from the first query', async () => {
@@ -201,23 +219,59 @@ describe('dbUpdateGameStatus', () => {
 // ---------------------------------------------------------------------------
 
 describe('dbJoinGame', () => {
-  it('inserts a game_players row and returns mapped fields', async () => {
+  it('inserts a game_players row (hider) and returns mapped fields with team: null', async () => {
+    // Hiders skip the seeker_teams lookup; only one query needed.
     const pool = makeMockPool(() =>
       Promise.resolve({
-        rows: [{ game_id: 'g1', player_id: 'p1', role: 'hider', joined_at: '2026-01-01T00:00:00Z' }],
+        rows: [{ game_id: 'g1', player_id: 'p1', role: 'hider', team: null, joined_at: '2026-01-01T00:00:00Z' }],
       }),
     );
     const result = await dbJoinGame(pool, { gameId: 'g1', playerId: 'p1', role: 'hider' });
-    expect(result).toEqual({ gameId: 'g1', playerId: 'p1', role: 'hider', joinedAt: '2026-01-01T00:00:00Z' });
+    expect(result).toEqual({ gameId: 'g1', playerId: 'p1', role: 'hider', team: null, joinedAt: '2026-01-01T00:00:00Z' });
     expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO game_players'),
-      ['g1', 'p1', 'hider'],
+      ['g1', 'p1', 'hider', null],
     );
+  });
+
+  it('auto-assigns Team A to the first seeker in a two-team game', async () => {
+    // Query 1: seeker_teams = 2; Query 2: no existing seekers; Query 3: INSERT
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{ seeker_teams: 2 }] })  // games lookup
+        .mockResolvedValueOnce({ rows: [] })                       // team count (no seekers yet)
+        .mockResolvedValueOnce({ rows: [{ game_id: 'g1', player_id: 'p2', role: 'seeker', team: 'A', joined_at: '' }] }),
+    };
+    const result = await dbJoinGame(pool, { gameId: 'g1', playerId: 'p2', role: 'seeker' });
+    expect(result.team).toBe('A');
+    expect(pool.query.mock.calls[2][1]).toEqual(['g1', 'p2', 'seeker', 'A']);
+  });
+
+  it('auto-assigns Team B to balance teams in a two-team game', async () => {
+    // Query 1: seeker_teams = 2; Query 2: 1 Team A seeker, 0 Team B; Query 3: INSERT
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{ seeker_teams: 2 }] })
+        .mockResolvedValueOnce({ rows: [{ team: 'A', cnt: '1' }] })
+        .mockResolvedValueOnce({ rows: [{ game_id: 'g1', player_id: 'p3', role: 'seeker', team: 'B', joined_at: '' }] }),
+    };
+    const result = await dbJoinGame(pool, { gameId: 'g1', playerId: 'p3', role: 'seeker' });
+    expect(result.team).toBe('B');
+  });
+
+  it('does not query seeker_teams for hiders (only INSERT query)', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({
+        rows: [{ game_id: 'g1', player_id: 'p1', role: 'hider', team: null, joined_at: '' }],
+      }),
+    );
+    await dbJoinGame(pool, { gameId: 'g1', playerId: 'p1', role: 'hider' });
+    expect(pool.query).toHaveBeenCalledTimes(1);
   });
 
   it('propagates constraint errors (duplicate join)', async () => {
     const pool = makeMockPool(() => Promise.reject(new Error('unique constraint')));
-    await expect(dbJoinGame(pool, { gameId: 'g1', playerId: 'p1', role: 'seeker' })).rejects.toThrow('unique constraint');
+    await expect(dbJoinGame(pool, { gameId: 'g1', playerId: 'p1', role: 'hider' })).rejects.toThrow('unique constraint');
   });
 });
 
@@ -359,7 +413,7 @@ describe('createInstrumentedStore — DB_WRITES counter', () => {
 
   it('increments DB_WRITES on dbJoinGame success', async () => {
     const pool = makeMockPool(() =>
-      Promise.resolve({ rows: [{ game_id: 'g1', player_id: 'p1', role: 'hider', joined_at: '' }] }),
+      Promise.resolve({ rows: [{ game_id: 'g1', player_id: 'p1', role: 'hider', team: null, joined_at: '' }] }),
     );
     const metrics = new MetricsCollector();
     const store = createInstrumentedStore(pool, metrics);
@@ -456,12 +510,30 @@ describe('createGame with pool', () => {
   it('returns a game record from DB', async () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
-        rows: [{ id: 'db-g1', size: 'small', bounds: {}, status: 'waiting', created_at: '2026-01-01' }],
+        rows: [{ id: 'db-g1', size: 'small', bounds: {}, status: 'waiting', seeker_teams: 0, created_at: '2026-01-01' }],
       }),
     );
     const game = await createGame({ size: 'small' }, pool);
     expect(game.gameId).toBe('db-g1');
     expect(game.size).toBe('small');
+  });
+
+  it('passes seekerTeams to DB', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({
+        rows: [{ id: 'db-g2', size: 'medium', bounds: {}, status: 'waiting', seeker_teams: 2, created_at: '' }],
+      }),
+    );
+    const game = await createGame({ size: 'medium', seekerTeams: 2 }, pool);
+    expect(game.seekerTeams).toBe(2);
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.any(String),
+      ['medium', expect.any(String), 2],
+    );
+  });
+
+  it('throws for invalid seekerTeams value', () => {
+    expect(() => createGame({ size: 'small', seekerTeams: 3 })).toThrow(/seekerTeams/i);
   });
 
   it('still throws for invalid size before touching the pool', () => {
@@ -610,6 +682,37 @@ describe('dbCreateQuestion', () => {
     await expect(dbCreateQuestion(pool, {
       gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'test',
     })).rejects.toThrow('db error');
+  });
+
+  it('uses team-scoped pending check when askerTeam is provided', async () => {
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })  // pending check (team-scoped, no conflict)
+        .mockResolvedValueOnce({ rows: [{
+          id: 'q-team', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+          category: 'matching', text: 'team q', status: 'pending',
+          expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        }] }),
+    };
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'team q',
+      askerTeam: 'A',
+    });
+    expect(result.questionId).toBe('q-team');
+    // Verify the pending check used a JOIN to scope by team
+    const pendingCheckSql = pool.query.mock.calls[0][0];
+    expect(pendingCheckSql).toContain('game_players');
+  });
+
+  it('reports conflict when same team has a pending question', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [{ id: 'existing' }] }),
+    };
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'conflict',
+      askerTeam: 'A',
+    });
+    expect(result).toEqual({ conflict: true });
   });
 });
 

@@ -8,7 +8,7 @@ const EMPTY_BOUNDS = { lat_min: '', lat_max: '', lon_min: '', lon_max: '' };
 /**
  * GameForm — lets a registered player create a new game or join an existing one.
  *
- * Create tab: scale selector + map bounds picker (4 numeric fields).
+ * Create tab: scale selector + map bounds picker (4 numeric fields) + seeker teams toggle.
  * Join tab: game ID input.
  *
  * Props:
@@ -19,6 +19,7 @@ export default function GameForm({ player, onGameReady }) {
   const [tab, setTab] = useState('create');
   const [scale, setScale] = useState('medium');
   const [bounds, setBounds] = useState(EMPTY_BOUNDS);
+  const [seekerTeams, setSeekerTeams] = useState(0);
   const [gameId, setGameId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -38,7 +39,7 @@ export default function GameForm({ player, onGameReady }) {
         lon_min: parseFloat(bounds.lon_min) || 0,
         lon_max: parseFloat(bounds.lon_max) || 0,
       };
-      const game = await createGame({ size: scale, bounds: parsedBounds });
+      const game = await createGame({ size: scale, bounds: parsedBounds, seekerTeams });
       onGameReady(game);
     } catch (err) {
       setError(err.message);
@@ -101,6 +102,18 @@ export default function GameForm({ player, onGameReady }) {
                   {s.charAt(0).toUpperCase() + s.slice(1)}
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="seeker-teams">Seeker Teams</label>
+            <select
+              id="seeker-teams"
+              value={seekerTeams}
+              onChange={e => setSeekerTeams(Number(e.target.value))}
+            >
+              <option value={0}>Single team (all seekers together)</option>
+              <option value={2}>Two competing teams</option>
             </select>
           </div>
 

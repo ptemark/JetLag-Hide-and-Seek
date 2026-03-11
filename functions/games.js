@@ -28,19 +28,23 @@ const _games = new Map();
  * @param {import('pg').Pool|null} [pool]
  * @returns {object | Promise<object>} game record
  */
-export function createGame({ size = 'medium', bounds = {} } = {}, pool = null) {
+export function createGame({ size = 'medium', bounds = {}, seekerTeams = 0 } = {}, pool = null) {
   if (!VALID_SIZES.includes(size)) {
     throw new Error(`size must be one of: ${VALID_SIZES.join(', ')}`);
   }
+  if (seekerTeams !== 0 && seekerTeams !== 2) {
+    throw new Error('seekerTeams must be 0 (disabled) or 2');
+  }
 
   if (pool) {
-    return dbCreateGame(pool, { size, bounds });
+    return dbCreateGame(pool, { size, bounds, seekerTeams });
   }
 
   const game = {
     gameId: randomUUID(),
     size,
     status: 'waiting',
+    seekerTeams,
     players: [],
     zones: [],
     questions: [],
@@ -101,10 +105,10 @@ export function handleCreateGame(req, pool = null) {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
 
-  const { size = 'medium', bounds = {} } = req.body ?? {};
+  const { size = 'medium', bounds = {}, seekerTeams = 0 } = req.body ?? {};
 
   try {
-    const result = createGame({ size, bounds }, pool);
+    const result = createGame({ size, bounds, seekerTeams }, pool);
     if (result && typeof result.then === 'function') {
       return result.then(game => ({ status: 201, body: game }));
     }

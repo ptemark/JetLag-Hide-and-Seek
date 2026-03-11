@@ -4,9 +4,10 @@ export class WsHandler {
   constructor(gameLoop, gameStateManager = null) {
     this.gameLoop = gameLoop;
     this.gameStateManager = gameStateManager;
-    this.clients = new Map();     // playerId -> ws
-    this.gameClients = new Map(); // gameId   -> Map<playerId, ws>
-    this.playerGames = new Map(); // playerId -> Set<gameId>
+    this.clients = new Map();      // playerId -> ws
+    this.gameClients = new Map();  // gameId   -> Map<playerId, ws>
+    this.playerGames = new Map();  // playerId -> Set<gameId>
+    this.playerTeams = new Map();  // playerId -> team ('A'|'B'|null)
   }
 
   handleConnection(ws, playerId) {
@@ -75,7 +76,7 @@ export class WsHandler {
     }
   }
 
-  _handleJoinGame(ws, playerId, { gameId, role = 'hider' }) {
+  _handleJoinGame(ws, playerId, { gameId, role = 'hider', team = null }) {
     if (!gameId) {
       this._send(ws, { type: 'error', message: 'gameId required' });
       return;
@@ -91,16 +92,33 @@ export class WsHandler {
     }
     this.playerGames.get(playerId).add(gameId);
 
-    if (this.gameStateManager) {
-      this.gameStateManager.addPlayerToGame(gameId, playerId, role);
+    // Auto-assign team for seekers in two-team games when client doesn't provide one.
+    let assignedTeam = team;
+    if (role === 'seeker' && !assignedTeam && this.gameStateManager) {
+      const seekerTeams = this.gameStateManager.getSeekerTeams(gameId);
+      if (seekerTeams >= 2) {
+        const gameState = this.gameStateManager.getGameState(gameId);
+        const players = gameState ? Object.values(gameState.players) : [];
+        const countA = players.filter(p => p.role === 'seeker' && p.team === 'A').length;
+        const countB = players.filter(p => p.role === 'seeker' && p.team === 'B').length;
+        assignedTeam = countB < countA ? 'B' : 'A';
+      }
     }
 
-    // Confirm join to the new player
-    this._send(ws, { type: 'joined_game', gameId, playerId, role });
+    if (assignedTeam) {
+      this.playerTeams.set(playerId, assignedTeam);
+    }
+
+    if (this.gameStateManager) {
+      this.gameStateManager.addPlayerToGame(gameId, playerId, role, assignedTeam);
+    }
+
+    // Confirm join to the new player, including team assignment if applicable.
+    this._send(ws, { type: 'joined_game', gameId, playerId, role, team: assignedTeam ?? null });
 
     // Notify existing players in the game
     const gamePlayers = this.gameClients.get(gameId);
-    const payload = JSON.stringify({ type: 'player_joined', gameId, playerId });
+    const payload = JSON.stringify({ type: 'player_joined', gameId, playerId, team: assignedTeam ?? null });
     for (const [pid, clientWs] of gamePlayers.entries()) {
       if (pid !== playerId && clientWs.readyState === WS_OPEN) {
         clientWs.send(payload);
@@ -124,7 +142,31 @@ export class WsHandler {
       this.gameStateManager.updatePlayerLocation(gameId, playerId, lat, lon);
     }
 
-    this.broadcastToGame(gameId, { type: 'location_update', gameId, playerId, lat, lon });
+    const message = { type: 'location_update', gameId, playerId, lat, lon };
+    const senderTeam = this.playerTeams.get(playerId);
+    if (senderTeam) {
+      // Two-team mode: only broadcast to same team and hiders (players with no team).
+      this._broadcastToGameTeam(gameId, senderTeam, message);
+    } else {
+      this.broadcastToGame(gameId, message);
+    }
+  }
+
+  /**
+   * Broadcast a message to players in the given team plus players with no team
+   * (hiders and single-team seekers).
+   */
+  _broadcastToGameTeam(gameId, team, message) {
+    const players = this.gameClients.get(gameId);
+    if (!players) return;
+    const payload = JSON.stringify(message);
+    for (const [pid, ws] of players.entries()) {
+      if (ws.readyState !== WS_OPEN) continue;
+      const recipientTeam = this.playerTeams.get(pid);
+      if (!recipientTeam || recipientTeam === team) {
+        ws.send(payload);
+      }
+    }
   }
 
   _handleRequestState(ws, { gameId }) {
@@ -140,6 +182,7 @@ export class WsHandler {
 
   _handleDisconnect(playerId) {
     this.clients.delete(playerId);
+    this.playerTeams.delete(playerId);
     this.gameLoop.removePlayer(playerId);
 
     const games = this.playerGames.get(playerId);

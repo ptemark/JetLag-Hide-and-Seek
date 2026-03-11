@@ -49,7 +49,7 @@ export default function Lobby() {
           )}
 
           {game && !playing && (
-            <WaitingRoom game={game} onStart={() => setPlaying(true)} />
+            <WaitingRoom game={game} player={player} onStart={() => setPlaying(true)} />
           )}
 
           {game && playing && (

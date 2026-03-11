@@ -53,7 +53,7 @@ describe('GameStateManager', () => {
   it('adds a player to a game (auto-creates game)', () => {
     gsm.addPlayerToGame('g1', 'p1', 'seeker');
     const state = gsm.getGameState('g1');
-    expect(state.players['p1']).toEqual({ lat: null, lon: null, role: 'seeker' });
+    expect(state.players['p1']).toEqual({ lat: null, lon: null, role: 'seeker', team: null });
   });
 
   it('defaults role to hider', () => {

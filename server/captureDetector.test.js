@@ -191,4 +191,99 @@ describe('checkCapture', () => {
     expect(result.captured).toBe(true);
     expect(result.seekersInZone).toEqual(['s1']);
   });
+
+  it('returns captureTeam null in single-team mode', () => {
+    const state = makeGameState({
+      h1: { lat: 51.5001, lon: 0, role: 'hider' },
+      s1: { lat: 51.5002, lon: 0, role: 'seeker' },
+    });
+    expect(checkCapture(state, [makeZone(51.5, 0, 500)]).captureTeam).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two-team capture mode
+// ---------------------------------------------------------------------------
+
+describe('checkCapture — two-team mode', () => {
+  function makeTeamState(players) {
+    return { gameId: 'g1', status: 'seeking', seekerTeams: 2, players };
+  }
+
+  const zone = { stationId: 's1', name: 'Test', lat: 51.5, lon: 0, radiusM: 500 };
+
+  it('does not capture when no team has all members in zone', () => {
+    // Both teams have at least one member outside the zone.
+    const state = makeTeamState({
+      h1: { lat: 51.5001, lon: 0,   role: 'hider',  team: null },
+      a1: { lat: 51.5002, lon: 0,   role: 'seeker', team: 'A' },  // A: in zone
+      a2: { lat: 51.56,   lon: 0,   role: 'seeker', team: 'A' },  // A: far away
+      b1: { lat: 51.56,   lon: 0.1, role: 'seeker', team: 'B' },  // B: far away
+    });
+    const result = checkCapture(state, [zone]);
+    expect(result.captured).toBe(false);
+    expect(result.captureTeam).toBeNull();
+  });
+
+  it('captures when Team A is all in zone (Team B is not)', () => {
+    const state = makeTeamState({
+      h1: { lat: 51.5001, lon: 0, role: 'hider',  team: null },
+      a1: { lat: 51.5002, lon: 0, role: 'seeker', team: 'A' },  // A in zone
+      a2: { lat: 51.4999, lon: 0, role: 'seeker', team: 'A' },  // A in zone
+      b1: { lat: 51.56,   lon: 0, role: 'seeker', team: 'B' },  // B far away
+    });
+    const result = checkCapture(state, [zone]);
+    expect(result.captured).toBe(true);
+    expect(result.captureTeam).toBe('A');
+    expect(result.seekersInZone).toContain('a1');
+    expect(result.seekersInZone).toContain('a2');
+    expect(result.seekersInZone).not.toContain('b1');
+  });
+
+  it('captures when Team B is all in zone (Team A is not)', () => {
+    const state = makeTeamState({
+      h1: { lat: 51.5001, lon: 0,   role: 'hider',  team: null },
+      a1: { lat: 51.56,   lon: 0,   role: 'seeker', team: 'A' },  // A far away
+      b1: { lat: 51.5002, lon: 0,   role: 'seeker', team: 'B' },  // B in zone
+      b2: { lat: 51.5003, lon: 0.0001, role: 'seeker', team: 'B' }, // B in zone
+    });
+    const result = checkCapture(state, [zone]);
+    expect(result.captured).toBe(true);
+    expect(result.captureTeam).toBe('B');
+    expect(result.seekersInZone).toContain('b1');
+    expect(result.seekersInZone).toContain('b2');
+  });
+
+  it('returns not-captured when teams have partial zone coverage', () => {
+    const state = makeTeamState({
+      h1: { lat: 51.5001, lon: 0,   role: 'hider',  team: null },
+      a1: { lat: 51.5002, lon: 0,   role: 'seeker', team: 'A' },  // in zone
+      a2: { lat: 51.56,   lon: 0,   role: 'seeker', team: 'A' },  // outside
+      b1: { lat: 51.5003, lon: 0,   role: 'seeker', team: 'B' },  // in zone
+      b2: { lat: 51.56,   lon: 0.1, role: 'seeker', team: 'B' },  // outside
+    });
+    expect(checkCapture(state, [zone]).captured).toBe(false);
+  });
+
+  it('treats seekers with unknown location as absent (team can still capture)', () => {
+    const state = makeTeamState({
+      h1: { lat: 51.5001, lon: 0,   role: 'hider',  team: null },
+      a1: { lat: 51.5002, lon: 0,   role: 'seeker', team: 'A' },  // in zone
+      a2: { lat: null,    lon: null, role: 'seeker', team: 'A' },  // no location — ignored
+    });
+    const result = checkCapture(state, [zone]);
+    expect(result.captured).toBe(true);
+    expect(result.captureTeam).toBe('A');
+    expect(result.seekersInZone).toEqual(['a1']);
+  });
+
+  it('ignores seekerTeams when value is 0 (single-team mode)', () => {
+    const state = { gameId: 'g1', status: 'seeking', seekerTeams: 0, players: {
+      h1: { lat: 51.5001, lon: 0, role: 'hider',  team: null },
+      s1: { lat: 51.5002, lon: 0, role: 'seeker', team: null },
+    }};
+    const result = checkCapture(state, [zone]);
+    expect(result.captured).toBe(true);
+    expect(result.captureTeam).toBeNull();
+  });
 });

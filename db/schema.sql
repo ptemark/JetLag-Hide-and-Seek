@@ -18,15 +18,19 @@ CREATE TABLE IF NOT EXISTS players (
 -- container; this table is the persistent checkpoint.
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS games (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  size        TEXT        NOT NULL
-                CHECK (size IN ('small', 'medium', 'large')),
-  bounds      JSONB       NOT NULL DEFAULT '{}',
-  status      TEXT        NOT NULL DEFAULT 'waiting'
-                CHECK (status IN ('waiting', 'hiding', 'seeking', 'finished')),
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  size          TEXT        NOT NULL
+                  CHECK (size IN ('small', 'medium', 'large')),
+  bounds        JSONB       NOT NULL DEFAULT '{}',
+  status        TEXT        NOT NULL DEFAULT 'waiting'
+                  CHECK (status IN ('waiting', 'hiding', 'seeking', 'finished')),
+  seeker_teams  INTEGER     NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Idempotent migration: add seeker_teams if it doesn't exist yet.
+ALTER TABLE games ADD COLUMN IF NOT EXISTS seeker_teams INTEGER NOT NULL DEFAULT 0;
 
 -- -------------------------------------------------------------------------
 -- game_players
@@ -37,9 +41,13 @@ CREATE TABLE IF NOT EXISTS game_players (
   game_id    UUID        NOT NULL REFERENCES games(id)   ON DELETE CASCADE,
   player_id  UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   role       TEXT        NOT NULL CHECK (role IN ('hider', 'seeker')),
+  team       TEXT        CHECK (team IN ('A', 'B')),
   joined_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (game_id, player_id)
 );
+
+-- Idempotent migration: add team column if it doesn't exist yet.
+ALTER TABLE game_players ADD COLUMN IF NOT EXISTS team TEXT CHECK (team IN ('A', 'B'));
 
 -- -------------------------------------------------------------------------
 -- questions

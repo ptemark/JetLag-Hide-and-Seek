@@ -26,16 +26,16 @@ export async function registerPlayer({ name, role }) {
 
 /**
  * Create a new game.
- * POST /api/games  { size, bounds }  → { gameId, size, status, ... }
+ * POST /api/games  { size, bounds, seekerTeams? }  → { gameId, size, status, seekerTeams, ... }
  *
- * @param {{ size: 'small'|'medium'|'large', bounds: object }} options
- * @returns {Promise<{ gameId: string, size: string, status: string }>}
+ * @param {{ size: 'small'|'medium'|'large', bounds: object, seekerTeams?: 0|2 }} options
+ * @returns {Promise<{ gameId: string, size: string, status: string, seekerTeams: number }>}
  */
-export async function createGame({ size, bounds }) {
+export async function createGame({ size, bounds, seekerTeams = 0 }) {
   const res = await fetch(`${BASE_URL}/api/games`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ size, bounds }),
+    body: JSON.stringify({ size, bounds, seekerTeams }),
   });
   if (!res.ok) throw new Error(`createGame failed: ${res.status}`);
   return res.json();

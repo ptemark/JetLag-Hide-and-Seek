@@ -133,9 +133,11 @@ Managed Game Loop / WebSocket Container
 - All short-lived operations (player registration, score submission, game queries, session management, admin)
   run as Vercel serverless functions in `api/` + `functions/`.
 - Functions are billed per-invocation; idle cost is exactly $0.
-- **Optimization implemented (Task 32):** Vercel adapter files in `api/` are kept as thin pass-throughs
-  (≤ 6 lines) that delegate immediately to pure handler functions in `functions/`. This minimises
-  cold-start bundle size and memory footprint, reducing both latency cost and billed GB-seconds.
+- **Optimization implemented (Tasks 32 + 48):** All `/api/*` traffic is handled by a single
+  catch-all Vercel function `api/[...path].js`, keeping the deployment within the Hobby plan's
+  12-function limit. The catch-all strips the `/api` prefix and delegates to `functions/router.js`.
+  One DB pool is created lazily on cold start and reused across warm invocations, minimising
+  cold-start latency and billed GB-seconds.
 
 ### Strategy 3 — Serverless Postgres ($0 Idle)
 - Database: Neon serverless Postgres (or equivalent autoscale-to-zero provider).
@@ -219,19 +221,18 @@ Managed Game Loop / WebSocket Container
 │  SERVERLESS TIER      │    │  MANAGED GAME SERVER (on-demand)    │
 │  Vercel Functions     │    │  Docker container – Node.js         │
 │                       │    │                                     │
-│  api/players.js       │    │  server/index.js          (boot)    │
-│  api/games/[id].js    │    │  server/wsHandler.js      (WS)      │
-│  api/scores.js        │    │  server/gameLoopManager.js(ticks)   │
-│  api/sessions.js      │    │  server/gameState.js      (memory)  │
-│  api/liveState.js ────┼────►  server/stateDispatcher.js          │
-│  api/admin.js    ◄────┼────  GET /internal/admin                 │
+│  api/[...path].js ────┼────►  server/stateDispatcher.js          │
+│  (catch-all, 1 fn)    │◄───┼──  GET /internal/admin              │
 │                       │    │  GET /internal/state/:gameId        │
-│  functions/           │    │                                     │
-│  ├─ router.js         │    │  server/heartbeat.js    (ping/pong) │
-│  ├─ rateLimiter.js    │    │  server/autoScaler.js   (webhooks)  │
-│  ├─ auth.js           │    │  server/shutdown.js     (SIGTERM)   │
-│  ├─ monitoring.js     │    │  server/monitoring.js   (metrics)   │
-│  └─ alerting.js       │    │  server/alerting.js     (alerts)    │
+│  functions/           │    │  server/index.js          (boot)    │
+│  ├─ router.js         │    │  server/wsHandler.js      (WS)      │
+│  ├─ rateLimiter.js    │    │  server/gameLoopManager.js(ticks)   │
+│  ├─ auth.js           │    │  server/gameState.js      (memory)  │
+│  ├─ players.js        │    │  server/heartbeat.js    (ping/pong) │
+│  ├─ games.js          │    │  server/autoScaler.js   (webhooks)  │
+│  ├─ scores.js         │    │  server/shutdown.js     (SIGTERM)   │
+│  ├─ liveState.js      │    │  server/monitoring.js   (metrics)   │
+│  └─ admin.js          │    │  server/alerting.js     (alerts)    │
 └───────────┬───────────┘    └──────────────┬──────────────────────┘
             │  SQL (pg pool)                │  SQL (pg pool)
             ▼                              ▼
@@ -247,11 +248,12 @@ Managed Game Loop / WebSocket Container
 **Key design decisions illustrated above:**
 
 - The serverless tier has no persistent WebSocket connections; it proxies real-time reads from
-  the managed server's `/internal/*` endpoints when needed (`api/liveState.js`, `api/admin.js`).
+  the managed server's `/internal/*` endpoints when needed (via `functions/liveState.js` and
+  `functions/admin.js`, routed through `api/[...path].js`).
 - Both tiers share the same Postgres database; the managed server holds the hot in-memory copy
   and syncs durable state to DB on phase transitions and player events.
-- `functions/` contains pure handler logic; `api/` contains thin Vercel adapters (≤ 6 lines
-  each) that instantiate a DB pool on cold start and delegate to `functions/`.
+- `functions/` contains pure handler logic; `api/[...path].js` is the single Vercel entry point
+  that creates a DB pool on cold start and delegates all routing to `functions/router.js`.
 
 ---
 
@@ -262,14 +264,14 @@ Managed Game Loop / WebSocket Container
 ```
 Player (browser)
   │
-  ├─ POST /api/players          ─► api/players.js
-  │                                  └─ functions/players.js → registerPlayer()
+  ├─ POST /api/players          ─► api/[...path].js (catch-all)
+  │                                  └─ functions/router.js → players.js → registerPlayer()
   │                                       └─ db/gameStore.js → dbCreatePlayer()
   │                                            └─ Postgres: INSERT players
   │  ◄─ { playerId }
   │
-  ├─ POST /api/games            ─► api/games.js
-  │                                  └─ functions/games.js → createGame()
+  ├─ POST /api/games            ─► api/[...path].js (catch-all)
+  │                                  └─ functions/router.js → games.js → createGame()
   │                                       └─ db/gameStore.js → dbCreateGame()
   │                                            └─ Postgres: INSERT games
   │  ◄─ { gameId, status: 'waiting' }
@@ -357,12 +359,7 @@ phase to all connected clients and writes the updated `status` to Postgres.
 
 | File | Purpose |
 |------|---------|
-| `api/players.js` | Vercel adapter — player registration |
-| `api/games/[id].js` | Vercel adapter — game lookup |
-| `api/scores.js` | Vercel adapter — score submission |
-| `api/sessions.js` | Vercel adapter — session initiate/terminate |
-| `api/liveState.js` | Vercel adapter — proxies live state from managed server |
-| `api/admin.js` | Vercel adapter — proxies admin metrics (auth-gated) |
+| `api/[...path].js` | Single Vercel catch-all — creates DB pool on cold start, strips `/api` prefix, delegates to `functions/router.js` |
 | `functions/router.js` | HTTP adapter: routes `IncomingMessage` to handlers, applies rate-limiter |
 | `functions/rateLimiter.js` | Fixed-window rate limiter (100 req/60 s per IP) |
 | `functions/auth.js` | Bearer-token auth (constant-time compare) for admin routes |
@@ -440,7 +437,7 @@ Internet
     │
     ├─── cdn.vercel.com ──── src/ (static SPA)
     │
-    ├─── api.vercel.com ──── api/*.js (serverless, $0 idle)
+    ├─── api.vercel.com ──── api/[...path].js (1 catch-all fn, $0 idle)
     │                            └── Neon Postgres (pauses when idle)
     │
     └─── game.your-host.com ──── Docker container (on-demand)

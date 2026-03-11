@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 47 complete._
+_Task 48 complete. Vercel catch-all consolidation done; deployment unblocked._
 
 ---
 
@@ -59,6 +59,7 @@ _Task 47 complete._
 | 45 | 2026-03-10 | Build frontend map view | src/components/GameMap.jsx, src/components/GameMap.test.jsx, src/components/Lobby.jsx, src/components/WaitingRoom.jsx, package.json | Leaflet+OSM map; game bounds rectangle; hiding zone circles; live player markers; WS connection (player_location/game_state/phase_change/capture); GPS polling throttled to 10 s; WaitingRoom gets Start Game button; Lobby transitions to GameMap in playing state; 18 new tests; 813 total pass; build clean |
 | 46 | 2026-03-10 | Build frontend question/answer UI | src/api.js, src/components/QuestionPanel.jsx, src/components/AnswerPanel.jsx, src/components/GameMap.jsx, src/components/QA.test.jsx, src/components/GameMap.test.jsx | Seeker QuestionPanel (category selector, targetId field, optimistic question list); Hider AnswerPanel (fetches inbox, per-question answer form, answered-count feedback); GameMap handles question_answered WS event via qaRefresh counter; 20 new tests; 833 total pass; build clean |
 | 47 | 2026-03-10 | Build frontend hider card panel | src/api.js, src/components/CardPanel.jsx, src/components/CardPanel.test.jsx, src/components/GameMap.jsx, src/components/GameMap.test.jsx | fetchCards/playCardApi API fns; CardPanel (hand display max 6, tap-to-play, effect confirmation, load/play errors, refreshTrigger); wired into GameMap for hiders below AnswerPanel; 15 new tests; 848 total pass; build clean |
+| 48 | 2026-03-11 | Fix Vercel 12-function limit | vercel.json, spec/DESIGN.md | Individual api/ adapters already deleted (commit feddf74); updated vercel.json functions glob from api/**/*.js to api/[...path].js; updated DESIGN.md sections 16, 17, 18, 20 to remove stale adapter file references; 848 tests pass; build clean |
 
 ---
 
@@ -148,3 +149,21 @@ Tasks are ordered by dependency. Complete them top to bottom.
 - [x] **45** — Build frontend map view: Leaflet + OSM map showing game bounds, hiding zones overlay, live player positions. Location updates throttled to 10–20 s via WebSocket. Redraw only on state changes.
 - [x] **46** — Build frontend question/answer UI: seekers see question form with category selector and submit button; hider sees pending questions with answer form and optional photo upload.
 - [x] **47** — Build frontend hider card panel: display hand of up to 6 cards; tap to play; show effect confirmation. Wire to `/api/cards` endpoints.
+
+### Phase 13 — Gameplay Completeness
+
+- [x] **48** — Fix Vercel 12-function limit: `api/[...path].js` catch-all was already created and `functions/router.js` already accepts `opts.pool`. Delete the 13 individual `api/` adapter files (`api/players.js`, `api/games/[id].js`, `api/scores.js`, `api/sessions.js`, `api/liveState.js`, `api/admin.js`, `api/zones.js`, `api/questions.js`, `api/answers/[questionId].js`, `api/cards.js`, `api/cards/[cardId]/play.js`, `api/games/index.js`, `api/api.test.js`). Update `vercel.json` functions glob from `api/**/*.js` to `api/[...path].js`. Update DESIGN.md section 17 and 20 to remove stale adapter file references. This is a deployment blocker.
+
+- [ ] **49** — Hider zone selection: during the hiding phase the hider must tap a transit station on the map to lock their hiding zone. Add `POST /api/games/:gameId/zone` serverless endpoint (body: `{ stationId, lat, lon, radius }`); persist in a new `game_zones` table column or extend `games`; broadcast `zone_locked` WS event so the game server's `captureDetector` uses the chosen zone instead of a default. Frontend: highlight selectable stations during hiding phase, tap-to-select with confirm dialog, disable re-selection once confirmed.
+
+- [ ] **50** — Question timing enforcement: the rules require seekers to wait for the current question to be answered before asking a new one, and the hider must answer within time limits (5 min standard, 10–20 min photo). Add `status` (`pending|answered|expired`) and `expires_at` columns to the `questions` table. `POST /questions` rejects with 409 if a pending question exists for that game. A game-loop StateDispatcher task (or serverless cron) marks questions `expired` when deadline passes and broadcasts a `question_expired` WS event. `GET /questions` returns `status` and `expires_at` so the frontend can show a countdown.
+
+- [ ] **51** — Photo question support: photo questions require the hider to upload a photo. Add `POST /api/questions/:questionId/photo` endpoint accepting a base64-encoded image in the JSON body; store in a new `question_photos` table (or a `photo_data` column on `questions`). Add `GET /api/questions/:questionId/photo` to retrieve it. Frontend `AnswerPanel`: when `category === 'photo'`, show a file-input that reads the file as base64 and calls the upload endpoint before submitting the text answer.
+
+- [ ] **52** — Game timer display: players need to see how much hiding time remains and, during seeking, how long until each question expires. The game server should broadcast a `timer_sync` WS message on phase change (and periodically, at most every 30 s) containing `{ phaseEndsAt: <ISO timestamp> }`. Frontend `GameMap` receives `timer_sync` and shows a countdown banner: "Hiding ends in 23:47" during hiding, "Question expires in 4:12" when a pending question exists. Derive phase duration from game scale (small: 30 min, medium: 60 min, large: 180 min).
+
+- [ ] **53** — Post-game results screen: when the frontend receives `phase_change` → `finished`, display a full-screen results overlay showing: winner (Hider or Seekers), elapsed hiding time, card time-bonuses applied, and final score. Score calculation: base = elapsed seconds hidden; bonus = sum of time_bonus card values played. `POST /api/scores` should accept and persist `bonus_seconds`. Add a "Play Again" button that resets state to the lobby (re-uses same `playerId`).
+
+- [ ] **54** — Leaderboard: add `GET /api/scores?limit=20&gameId=` serverless endpoint returning ranked scores with player name and scale; backed by a JOIN across `scores`, `players`, and `games`. Add a leaderboard tab/modal to the lobby frontend showing top scores across all games with columns: rank, player name, scale, hiding time (formatted mm:ss).
+
+- [ ] **55** — Two-teams seeker variant: optional gameplay mode where seekers are split into two competing teams. Add a `seeker_teams` config field to game creation (0 = off, 2 = two teams). Game server tracks team membership; questions and location updates are scoped per team; capture is credited to the first team to spot the hider. Frontend lobby shows team assignment on game join.

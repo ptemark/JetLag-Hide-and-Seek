@@ -16,6 +16,16 @@ import { checkCapture } from './captureDetector.js';
 const FALSE_ZONE_DURATION_MS = 5 * 60_000;
 
 /**
+ * Hiding and seeking durations per game scale (RULES.md).
+ * Both hiding and seeking phases use the same duration for a given scale.
+ */
+const SCALE_DURATIONS = Object.freeze({
+  small:  30 * 60_000,
+  medium: 60 * 60_000,
+  large:  180 * 60_000,
+});
+
+/**
  * Offset a zone's lat/lon by a random distance of 0.5–2 km in a random
  * direction and return a new zone object with a unique stationId.
  * 1° latitude ≈ 111 km.  Longitude degrees scale by cos(lat).
@@ -106,6 +116,29 @@ export function createServer({
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
           return;
         }
+        res.end();
+      });
+      return;
+    }
+
+    // POST /internal/games/:gameId/start — start the game loop for a game and
+    // immediately begin the hiding phase, using scale-based durations when provided.
+    const startMatch = req.method === 'POST'
+      && urlPath.match(/^\/internal\/games\/(?<gameId>[^/]+)\/start$/);
+    if (startMatch) {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        let scale;
+        try { ({ scale } = JSON.parse(body)); } catch { /* use default durations */ }
+        const scaleDurationMs = SCALE_DURATIONS[scale] ?? null;
+        const opts = scaleDurationMs != null
+          ? { hidingDurationMs: scaleDurationMs, seekingDurationMs: scaleDurationMs }
+          : {};
+        const { gameId } = startMatch.groups;
+        gameLoopManager.startGame(gameId, opts);
+        gameLoopManager.beginHiding(gameId);
+        res.writeHead(204);
         res.end();
       });
       return;
@@ -212,7 +245,8 @@ export function createServer({
    */
   function buildTimerSync(gameId, phase) {
     if (phase !== 'hiding' && phase !== 'seeking') return null;
-    const baseDuration = phase === 'hiding' ? hidingDuration : seekingDuration;
+    const baseDuration = gameLoopManager.getGameDuration(gameId, phase);
+    if (baseDuration == null) return null;
     const extension = gameLoopManager.getPhaseExtension(gameId);
     const duration = baseDuration + extension;
     const elapsed = gameLoopManager.getPhaseElapsed(gameId);
@@ -315,7 +349,9 @@ export function createServer({
       if (!wasCapture) {
         // Hider wins by timeout — seekers never captured.
         const seekingStarted = _seekingStartedAt.get(gameId);
-        const seekingElapsedMs = seekingStarted ? Date.now() - seekingStarted : seekingDuration;
+        const seekingElapsedMs = seekingStarted
+          ? Date.now() - seekingStarted
+          : gameLoopManager.getGameDuration(gameId, 'seeking') ?? seekingDuration;
 
         wsHandler.broadcastToGame(gameId, {
           type: 'capture',

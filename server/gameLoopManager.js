@@ -73,8 +73,13 @@ export class GameLoopManager {
   /**
    * Register a new game and start ticking in the WAITING phase.
    * No-op if the game is already registered.
+   *
+   * @param {string} gameId
+   * @param {object} [opts]
+   * @param {number} [opts.hidingDurationMs]  Per-game override for hiding phase length.
+   * @param {number} [opts.seekingDurationMs] Per-game override for seeking phase length.
    */
-  startGame(gameId) {
+  startGame(gameId, { hidingDurationMs, seekingDurationMs } = {}) {
     if (this._games.has(gameId)) return;
 
     const wasIdle = this._games.size === 0;
@@ -83,6 +88,8 @@ export class GameLoopManager {
       phaseStartedAt: Date.now(),
       phaseExtensionMs: 0,
       timer: null,
+      hidingDurationMs: (typeof hidingDurationMs === 'number' && hidingDurationMs > 0) ? hidingDurationMs : null,
+      seekingDurationMs: (typeof seekingDurationMs === 'number' && seekingDurationMs > 0) ? seekingDurationMs : null,
     };
     this._games.set(gameId, entry);
     entry.timer = setInterval(() => this._tick(gameId), this.tickInterval);
@@ -170,6 +177,25 @@ export class GameLoopManager {
     return this._games.get(gameId)?.phaseExtensionMs ?? 0;
   }
 
+  /**
+   * Return the effective phase duration for a game (ms).
+   * Returns the per-game override if set, otherwise the constructor-level default.
+   * Returns null for phases with no defined duration (waiting/finished).
+   *
+   * @param {string} gameId
+   * @param {'hiding'|'seeking'} phase
+   * @returns {number|null}
+   */
+  getGameDuration(gameId, phase) {
+    if (phase === 'hiding') {
+      return this._games.get(gameId)?.hidingDurationMs ?? this.hidingDuration;
+    }
+    if (phase === 'seeking') {
+      return this._games.get(gameId)?.seekingDurationMs ?? this.seekingDuration;
+    }
+    return null;
+  }
+
   /** Number of games currently being managed. */
   getActiveGameCount() {
     return this._games.size;
@@ -188,9 +214,12 @@ export class GameLoopManager {
     const elapsed = Date.now() - entry.phaseStartedAt;
     const extension = entry.phaseExtensionMs ?? 0;
 
-    if (entry.phase === GamePhase.HIDING && elapsed >= this.hidingDuration + extension) {
+    const hidingDur  = entry.hidingDurationMs  ?? this.hidingDuration;
+    const seekingDur = entry.seekingDurationMs ?? this.seekingDuration;
+
+    if (entry.phase === GamePhase.HIDING && elapsed >= hidingDur + extension) {
       this._transition(gameId, GamePhase.SEEKING);
-    } else if (entry.phase === GamePhase.SEEKING && elapsed >= this.seekingDuration + extension) {
+    } else if (entry.phase === GamePhase.SEEKING && elapsed >= seekingDur + extension) {
       this.finishGame(gameId);
     }
   }

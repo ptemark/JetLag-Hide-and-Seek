@@ -557,3 +557,104 @@ describe('GameLoopManager — extendPhase / getPhaseExtension', () => {
     expect(mgr.getPhase('g1')).toBeNull(); // game removed after finish
   });
 });
+
+// ---------------------------------------------------------------------------
+// GameLoopManager — per-game duration overrides (Task 68)
+// ---------------------------------------------------------------------------
+
+describe('GameLoopManager — per-game duration overrides', () => {
+  let mgr;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Constructor defaults: hiding=500 ms, seeking=1000 ms
+    mgr = new GameLoopManager({ tickInterval: 100, hidingDuration: 500, seekingDuration: 1000 });
+  });
+
+  afterEach(() => {
+    for (const gameId of [...mgr._games.keys()]) mgr.stopGame(gameId);
+    vi.useRealTimers();
+  });
+
+  it('startGame with no opts uses constructor defaults', () => {
+    mgr.startGame('g1');
+    expect(mgr.getGameDuration('g1', 'hiding')).toBe(500);
+    expect(mgr.getGameDuration('g1', 'seeking')).toBe(1000);
+  });
+
+  it('startGame with per-game opts overrides hiding duration', () => {
+    mgr.startGame('g1', { hidingDurationMs: 2000 });
+    expect(mgr.getGameDuration('g1', 'hiding')).toBe(2000);
+    expect(mgr.getGameDuration('g1', 'seeking')).toBe(1000); // falls back to default
+  });
+
+  it('startGame with per-game opts overrides seeking duration', () => {
+    mgr.startGame('g1', { seekingDurationMs: 3000 });
+    expect(mgr.getGameDuration('g1', 'hiding')).toBe(500); // falls back to default
+    expect(mgr.getGameDuration('g1', 'seeking')).toBe(3000);
+  });
+
+  it('startGame with both opts overrides both durations', () => {
+    mgr.startGame('g1', { hidingDurationMs: 1800_000, seekingDurationMs: 1800_000 });
+    expect(mgr.getGameDuration('g1', 'hiding')).toBe(1800_000);
+    expect(mgr.getGameDuration('g1', 'seeking')).toBe(1800_000);
+  });
+
+  it('startGame ignores non-positive duration overrides', () => {
+    mgr.startGame('g1', { hidingDurationMs: 0, seekingDurationMs: -100 });
+    expect(mgr.getGameDuration('g1', 'hiding')).toBe(500);
+    expect(mgr.getGameDuration('g1', 'seeking')).toBe(1000);
+  });
+
+  it('getGameDuration returns null for waiting phase', () => {
+    mgr.startGame('g1');
+    expect(mgr.getGameDuration('g1', 'waiting')).toBeNull();
+  });
+
+  it('getGameDuration returns null for finished phase', () => {
+    mgr.startGame('g1');
+    expect(mgr.getGameDuration('g1', 'finished')).toBeNull();
+  });
+
+  it('getGameDuration returns constructor default for unknown game', () => {
+    expect(mgr.getGameDuration('nonexistent', 'hiding')).toBe(500);
+    expect(mgr.getGameDuration('nonexistent', 'seeking')).toBe(1000);
+  });
+
+  it('per-game hiding duration governs auto-transition to SEEKING', () => {
+    // Override hiding to 800 ms (longer than constructor default of 500 ms)
+    mgr.startGame('g1', { hidingDurationMs: 800 });
+    mgr.beginHiding('g1');
+    // At 600 ms (past constructor default 500 ms) should still be HIDING
+    vi.advanceTimersByTime(600);
+    expect(mgr.getPhase('g1')).toBe(GamePhase.HIDING);
+    // At 900 ms should have advanced to SEEKING
+    vi.advanceTimersByTime(300);
+    expect(mgr.getPhase('g1')).toBe(GamePhase.SEEKING);
+  });
+
+  it('per-game seeking duration governs auto-finish', () => {
+    // Override seeking to 1500 ms (longer than constructor default of 1000 ms)
+    mgr.startGame('g1', { seekingDurationMs: 1500 });
+    mgr.beginHiding('g1');
+    vi.advanceTimersByTime(600); // → SEEKING (hiding default 500 ms)
+    // At 1100 ms past SEEKING start (past constructor default 1000 ms) should still be SEEKING
+    vi.advanceTimersByTime(1100);
+    expect(mgr.getPhase('g1')).toBe(GamePhase.SEEKING);
+    // At 1600 ms past SEEKING start should finish
+    vi.advanceTimersByTime(500);
+    expect(mgr.getPhase('g1')).toBeNull();
+  });
+
+  it('two concurrent games can have different scale durations', () => {
+    mgr.startGame('small-game', { hidingDurationMs: 300, seekingDurationMs: 300 });
+    mgr.startGame('large-game', { hidingDurationMs: 1200, seekingDurationMs: 1200 });
+    mgr.beginHiding('small-game');
+    mgr.beginHiding('large-game');
+
+    vi.advanceTimersByTime(400);
+    // small-game (300 ms hiding) → SEEKING; large-game (1200 ms hiding) → still HIDING
+    expect(mgr.getPhase('small-game')).toBe(GamePhase.SEEKING);
+    expect(mgr.getPhase('large-game')).toBe(GamePhase.HIDING);
+  });
+});

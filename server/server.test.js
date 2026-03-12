@@ -833,6 +833,126 @@ describe('createServer — question expiry task', () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /internal/games/:gameId/start — scale-aware game start (Task 68)
+// ---------------------------------------------------------------------------
+
+describe('POST /internal/games/:gameId/start', () => {
+  let server;
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    if (server) {
+      await server.stop();
+      server = null;
+    }
+  });
+
+  it('responds 204 and starts the game in HIDING phase', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/my-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'medium' }),
+    });
+    expect(res.status).toBe(204);
+    expect(server.gameLoopManager.getPhase('my-game')).toBe('hiding');
+  });
+
+  it('small scale sets 30-minute hiding duration', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    await fetch(`http://localhost:${port}/internal/games/small-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    expect(server.gameLoopManager.getGameDuration('small-game', 'hiding')).toBe(30 * 60_000);
+    expect(server.gameLoopManager.getGameDuration('small-game', 'seeking')).toBe(30 * 60_000);
+  });
+
+  it('medium scale sets 60-minute durations', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    await fetch(`http://localhost:${port}/internal/games/med-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'medium' }),
+    });
+    expect(server.gameLoopManager.getGameDuration('med-game', 'hiding')).toBe(60 * 60_000);
+    expect(server.gameLoopManager.getGameDuration('med-game', 'seeking')).toBe(60 * 60_000);
+  });
+
+  it('large scale sets 180-minute durations', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    await fetch(`http://localhost:${port}/internal/games/large-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'large' }),
+    });
+    expect(server.gameLoopManager.getGameDuration('large-game', 'hiding')).toBe(180 * 60_000);
+    expect(server.gameLoopManager.getGameDuration('large-game', 'seeking')).toBe(180 * 60_000);
+  });
+
+  it('unknown scale falls back to constructor-default durations', async () => {
+    server = createServer({ tickInterval: 5000, hidingDuration: 120_000, seekingDuration: 600_000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    await fetch(`http://localhost:${port}/internal/games/unknown-scale-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'giant' }),
+    });
+    expect(server.gameLoopManager.getGameDuration('unknown-scale-game', 'hiding')).toBe(120_000);
+    expect(server.gameLoopManager.getGameDuration('unknown-scale-game', 'seeking')).toBe(600_000);
+  });
+
+  it('missing body falls back to constructor-default durations', async () => {
+    server = createServer({ tickInterval: 5000, hidingDuration: 120_000, seekingDuration: 600_000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    await fetch(`http://localhost:${port}/internal/games/no-body-game/start`, {
+      method: 'POST',
+    });
+    expect(server.gameLoopManager.getGameDuration('no-body-game', 'hiding')).toBe(120_000);
+    expect(server.gameLoopManager.getGameDuration('no-body-game', 'seeking')).toBe(600_000);
+  });
+
+  it('calling start twice is idempotent — second call is a no-op for game state', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    await fetch(`http://localhost:${port}/internal/games/dup-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    const firstPhase = server.gameLoopManager.getPhase('dup-game');
+
+    await fetch(`http://localhost:${port}/internal/games/dup-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'large' }),
+    });
+    // Phase and duration must not change on second call
+    expect(server.gameLoopManager.getPhase('dup-game')).toBe(firstPhase);
+    expect(server.gameLoopManager.getGameDuration('dup-game', 'hiding')).toBe(30 * 60_000);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Timer sync — phase-change broadcast + periodic tick
 // ---------------------------------------------------------------------------
 

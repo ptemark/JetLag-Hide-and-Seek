@@ -441,12 +441,13 @@ describe('Connection reliability — concurrent players', () => {
     expect(handler.getGamePlayerCount('mass-game')).toBe(10);
   });
 
-  it('location updates from multiple players all reach every game member', () => {
+  it('seeker location updates from multiple players all reach every game member', () => {
+    // All seekers join so their location broadcasts are public.
     const sockets = [];
     for (let i = 0; i < 4; i++) {
       const ws = createMockWs();
       handler.handleConnection(ws, `p${i}`);
-      ws.emit('message', msg('join_game', { gameId: 'multi' }));
+      ws.emit('message', msg('join_game', { gameId: 'multi', role: 'seeker' }));
       sockets.push(ws);
     }
 
@@ -455,10 +456,10 @@ describe('Connection reliability — concurrent players', () => {
     // p0 sends a location update
     sockets[0].emit('message', msg('location_update', { gameId: 'multi', lat: 5, lon: 10 }));
 
-    // All 4 players (including p0 who sent it) should receive the broadcast
+    // All 4 players (including p0 who sent it) should receive the broadcast.
     sockets.forEach((ws) => {
       const types = sent(ws).map((m) => m.type);
-      expect(types).toContain('location_update');
+      expect(types).toContain('player_location');
     });
   });
 

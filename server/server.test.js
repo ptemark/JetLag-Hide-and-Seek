@@ -388,19 +388,38 @@ describe('WsHandler — game routing', () => {
     vi.useRealTimers();
   });
 
-  it('location_update broadcasts to game players', () => {
+  it('seeker location_update broadcasts player_location to game players', () => {
+    // Seeker locations are public; all players in the game receive them.
     const ws1 = createMockWs();
     const ws2 = createMockWs();
     handler.handleConnection(ws1, 'p1');
     handler.handleConnection(ws2, 'p2');
-    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
-    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
     ws1.send.mockClear();
     ws2.send.mockClear();
     ws1.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 51.5, lon: -0.12 }));
-    const expected = JSON.stringify({ type: 'location_update', gameId: 'g1', playerId: 'p1', lat: 51.5, lon: -0.12 });
+    const expected = JSON.stringify({ type: 'player_location', gameId: 'g1', playerId: 'p1', lat: 51.5, lon: -0.12 });
     expect(ws1.send).toHaveBeenCalledWith(expected);
     expect(ws2.send).toHaveBeenCalledWith(expected);
+  });
+
+  it('hider location_update is echoed only to hider, not to other players', () => {
+    // Hider location is private: seekers must not see the hider's GPS position (RULES.md §Hiding Rules).
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+    handler.handleConnection(ws1, 'p1');
+    handler.handleConnection(ws2, 'p2');
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    ws1.send.mockClear();
+    ws2.send.mockClear();
+    ws1.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 51.5, lon: -0.12 }));
+    // Hider receives their own echo for self-marker accuracy.
+    const echoMsg = JSON.stringify({ type: 'player_location', gameId: 'g1', playerId: 'p1', lat: 51.5, lon: -0.12 });
+    expect(ws1.send).toHaveBeenCalledWith(echoMsg);
+    // Seeker must NOT receive the hider's location.
+    expect(ws2.send).not.toHaveBeenCalled();
   });
 
   it('location_update updates GameStateManager', () => {

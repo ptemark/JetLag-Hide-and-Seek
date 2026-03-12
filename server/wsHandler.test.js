@@ -353,7 +353,8 @@ describe('WsHandler — message routing — location_update', () => {
     expect(gsm.updatePlayerLocation).toHaveBeenCalledWith('g1', 'p1', 51.5, -0.1);
   });
 
-  it('broadcasts location_update to all players in the game', () => {
+  it('broadcasts player_location to all players in the game (role unknown = seeker path)', () => {
+    // Default GSM mock returns null for getPlayerRole → treated as seeker and broadcast to all.
     const ws2 = mockWs();
     handler.handleConnection(ws2, 'p2');
     ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
@@ -361,7 +362,7 @@ describe('WsHandler — message routing — location_update', () => {
 
     ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 51.5, lon: -0.1 }));
     const msgs = sentMessages(ws2);
-    expect(msgs).toContainEqual({ type: 'location_update', gameId: 'g1', playerId: 'p1', lat: 51.5, lon: -0.1 });
+    expect(msgs).toContainEqual({ type: 'player_location', gameId: 'g1', playerId: 'p1', lat: 51.5, lon: -0.1 });
   });
 
   it('is silent when gameId is missing', () => {
@@ -407,6 +408,55 @@ describe('WsHandler — message routing — location_update', () => {
 
     // Seeker location updates proceed normally during End Game.
     expect(gsm.updatePlayerLocation).toHaveBeenCalledWith('g1', 'p1', 10, 20);
+  });
+
+  // ── Hider location privacy (Task 72) ──────────────────────────────────────
+
+  it('hider location_update stores in GSM but does NOT broadcast to other players', () => {
+    gsm.getPlayerRole.mockReturnValue('hider');
+
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.send.mockClear();
+    ws.send.mockClear();
+
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 51.5, lon: -0.1 }));
+
+    // GSM must be updated (for capture detection).
+    expect(gsm.updatePlayerLocation).toHaveBeenCalledWith('g1', 'p1', 51.5, -0.1);
+
+    // The OTHER player (seeker / observer) must NOT receive the hider's position.
+    const msgsForOther = sentMessages(ws2);
+    const locMsgs = msgsForOther.filter((m) => m.type === 'player_location' || m.type === 'location_update');
+    expect(locMsgs).toHaveLength(0);
+  });
+
+  it('hider location_update is echoed only to the hider themselves', () => {
+    gsm.getPlayerRole.mockReturnValue('hider');
+    ws.send.mockClear();
+
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 51.5, lon: -0.1 }));
+
+    // The hider's own socket receives the echo so their own marker stays accurate.
+    const msgs = sentMessages(ws);
+    expect(msgs).toContainEqual({ type: 'player_location', gameId: 'g1', playerId: 'p1', lat: 51.5, lon: -0.1 });
+  });
+
+  it('seeker location_update is broadcast to all players in the game', () => {
+    gsm.getPlayerRole.mockReturnValue('seeker');
+
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.send.mockClear();
+    ws.send.mockClear();
+
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 51.5, lon: -0.1 }));
+
+    // p2 (and p1 who sent it) receive the seeker's location.
+    const msgsForOther = sentMessages(ws2);
+    expect(msgsForOther).toContainEqual({ type: 'player_location', gameId: 'g1', playerId: 'p1', lat: 51.5, lon: -0.1 });
   });
 });
 

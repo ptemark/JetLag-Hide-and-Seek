@@ -188,9 +188,13 @@ export class WsHandler {
   _handleLocationUpdate(playerId, { gameId, lat, lon }) {
     if (!gameId || lat == null || lon == null) return;
 
+    // Determine the player's role (needed for privacy and End Game checks).
+    const role = this.gameStateManager
+      ? this.gameStateManager.getPlayerRole(gameId, playerId)
+      : null;
+
     // Hider must stay put once End Game begins (RULES.md §End Game).
     if (this.gameStateManager?.isEndGameActive(gameId)) {
-      const role = this.gameStateManager.getPlayerRole(gameId, playerId);
       if (role === 'hider') return;
     }
 
@@ -198,7 +202,20 @@ export class WsHandler {
       this.gameStateManager.updatePlayerLocation(gameId, playerId, lat, lon);
     }
 
-    const message = { type: 'location_update', gameId, playerId, lat, lon };
+    const message = { type: 'player_location', gameId, playerId, lat, lon };
+
+    if (role === 'hider') {
+      // RULES.md §Hiding Rules: seekers see only the possible hiding zones, not the
+      // hider's live GPS position.  Echo the location back to the hider only so
+      // their own marker stays accurate; do NOT broadcast to other players.
+      const hiderWs = this.clients.get(playerId);
+      if (hiderWs) {
+        this._send(hiderWs, message);
+      }
+      return;
+    }
+
+    // Seeker (or role unknown): broadcast as before.
     const senderTeam = this.playerTeams.get(playerId);
     if (senderTeam) {
       // Two-team mode: only broadcast to same team and hiders (players with no team).

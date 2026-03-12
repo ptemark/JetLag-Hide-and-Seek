@@ -271,24 +271,25 @@ describe('Integration — location updates', () => {
 
   afterAll(() => stopServer(server), 15_000);
 
-  it('location update from one player is received by all players in the game', async () => {
+  it('seeker location update from one player is received by all players in the game', async () => {
+    // Seeker locations are broadcast to all game members (hider location is private).
     const sockets = await Promise.all(
       ['loc-p1', 'loc-p2', 'loc-p3'].map((id) => connect(port, id)),
     );
     await Promise.all(sockets.map((ws) => collectMessages(ws, 1, (m) => m.type === 'connected')));
 
-    // All join the same game
+    // All join the same game as seekers so their locations are public.
     await Promise.all(
-      sockets.map((ws, i) => {
-        send(ws, { type: 'join_game', gameId: 'loc-game', role: i === 0 ? 'hider' : 'seeker' });
+      sockets.map((ws) => {
+        send(ws, { type: 'join_game', gameId: 'loc-game', role: 'seeker' });
         return collectMessages(ws, 1, (m) => m.type === 'joined_game');
       }),
     );
 
-    // p1 broadcasts location; all three should receive it
+    // p1 (seeker) broadcasts location; all three should receive it.
     const pending = Promise.all(
       sockets.map((ws) =>
-        collectMessages(ws, 1, (m) => m.type === 'location_update' && m.playerId === 'loc-p1'),
+        collectMessages(ws, 1, (m) => m.type === 'player_location' && m.playerId === 'loc-p1'),
       ),
     );
     send(sockets[0], { type: 'location_update', gameId: 'loc-game', lat: 51.5, lon: -0.1 });
@@ -304,6 +305,8 @@ describe('Integration — location updates', () => {
   });
 
   it('location update persists in game state', async () => {
+    // Hider location is stored in GSM (for capture detection) even though it is
+    // not broadcast to other players.  The hider receives their own echo.
     const ws = await connect(port, 'loc-state-p1');
     await collectMessages(ws, 1, (m) => m.type === 'connected');
 
@@ -311,7 +314,8 @@ describe('Integration — location updates', () => {
     await collectMessages(ws, 1, (m) => m.type === 'joined_game');
 
     send(ws, { type: 'location_update', gameId: 'loc-state-game', lat: 48.85, lon: 2.35 });
-    await collectMessages(ws, 1, (m) => m.type === 'location_update');
+    // Hider receives their own location echo (player_location) after sending.
+    await collectMessages(ws, 1, (m) => m.type === 'player_location');
 
     const state = server.gameStateManager.getGameState('loc-state-game');
     expect(state?.players['loc-state-p1']?.lat).toBeCloseTo(48.85);
@@ -407,6 +411,8 @@ describe('Integration — HTTP /internal/state endpoint', () => {
   });
 
   it('state reflects location update via HTTP endpoint', async () => {
+    // Hider location is stored in GSM and visible via the HTTP state endpoint
+    // even though it is not broadcast to other players.
     const ws = await connect(port, 'http-loc-p1');
     await collectMessages(ws, 1, (m) => m.type === 'connected');
 
@@ -414,7 +420,8 @@ describe('Integration — HTTP /internal/state endpoint', () => {
     await collectMessages(ws, 1, (m) => m.type === 'joined_game');
 
     send(ws, { type: 'location_update', gameId: 'http-loc-game', lat: 40.71, lon: -74.0 });
-    await collectMessages(ws, 1, (m) => m.type === 'location_update');
+    // Wait for hider's own echo before querying HTTP state.
+    await collectMessages(ws, 1, (m) => m.type === 'player_location');
 
     const { body } = await httpGet('/internal/state/http-loc-game');
     expect(body.players['http-loc-p1'].lat).toBeCloseTo(40.71);
@@ -549,7 +556,8 @@ describe('Integration — broadcast isolation', () => {
 
     await Promise.all([
       (async () => {
-        send(wsA, { type: 'join_game', gameId: 'iso-game-A', role: 'hider' });
+        // Use 'seeker' role so the location broadcasts within game-A.
+        send(wsA, { type: 'join_game', gameId: 'iso-game-A', role: 'seeker' });
         await collectMessages(wsA, 1, (m) => m.type === 'joined_game');
       })(),
       (async () => {
@@ -558,14 +566,14 @@ describe('Integration — broadcast isolation', () => {
       })(),
     ]);
 
-    // wsA sends location update in game-A
-    const locPending = collectMessages(wsA, 1, (m) => m.type === 'location_update');
+    // wsA sends location update in game-A; wsA receives their own echo.
+    const locPending = collectMessages(wsA, 1, (m) => m.type === 'player_location');
     send(wsA, { type: 'location_update', gameId: 'iso-game-A', lat: 1, lon: 2 });
     await locPending;
 
-    // Small pause — any errant messages to wsB would have arrived by now
+    // Small pause — any errant messages to wsB would have arrived by now.
     await new Promise((r) => setTimeout(r, 100));
-    const strayLocMsgs = wsB._buf.filter((m) => m.type === 'location_update');
+    const strayLocMsgs = wsB._buf.filter((m) => m.type === 'player_location' || m.type === 'location_update');
     expect(strayLocMsgs).toHaveLength(0);
 
     await Promise.all([closeAndWait(wsA), closeAndWait(wsB)]);
@@ -645,14 +653,23 @@ describe('Integration — full hide-and-seek lifecycle', () => {
     expect(hJoin.role).toBe('hider');
     expect(sJoin.role).toBe('seeker');
 
-    // Hider sends location update; seeker receives it
-    send(hider, { type: 'location_update', gameId: 'lifecycle-game', lat: 35.68, lon: 139.69 });
-    const [locMsg] = await collectMessages(
-      seeker,
+    // Hider sends location update; hider receives their own echo (location is private from seeker).
+    const locEchoPending = collectMessages(
+      hider,
       1,
-      (m) => m.type === 'location_update' && m.playerId === 'lc-hider',
+      (m) => m.type === 'player_location' && m.playerId === 'lc-hider',
     );
+    send(hider, { type: 'location_update', gameId: 'lifecycle-game', lat: 35.68, lon: 139.69 });
+    const [locMsg] = await locEchoPending;
     expect(locMsg.lat).toBeCloseTo(35.68);
+
+    // Verify hider's position is in GSM state (used for capture detection) but
+    // was NOT sent to the seeker directly.
+    await new Promise((r) => setTimeout(r, 100));
+    const seekerLocMsgs = seeker._buf.filter(
+      (m) => (m.type === 'player_location' || m.type === 'location_update') && m.playerId === 'lc-hider',
+    );
+    expect(seekerLocMsgs).toHaveLength(0);
 
     // Seeker requests game state
     send(seeker, { type: 'request_state', gameId: 'lifecycle-game' });

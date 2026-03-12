@@ -650,9 +650,11 @@ describe('dbCreateQuestion', () => {
 
   it('passes a longer expires_at for photo category than for standard', async () => {
     const capturedExpiry = {};
+    // Photo pool: pending check + SELECT games (for scale) + INSERT.
     const pool = {
       query: vi.fn()
-        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })                         // pending check
+        .mockResolvedValueOnce({ rows: [{ size: 'medium' }] })       // SELECT size FROM games
         .mockImplementationOnce((sql, params) => {
           capturedExpiry.photo = params[5];
           return Promise.resolve({ rows: [{
@@ -662,6 +664,7 @@ describe('dbCreateQuestion', () => {
           }] });
         }),
     };
+    // Standard (non-photo) pool: pending check + INSERT only (no SELECT games).
     const pool2 = {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [] })
@@ -737,6 +740,83 @@ describe('dbCreateQuestion', () => {
     // Verify the INSERT SQL received the correct category value.
     const insertCall = pool.query.mock.calls[1];
     expect(insertCall[1][3]).toBe(category);
+  });
+
+  // Photo expiry by game scale — RULES.md: 10 min small, 15 min medium, 20 min large.
+  it.each([
+    ['small',  10 * 60 * 1000],
+    ['medium', 15 * 60 * 1000],
+    ['large',  20 * 60 * 1000],
+  ])('uses correct photo expiry for game scale %s (%i ms)', async (scale, expectedMs) => {
+    const capturedExpiry = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })  // pending check (no conflict)
+        .mockImplementationOnce((sql, params) => {
+          capturedExpiry.expiresAt = params[5];
+          return Promise.resolve({ rows: [{
+            id: `q-photo-${scale}`, game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'photo', text: 'snap', status: 'pending',
+            expires_at: params[5], created_at: new Date(),
+          }] });
+        }),
+    };
+    const before = Date.now();
+    await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1',
+      category: 'photo', text: 'snap',
+      gameScale: scale,
+    });
+    const after = Date.now();
+    const diff = new Date(capturedExpiry.expiresAt) - before;
+    // Allow 500 ms of execution time drift.
+    expect(diff).toBeGreaterThanOrEqual(expectedMs - 500);
+    expect(diff).toBeLessThan(expectedMs + (after - before) + 500);
+  });
+
+  it('fetches game size from DB when category is photo and gameScale is omitted', async () => {
+    const capturedExpiry = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })                          // pending check
+        .mockResolvedValueOnce({ rows: [{ size: 'large' }] })         // SELECT size FROM games
+        .mockImplementationOnce((sql, params) => {
+          capturedExpiry.expiresAt = params[5];
+          return Promise.resolve({ rows: [{
+            id: 'q-auto', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'photo', text: 'snap', status: 'pending',
+            expires_at: params[5], created_at: new Date(),
+          }] });
+        }),
+    };
+    const before = Date.now();
+    await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'photo', text: 'snap',
+      // gameScale intentionally omitted
+    });
+    const diff = new Date(capturedExpiry.expiresAt) - before;
+    const largeMs = 20 * 60 * 1000;
+    expect(diff).toBeGreaterThanOrEqual(largeMs - 500);
+    // Verify the SELECT games query was issued.
+    const gamesSql = pool.query.mock.calls[1][0];
+    expect(gamesSql).toContain('games');
+  });
+
+  it('does not query games table for non-photo categories', async () => {
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })  // pending check
+        .mockResolvedValueOnce({ rows: [{
+          id: 'q-match', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+          category: 'matching', text: 'test', status: 'pending',
+          expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        }] }),
+    };
+    await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'test',
+    });
+    // Only two queries: pending check + INSERT.  No extra SELECT on games.
+    expect(pool.query).toHaveBeenCalledTimes(2);
   });
 });
 

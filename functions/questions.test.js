@@ -135,6 +135,49 @@ describe('submitQuestion', () => {
     expect(photoExpiry).toBeGreaterThan(standardExpiry);
   });
 
+  // Photo expiry by game scale — RULES.md: 10 min small, 15 min medium, 20 min large.
+  it.each([
+    ['small',  10 * 60 * 1000],
+    ['medium', 15 * 60 * 1000],
+    ['large',  20 * 60 * 1000],
+  ])('photo question expiresAt reflects game scale %s (%i ms) in-process', (scale, expectedMs) => {
+    const { status, body } = submitQuestion({
+      method: 'POST',
+      body: makeQuestion({ gameId: `scale-${scale}`, category: 'photo', gameScale: scale }),
+    });
+    expect(status).toBe(201);
+    const diff = new Date(body.expiresAt) - new Date(body.createdAt);
+    expect(diff).toBeGreaterThanOrEqual(expectedMs - 500);
+    expect(diff).toBeLessThan(expectedMs + 500);
+  });
+
+  it('photo question via pool passes gameScale to dbCreateQuestion', async () => {
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const mockRow = {
+      questionId: 'q-scale', gameId: 'g-s', askerId: 'a-1', targetId: 't-1',
+      category: 'photo', text: 'snap', status: 'pending', expiresAt,
+      createdAt: new Date().toISOString(),
+    };
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{ curse_expires_at: null }] })  // dbGetCurseExpiry
+        .mockResolvedValueOnce({ rows: [] })                            // pending check
+        // No SELECT games query — gameScale supplied in body
+        .mockResolvedValueOnce({ rows: [
+          { id: mockRow.questionId, game_id: mockRow.gameId, asker_id: mockRow.askerId,
+            target_id: mockRow.targetId, category: mockRow.category, text: mockRow.text,
+            status: mockRow.status, expires_at: mockRow.expiresAt, created_at: mockRow.createdAt },
+        ] }),
+    };
+    const result = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ gameId: 'g-s', category: 'photo', gameScale: 'small' }) },
+      pool,
+    );
+    expect(result.status).toBe(201);
+    // Verify only 3 queries fired (curse + pending + INSERT) — no extra SELECT games.
+    expect(pool.query).toHaveBeenCalledTimes(3);
+  });
+
   it('allows a new question after the previous one is answered', async () => {
     const { body: q } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'game-3' }) });
     await submitAnswer(

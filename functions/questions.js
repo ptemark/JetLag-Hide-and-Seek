@@ -29,8 +29,24 @@ import {
 } from '../db/gameStore.js';
 import { drawCardInProcess, randomCardDescriptor, _curses } from './cards.js';
 
-/** Answer deadline in milliseconds by category. Photo: 15 min; others: 5 min. */
-const QUESTION_EXPIRY_MS = { photo: 15 * 60 * 1000, default: 5 * 60 * 1000 };
+/** Answer deadline in milliseconds for non-photo categories. */
+const DEFAULT_EXPIRY_MS = 5 * 60 * 1000;
+
+/**
+ * Photo question expiry by game scale (RULES.md: 10–20 min depending on game size).
+ * Falls back to 15 min when scale is unknown.
+ */
+const PHOTO_EXPIRY_MS_BY_SCALE = {
+  small:  10 * 60 * 1000,
+  medium: 15 * 60 * 1000,
+  large:  20 * 60 * 1000,
+};
+
+/** @param {string|undefined} scale  @param {string} category */
+function computeExpiryMs(scale, category) {
+  if (category !== 'photo') return DEFAULT_EXPIRY_MS;
+  return PHOTO_EXPIRY_MS_BY_SCALE[scale] ?? PHOTO_EXPIRY_MS_BY_SCALE.medium;
+}
 
 const VALID_CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
@@ -73,7 +89,12 @@ function notifyQuestionPending({ gameId, questionId, expiresAt }, gameServerUrl,
 
 /**
  * POST /questions
- * Body: { gameId, askerId, targetId, category, text }
+ * Body: { gameId, askerId, targetId, category, text, gameScale? }
+ *
+ * `gameScale` is optional. When provided for photo questions it is used to
+ * compute the correct answer deadline (small → 10 min, medium → 15 min,
+ * large → 20 min). When omitted the DB path joins with `games` to derive
+ * the scale; the in-process path falls back to 15 min.
  *
  * @param {{ method: string, body: unknown }} req
  * @param {import('pg').Pool|null} [pool]
@@ -84,7 +105,7 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
 
-  const { gameId, askerId, targetId, category, text } = req.body ?? {};
+  const { gameId, askerId, targetId, category, text, gameScale } = req.body ?? {};
 
   if (!gameId   || typeof gameId   !== 'string') return { status: 400, body: { error: 'gameId is required' } };
   if (!askerId  || typeof askerId  !== 'string') return { status: 400, body: { error: 'askerId is required' } };
@@ -102,7 +123,7 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       if (curseExpiry && new Date(curseExpiry) > new Date()) {
         return { status: 409, body: { error: 'curse_active', curseEndsAt: curseExpiry } };
       }
-      return dbCreateQuestion(pool, { gameId, askerId, targetId, category, text }).then(row => {
+      return dbCreateQuestion(pool, { gameId, askerId, targetId, category, text, gameScale }).then(row => {
         if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
         notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
         return { status: 201, body: row };
@@ -124,9 +145,7 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
     return { status: 409, body: { error: 'A pending question already exists for this game' } };
   }
 
-  const expiresAt = new Date(
-    Date.now() + (category === 'photo' ? QUESTION_EXPIRY_MS.photo : QUESTION_EXPIRY_MS.default),
-  ).toISOString();
+  const expiresAt = new Date(Date.now() + computeExpiryMs(gameScale, category)).toISOString();
   const question = {
     questionId: randomUUID(),
     gameId,

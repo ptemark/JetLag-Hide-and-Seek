@@ -299,19 +299,39 @@ export async function dbGetGameZone(pool, gameId) {
 
 // ── Question / Answer store ───────────────────────────────────────────────────
 
-/** Answer deadline in milliseconds by category. Photo questions get 15 min; all others get 5 min. */
-const QUESTION_EXPIRY_MS = { photo: 15 * 60 * 1000, default: 5 * 60 * 1000 };
+/** Answer deadline in milliseconds for non-photo categories. */
+const DEFAULT_EXPIRY_MS = 5 * 60 * 1000;
+
+/**
+ * Photo question expiry by game scale (RULES.md: 10–20 min depending on game size).
+ * Falls back to 15 min when scale is unknown.
+ */
+const PHOTO_EXPIRY_MS_BY_SCALE = {
+  small:  10 * 60 * 1000,
+  medium: 15 * 60 * 1000,
+  large:  20 * 60 * 1000,
+};
+
+/** @param {string|undefined} scale  @param {string} category */
+function computeExpiryMs(scale, category) {
+  if (category !== 'photo') return DEFAULT_EXPIRY_MS;
+  return PHOTO_EXPIRY_MS_BY_SCALE[scale] ?? PHOTO_EXPIRY_MS_BY_SCALE.medium;
+}
 
 /**
  * Insert a new question record.
  * Rejects with 409 if a pending question already exists for the same game (or
  * the same seeker team when the game uses two seeker teams).
  *
+ * When `category === 'photo'` and no `gameScale` is provided, the function
+ * fetches the game's `size` from the DB to derive the correct expiry
+ * (small → 10 min, medium → 15 min, large → 20 min).
+ *
  * @param {import('pg').Pool} pool
- * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null }} options
+ * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null, gameScale?: string }} options
  * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string } | { conflict: true }>}
  */
-export async function dbCreateQuestion(pool, { gameId, askerId, targetId, category, text, askerTeam = null }) {
+export async function dbCreateQuestion(pool, { gameId, askerId, targetId, category, text, askerTeam = null, gameScale }) {
   // Enforce one-pending-question-at-a-time.  When the game uses two teams,
   // scope the check to the asker's team so both teams can ask independently.
   let pending;
@@ -332,9 +352,14 @@ export async function dbCreateQuestion(pool, { gameId, askerId, targetId, catego
   }
   if (pending.rows.length > 0) return { conflict: true };
 
-  const expiresAt = new Date(
-    Date.now() + (category === 'photo' ? QUESTION_EXPIRY_MS.photo : QUESTION_EXPIRY_MS.default),
-  );
+  // Derive game scale for photo expiry when not supplied by caller.
+  let scale = gameScale;
+  if (!scale && category === 'photo') {
+    const gameRes = await pool.query('SELECT size FROM games WHERE id = $1', [gameId]);
+    scale = gameRes.rows[0]?.size;
+  }
+
+  const expiresAt = new Date(Date.now() + computeExpiryMs(scale, category));
   const res = await pool.query(
     `INSERT INTO questions (game_id, asker_id, target_id, category, text, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6)

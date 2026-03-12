@@ -129,6 +129,27 @@ function notifyTimeBonus({ gameId, minutesAdded }, gameServerUrl, fetchFn) {
 }
 
 /**
+ * Notify the managed server to generate a decoy zone for a powerup card play.
+ * The server picks a random existing zone, offsets it, and broadcasts it to
+ * all players as a `false_zone` WS event.
+ * Fire-and-forget — errors are intentionally swallowed.
+ *
+ * @param {{ gameId: string }} options
+ * @param {string|undefined} gameServerUrl
+ * @param {typeof fetch} fetchFn
+ */
+function notifyFalseZone({ gameId }, gameServerUrl, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  if (serverUrl && fetchFn) {
+    Promise.resolve(fetchFn(`${serverUrl}/internal/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'false_zone', gameId }),
+    })).catch(() => { /* intentionally silent */ });
+  }
+}
+
+/**
  * Activate a curse for a game: persist to DB (if pool) or in-process map,
  * then fire-and-forget notify the managed server so it can broadcast
  * `curse_active` to all connected players.
@@ -208,6 +229,9 @@ export async function playCard(req, pool = null, gameServerUrl, fetchFn = global
         fetchFn,
       );
     }
+    if (card.type === 'powerup' && card.effect?.action === 'false_zone' && card.gameId) {
+      notifyFalseZone({ gameId: card.gameId }, gameServerUrl, fetchFn);
+    }
     return { status: 200, body: card };
   }
 
@@ -234,6 +258,10 @@ export async function playCard(req, pool = null, gameServerUrl, fetchFn = global
       gameServerUrl,
       fetchFn,
     );
+  }
+
+  if (card.type === 'powerup' && card.effect?.action === 'false_zone' && card.gameId) {
+    notifyFalseZone({ gameId: card.gameId }, gameServerUrl, fetchFn);
   }
 
   return { status: 200, body: played };

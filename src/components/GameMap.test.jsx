@@ -32,7 +32,7 @@ const { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockL } =
 
   const mockTileLayer = { addTo: vi.fn() };
   const mockRectangle = { addTo: vi.fn() };
-  const mockCircle = { addTo: vi.fn() };
+  const mockCircle = { addTo: vi.fn(), bindTooltip: vi.fn().mockReturnThis(), remove: vi.fn() };
 
   const mockL = {
     map: vi.fn().mockReturnValue(mockMap),
@@ -411,6 +411,45 @@ describe('GameMap', () => {
   it('does not show timer banner when no timer_sync received', () => {
     render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
     expect(screen.queryByTestId('timer-banner')).not.toBeInTheDocument();
+  });
+
+  it('renders a decoy circle when false_zone WS event is received', async () => {
+    mockCircle.addTo.mockClear();
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    const decoyZone = { stationId: 'decoy-1', lat: 51.6, lon: -0.2, radiusM: 500, decoyId: 'decoy-abc' };
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'false_zone', gameId: game.gameId, zone: decoyZone }),
+      });
+    });
+
+    // L.circle should have been called with the decoy lat/lon.
+    const circleCalls = mockL.circle.mock.calls;
+    const decoyCall = circleCalls.find(([latlng]) => latlng[0] === 51.6 && latlng[1] === -0.2);
+    expect(decoyCall).toBeTruthy();
+    // The circle should have been added to the map.
+    expect(mockCircle.addTo).toHaveBeenCalled();
+  });
+
+  it('removes decoy circle when false_zone_expired WS event is received', async () => {
+    mockCircle.remove.mockClear();
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    const decoyZone = { stationId: 'decoy-2', lat: 51.7, lon: -0.3, radiusM: 500, decoyId: 'decoy-xyz' };
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'false_zone', gameId: game.gameId, zone: decoyZone }),
+      });
+    });
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'false_zone_expired', gameId: game.gameId, decoyId: 'decoy-xyz' }),
+      });
+    });
+
+    expect(mockCircle.remove).toHaveBeenCalled();
   });
 
   it('hides ZoneSelector after zone_locked WS event is received', async () => {

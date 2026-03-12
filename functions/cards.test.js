@@ -411,6 +411,79 @@ describe('time_bonus card (in-process)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Powerup card (in-process)
+// ---------------------------------------------------------------------------
+
+describe('powerup card (in-process)', () => {
+  beforeEach(() => _clearCards());
+
+  it('fires false_zone notify to game server when powerup card is played', async () => {
+    // Math.floor(0.4 * 3) = 1 → CARD_TYPES[1] = 'powerup'
+    vi.spyOn(Math, 'random').mockReturnValue(0.4);
+    const card = drawCardInProcess({ gameId: 'g-pu', playerId: 'p1' });
+    vi.restoreAllMocks();
+    expect(card.type).toBe('powerup');
+
+    const mockFetch = vi.fn().mockResolvedValue({});
+    await playCard(
+      makePostReq({ cardId: card.cardId }, { playerId: 'p1' }),
+      null,
+      'http://game-server',
+      mockFetch,
+    );
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe('http://game-server/internal/notify');
+    const payload = JSON.parse(opts.body);
+    expect(payload.type).toBe('false_zone');
+    expect(payload.gameId).toBe('g-pu');
+  });
+
+  it('does not fire notify for powerup when no game server URL is configured', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.4);
+    const card = drawCardInProcess({ gameId: 'g-pu-nourl', playerId: 'p1' });
+    vi.restoreAllMocks();
+
+    const mockFetch = vi.fn().mockResolvedValue({});
+    await playCard(makePostReq({ cardId: card.cardId }, { playerId: 'p1' }), null, undefined, mockFetch);
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Powerup card (with mock DB pool)
+// ---------------------------------------------------------------------------
+
+describe('powerup card (with pool)', () => {
+  it('fires false_zone notify for powerup card when pool is provided', async () => {
+    const powerupRow = {
+      id: 'c-pu', game_id: 'g1', player_id: 'p1', type: 'powerup',
+      effect: { action: 'false_zone' }, status: 'played',
+      drawn_at: new Date().toISOString(), played_at: new Date().toISOString(),
+    };
+    const pool = { query: vi.fn().mockResolvedValue({ rows: [powerupRow] }) };
+    const mockFetch = vi.fn().mockResolvedValue({});
+    const res = await playCard(
+      makePostReq({ cardId: 'c-pu' }, { playerId: 'p1' }),
+      pool,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('powerup');
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe('http://game-server/internal/notify');
+    const payload = JSON.parse(opts.body);
+    expect(payload.type).toBe('false_zone');
+    expect(payload.gameId).toBe('g1');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Time bonus card (with mock DB pool)
 // ---------------------------------------------------------------------------
 

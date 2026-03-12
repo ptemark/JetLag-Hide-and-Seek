@@ -11,6 +11,30 @@ import { MetricsCollector, MetricKey } from './monitoring.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
+function sendNotify(server, payload) {
+  return new Promise((resolve) => {
+    let body = '';
+    const req = Object.assign(
+      Object.create(require ? null : null), // plain object is fine for mock
+      {
+        method: 'POST',
+        url: '/internal/notify',
+        headers: { host: 'localhost' },
+        on(ev, cb) {
+          if (ev === 'data') { cb(JSON.stringify(payload)); }
+          if (ev === 'end')  { cb(); }
+        },
+      },
+    );
+    const res = {
+      statusCode: null,
+      writeHead(code) { this.statusCode = code; },
+      end: resolve,
+    };
+    server.httpServer.emit('request', req, res);
+  });
+}
+
 function createMockWs(readyState = 1) {
   const listeners = {};
   return {
@@ -1049,30 +1073,6 @@ describe('createServer — hider timeout victory', () => {
 // ---------------------------------------------------------------------------
 
 describe('createServer — time bonus notify', () => {
-  function sendNotify(server, payload) {
-    return new Promise((resolve) => {
-      let body = '';
-      const req = Object.assign(
-        Object.create(require ? null : null), // plain object is fine for mock
-        {
-          method: 'POST',
-          url: '/internal/notify',
-          headers: { host: 'localhost' },
-          on(ev, cb) {
-            if (ev === 'data') { cb(JSON.stringify(payload)); }
-            if (ev === 'end')  { cb(); }
-          },
-        },
-      );
-      const res = {
-        statusCode: null,
-        writeHead(code) { this.statusCode = code; },
-        end: resolve,
-      };
-      server.httpServer.emit('request', req, res);
-    });
-  }
-
   it('/internal/notify time_bonus calls extendPhase on the game', async () => {
     const s = createServer({ tickInterval: 5000, hidingDuration: 600_000, seekingDuration: 600_000 });
 
@@ -1115,5 +1115,117 @@ describe('createServer — time bonus notify', () => {
     await expect(
       sendNotify(s, { type: 'time_bonus', gameId: 'no-such-game', minutesAdded: 10 })
     ).resolves.not.toThrow();
+  });
+
+  it('/internal/notify false_zone broadcasts false_zone event when zones exist', async () => {
+    const s = createServer({ tickInterval: 5000 });
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'fz-game' }));
+
+    // Register a zone so the server has something to offset.
+    s.gameStateManager.createGame('fz-game');
+    s.gameStateManager.setGameZones('fz-game', [
+      { stationId: 's1', name: 'Station A', lat: 51.5, lon: -0.1, radiusM: 500 },
+    ]);
+    mockWs.send.mockClear();
+
+    await sendNotify(s, { type: 'false_zone', gameId: 'fz-game' });
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const falseZoneMsg = broadcasts.find((b) => b.type === 'false_zone');
+    expect(falseZoneMsg).toBeTruthy();
+    expect(falseZoneMsg.gameId).toBe('fz-game');
+    expect(typeof falseZoneMsg.zone.lat).toBe('number');
+    expect(typeof falseZoneMsg.zone.lon).toBe('number');
+    expect(falseZoneMsg.zone.decoyId).toBeTruthy();
+    // Decoy should be offset from the original zone (not identical).
+    expect(falseZoneMsg.zone.lat).not.toBe(51.5);
+  });
+
+  it('/internal/notify false_zone does nothing when no zones registered', async () => {
+    const s = createServer({ tickInterval: 5000 });
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'fz-nozone' }));
+    s.gameStateManager.createGame('fz-nozone');
+    mockWs.send.mockClear();
+
+    await sendNotify(s, { type: 'false_zone', gameId: 'fz-nozone' });
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    expect(broadcasts.find((b) => b.type === 'false_zone')).toBeUndefined();
+  });
+
+  it('/internal/notify false_zone with unknown gameId does not throw', async () => {
+    const s = createServer({ tickInterval: 5000 });
+    await expect(
+      sendNotify(s, { type: 'false_zone', gameId: 'no-such-game' })
+    ).resolves.not.toThrow();
+  });
+});
+
+describe('false_zone_expiry StateDispatcher task', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('broadcasts false_zone_expired when decoy duration elapses', async () => {
+    const s = createServer({ tickInterval: 5000 });
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'fze-game' }));
+
+    s.gameStateManager.createGame('fze-game');
+    s.gameStateManager.setGameZones('fze-game', [
+      { stationId: 's1', name: 'Station A', lat: 51.5, lon: -0.1, radiusM: 500 },
+    ]);
+    s.gameStateManager.setGameStatus('fze-game', 'seeking');
+
+    // Register a false zone via the notify endpoint (fake timers active so Date.now() is frozen).
+    await sendNotify(s, { type: 'false_zone', gameId: 'fze-game' });
+
+    const fzBroadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const fzMsg = fzBroadcasts.find((b) => b.type === 'false_zone');
+    expect(fzMsg).toBeTruthy();
+    const decoyId = fzMsg.zone.decoyId;
+
+    // Advance time past the 5-minute expiry.
+    mockWs.send.mockClear();
+    vi.advanceTimersByTime(5 * 60_000 + 100);
+
+    // Manually trigger the seeking-phase stateDispatcher tasks.
+    const gameState = s.gameStateManager.getGameState('fze-game');
+    await s.stateDispatcher.dispatch(gameState);
+
+    const expiryBroadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const expiredMsg = expiryBroadcasts.find((b) => b.type === 'false_zone_expired');
+    expect(expiredMsg).toBeTruthy();
+    expect(expiredMsg.decoyId).toBe(decoyId);
+    expect(expiredMsg.gameId).toBe('fze-game');
+  });
+
+  it('does not expire decoy before duration elapses', async () => {
+    const s = createServer({ tickInterval: 5000 });
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'fze-early' }));
+
+    s.gameStateManager.createGame('fze-early');
+    s.gameStateManager.setGameZones('fze-early', [
+      { stationId: 's1', name: 'Station A', lat: 51.5, lon: -0.1, radiusM: 500 },
+    ]);
+    s.gameStateManager.setGameStatus('fze-early', 'seeking');
+
+    await sendNotify(s, { type: 'false_zone', gameId: 'fze-early' });
+    mockWs.send.mockClear();
+
+    // Only advance 1 minute — decoy should still be active.
+    vi.advanceTimersByTime(60_000);
+
+    const gameState = s.gameStateManager.getGameState('fze-early');
+    await s.stateDispatcher.dispatch(gameState);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    expect(broadcasts.find((b) => b.type === 'false_zone_expired')).toBeUndefined();
   });
 });

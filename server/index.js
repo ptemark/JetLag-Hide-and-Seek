@@ -13,6 +13,34 @@ import { nullAlertManager, AlertType } from './alerting.js';
 import { nullAutoScaler } from './autoScaler.js';
 import { checkCapture } from './captureDetector.js';
 
+const FALSE_ZONE_DURATION_MS = 5 * 60_000;
+
+/**
+ * Offset a zone's lat/lon by a random distance of 0.5–2 km in a random
+ * direction and return a new zone object with a unique stationId.
+ * 1° latitude ≈ 111 km.  Longitude degrees scale by cos(lat).
+ *
+ * @param {{ lat: number, lon: number, [key: string]: unknown }} zone
+ * @param {string} decoyId
+ * @returns {object}
+ */
+function generateDecoyZone(zone, decoyId) {
+  const distanceKm = 0.5 + Math.random() * 1.5;
+  const angle = Math.random() * 2 * Math.PI;
+  const latOffsetDeg = (distanceKm / 111) * Math.cos(angle);
+  const cosLat = Math.cos((zone.lat * Math.PI) / 180);
+  const lonOffsetDeg = cosLat > 0
+    ? (distanceKm / (111 * cosLat)) * Math.sin(angle)
+    : 0;
+  return {
+    ...zone,
+    stationId: decoyId,
+    lat: zone.lat + latOffsetDeg,
+    lon: zone.lon + lonOffsetDeg,
+    decoyId,
+  };
+}
+
 export function createServer({
   tickInterval = 1000,
   heartbeatInterval = 30_000,
@@ -106,6 +134,19 @@ export function createServer({
                 wsHandler.broadcastToGame(gameId, timerMsg);
                 _lastTimerSyncAt.set(gameId, Date.now());
               }
+            } else if (eventType === 'false_zone') {
+              // Generate a decoy zone near one of the game's registered zones and
+              // broadcast it to all players.  Track expiry for cleanup.
+              const zones = gameStateManager.getGameZones(gameId);
+              if (zones.length > 0) {
+                const baseZone = zones[Math.floor(Math.random() * zones.length)];
+                const decoyId = randomUUID();
+                const decoyZone = generateDecoyZone(baseZone, decoyId);
+                const expiresAt = Date.now() + FALSE_ZONE_DURATION_MS;
+                if (!_falseZones.has(gameId)) _falseZones.set(gameId, []);
+                _falseZones.get(gameId).push({ decoyId, zone: decoyZone, expiresAt });
+                wsHandler.broadcastToGame(gameId, { type: 'false_zone', gameId, zone: decoyZone });
+              }
             } else {
               wsHandler.broadcastToGame(gameId, { type: eventType, ...rest });
             }
@@ -161,6 +202,9 @@ export function createServer({
 
   // Track when each game enters the seeking phase so elapsed time is available on timeout.
   const _seekingStartedAt = new Map();
+
+  // Track active false zones per game: gameId → Array<{ decoyId, zone, expiresAt }>
+  const _falseZones = new Map();
 
   /**
    * Build a timer_sync payload for a game in a timed phase.
@@ -223,6 +267,21 @@ export function createServer({
     return { captured: true, winner: 'seekers', seekersInZone };
   });
 
+  // Register false zone expiry task for the SEEKING phase.
+  stateDispatcher.register('seeking', 'false_zone_expiry', (gameState) => {
+    const { gameId } = gameState;
+    const falseZoneList = _falseZones.get(gameId);
+    if (!falseZoneList || falseZoneList.length === 0) return { expired: 0 };
+    const now = Date.now();
+    const expired = falseZoneList.filter((fz) => fz.expiresAt <= now);
+    if (expired.length === 0) return { expired: 0 };
+    _falseZones.set(gameId, falseZoneList.filter((fz) => fz.expiresAt > now));
+    for (const fz of expired) {
+      wsHandler.broadcastToGame(gameId, { type: 'false_zone_expired', gameId, decoyId: fz.decoyId });
+    }
+    return { expired: expired.length };
+  });
+
   // Register question expiry task for the SEEKING phase.
   stateDispatcher.register('seeking', 'question_expiry', async (gameState) => {
     const { gameId } = gameState;
@@ -277,6 +336,7 @@ export function createServer({
 
       _seekingStartedAt.delete(gameId);
       _lastTimerSyncAt.delete(gameId);
+      _falseZones.delete(gameId);
     }
 
     // Immediately sync the timer on phase entry so clients can start counting down.

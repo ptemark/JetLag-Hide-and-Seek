@@ -66,7 +66,8 @@ function boundsCenter(bounds) {
 export default function GameMap({ player, game, zones = [], serverUrl, onPlayAgain }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  const markersRef = useRef({});   // { [playerId]: L.circleMarker }
+  const markersRef = useRef({});          // { [playerId]: L.circleMarker }
+  const falseZoneLayersRef = useRef({}); // { [decoyId]: L.circle }
   const wsRef = useRef(null);
   const hidingStartedAtRef = useRef(null); // timestamp (ms) when hiding phase began
   const bonusSecondsRef = useRef(0);       // accumulated time_bonus card seconds
@@ -87,6 +88,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [gameResult, setGameResult] = useState(null); // { winner, elapsedMs, bonusSeconds, captureTeam? } on finish
   const [wsStatus, setWsStatus] = useState('connecting'); // 'connecting' | 'connected' | 'reconnecting'
   const [curseEndsAt, setCurseEndsAt] = useState(null);   // ISO from curse_active; null when inactive
+  const [falseZones, setFalseZones] = useState([]);        // [{ decoyId, zone }] — active decoy zones
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -174,6 +176,40 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     }
   }, [players, player.playerId, myTeam]);
 
+  // ── Render/remove false zone (decoy) circles on the map ───────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Add circles for new decoy zones.
+    for (const { decoyId, zone } of falseZones) {
+      if (!falseZoneLayersRef.current[decoyId]) {
+        const circle = L.circle([zone.lat, zone.lon], {
+          radius: zone.radiusM ?? zone.radius ?? 500,
+          color: '#8b5cf6',
+          fillColor: '#8b5cf6',
+          fillOpacity: 0.1,
+          weight: 2,
+          dashArray: '6, 6',
+        });
+        // Hider sees their own decoy labeled; seekers see it as an unlabeled zone.
+        if (player.role === 'hider') {
+          circle.bindTooltip('Your decoy', { permanent: true, className: 'decoy-tooltip' });
+        }
+        circle.addTo(map);
+        falseZoneLayersRef.current[decoyId] = circle;
+      }
+    }
+
+    // Remove circles for expired decoy zones.
+    for (const decoyId of Object.keys(falseZoneLayersRef.current)) {
+      if (!falseZones.find((fz) => fz.decoyId === decoyId)) {
+        falseZoneLayersRef.current[decoyId].remove();
+        delete falseZoneLayersRef.current[decoyId];
+      }
+    }
+  }, [falseZones, player.role]);
+
   // ── WebSocket connection with exponential backoff reconnect ───────────────
   useEffect(() => {
     if (!serverUrl) return;
@@ -238,6 +274,10 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setPendingQuestionExpiresAt(msg.expiresAt ?? null);
       } else if (msg.type === 'curse_active') {
         setCurseEndsAt(msg.curseEndsAt ?? null);
+      } else if (msg.type === 'false_zone' && msg.zone) {
+        setFalseZones((prev) => [...prev, { decoyId: msg.zone.decoyId, zone: msg.zone }]);
+      } else if (msg.type === 'false_zone_expired') {
+        setFalseZones((prev) => prev.filter((fz) => fz.decoyId !== msg.decoyId));
       }
     }
 

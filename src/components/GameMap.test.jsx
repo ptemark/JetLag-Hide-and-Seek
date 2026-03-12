@@ -634,4 +634,40 @@ describe('GameMap', () => {
     });
     expect(screen.queryByTestId('reconnecting-banner')).not.toBeInTheDocument();
   });
+
+  // ---------------------------------------------------------------------------
+  // End Game banner — Task 71
+  // ---------------------------------------------------------------------------
+
+  it('shows "Stay put!" banner for hider on end_game_started', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }),
+      });
+    });
+    expect(screen.getByTestId('end-game-banner-hider')).toBeInTheDocument();
+    expect(screen.queryByTestId('end-game-banner-seeker')).not.toBeInTheDocument();
+  });
+
+  it('shows "Find and spot the hider!" banner for seeker on end_game_started', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }),
+      });
+    });
+    expect(screen.getByTestId('end-game-banner-seeker')).toBeInTheDocument();
+    expect(screen.queryByTestId('end-game-banner-hider')).not.toBeInTheDocument();
+  });
+
+  it('does not show End Game banners before end_game_started', () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('end-game-banner-hider')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('end-game-banner-seeker')).not.toBeInTheDocument();
+  });
 });

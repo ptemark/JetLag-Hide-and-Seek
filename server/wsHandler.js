@@ -188,6 +188,12 @@ export class WsHandler {
   _handleLocationUpdate(playerId, { gameId, lat, lon }) {
     if (!gameId || lat == null || lon == null) return;
 
+    // Hider must stay put once End Game begins (RULES.md §End Game).
+    if (this.gameStateManager?.isEndGameActive(gameId)) {
+      const role = this.gameStateManager.getPlayerRole(gameId, playerId);
+      if (role === 'hider') return;
+    }
+
     if (this.gameStateManager) {
       this.gameStateManager.updatePlayerLocation(gameId, playerId, lat, lon);
     }

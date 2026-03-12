@@ -12,7 +12,7 @@ export class GameStateManager {
 
   createGame(gameId, { status = 'waiting', seekerTeams = 0 } = {}) {
     if (this._games.has(gameId)) return;
-    this._games.set(gameId, { status, seekerTeams, players: new Map(), zones: [] });
+    this._games.set(gameId, { status, seekerTeams, players: new Map(), zones: [], endGameActive: false });
   }
 
   setSeekerTeams(gameId, seekerTeams) {
@@ -32,6 +32,21 @@ export class GameStateManager {
 
   hasGame(gameId) {
     return this._games.has(gameId);
+  }
+
+  setEndGameActive(gameId, active) {
+    const game = this._games.get(gameId);
+    if (!game) return false;
+    game.endGameActive = !!active;
+    return true;
+  }
+
+  isEndGameActive(gameId) {
+    return this._games.get(gameId)?.endGameActive ?? false;
+  }
+
+  getPlayerRole(gameId, playerId) {
+    return this._games.get(gameId)?.players.get(playerId)?.role ?? null;
   }
 
   addPlayerToGame(gameId, playerId, role = 'hider', team = null) {

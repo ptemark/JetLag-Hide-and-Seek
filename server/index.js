@@ -54,13 +54,17 @@ function generateDecoyZone(zone, decoyId) {
   };
 }
 
+/** Default End Game timeout (ms): if no spot_hider arrives, hider wins. */
+const DEFAULT_END_GAME_TIMEOUT_MS = 10 * 60_000;
+
 export function createServer({
   tickInterval = 1000,
   heartbeatInterval = 30_000,
   hidingDuration = 120_000,
   seekingDuration = 600_000,
   reconnectGraceMs = 30_000,
-  spotRadiusM   = DEFAULT_SPOT_RADIUS_M,
+  spotRadiusM        = DEFAULT_SPOT_RADIUS_M,
+  endGameTimeoutMs   = DEFAULT_END_GAME_TIMEOUT_MS,
   logger        = new Logger({ level: LogLevel.INFO }),
   metrics       = new MetricsCollector(),
   alertManager  = nullAlertManager,
@@ -233,9 +237,39 @@ export function createServer({
   const wss = new WebSocketServer({ server: httpServer });
 
   // onSpotConfirmed: called when a seeker's spot_hider claim is within spotRadiusM.
-  // Record the spotter and immediately finish the game — seekers win.
+  // Broadcast capture event (seekers win) and finish the game.
   const onSpotConfirmed = (gameId, spotterId) => {
     logger.info(LogCategory.SERVER, 'spot_confirmed', { gameId, spotterId });
+    // Mark as seeker capture so onPhaseChange → finished does not double-broadcast.
+    _capturingGames.add(gameId);
+
+    const seekingElapsedMs = gameLoopManager.getPhaseElapsed(gameId);
+    wsHandler.broadcastToGame(gameId, {
+      type: 'capture',
+      gameId,
+      winner: 'seekers',
+      spotterId,
+      captureTeam: null,
+      hiderZone: null,
+      seekersInZone: [spotterId],
+      seekingElapsedMs,
+    });
+
+    if (store) {
+      const capturedAt = new Date();
+      Promise.all([
+        store.dbUpdateGameStatus({ gameId, status: 'finished' }),
+        store.dbSubmitScore({
+          gameId,
+          playerId: spotterId,
+          scoreSeconds: Math.floor(seekingElapsedMs / 1000),
+          capturedAt,
+        }),
+      ]).catch((err) => {
+        logger.error(LogCategory.ERROR, 'spot_capture_db_error', { gameId, error: err?.message });
+      });
+    }
+
     gameLoopManager.finishGame(gameId);
   };
 
@@ -269,48 +303,61 @@ export function createServer({
   // Guard against duplicate capture processing when ticks overlap async work.
   const _capturingGames = new Set();
 
+  // Guards against double-broadcasting hider-win when both End Game timeout and
+  // seeking phase timeout fire around the same time.
+  const _hiderWinBroadcast = new Set();
+
+  // Per-game End Game timeout timers: gameId → timerId.
+  const _endGameTimers = new Map();
+
   // Register capture detection task for the SEEKING phase.
-  stateDispatcher.register('seeking', 'capture_check', async (gameState) => {
+  // Phase 1 of End Game: when all seekers are inside the hiding zone, freeze the hider
+  // and broadcast end_game_started. The game does NOT finish here — it finishes only
+  // when a seeker sends spot_hider (phase 2) or when endGameTimeoutMs elapses.
+  stateDispatcher.register('seeking', 'capture_check', (gameState) => {
     const { gameId } = gameState;
-    if (_capturingGames.has(gameId)) return { captured: false };
-
-    const zones = gameStateManager.getGameZones(gameId);
-    const { captured, hiderZone, seekersInZone, captureTeam } = checkCapture(gameState, zones);
-    if (!captured) return { captured: false };
-
-    _capturingGames.add(gameId);
-
-    const capturedAt = new Date();
-    const seekingElapsedMs = gameLoopManager.getPhaseElapsed(gameId);
-
-    if (store) {
-      try {
-        await store.dbUpdateGameStatus({ gameId, status: 'finished' });
-        for (const seekerId of seekersInZone) {
-          await store.dbSubmitScore({
-            gameId,
-            playerId: seekerId,
-            scoreSeconds: Math.floor(seekingElapsedMs / 1000),
-            capturedAt,
-          });
-        }
-      } catch (err) {
-        logger.error(LogCategory.ERROR, 'capture_db_error', { gameId, error: err?.message });
-      }
+    // Skip if End Game already active or game already being captured.
+    if (_capturingGames.has(gameId) || gameStateManager.isEndGameActive(gameId)) {
+      return { captured: false };
     }
 
-    wsHandler.broadcastToGame(gameId, {
-      type: 'capture',
-      gameId,
-      winner: 'seekers',
-      captureTeam,
-      hiderZone,
-      seekersInZone,
-      seekingElapsedMs,
-    });
+    const zones = gameStateManager.getGameZones(gameId);
+    const { captured } = checkCapture(gameState, zones);
+    if (!captured) return { captured: false };
 
-    gameLoopManager.finishGame(gameId);
-    return { captured: true, winner: 'seekers', seekersInZone };
+    // Activate End Game: freeze hider, notify all players.
+    gameStateManager.setEndGameActive(gameId, true);
+    wsHandler.broadcastToGame(gameId, { type: 'end_game_started', gameId });
+    logger.info(LogCategory.SERVER, 'end_game_started', { gameId });
+
+    // Start End Game timeout: if no spot_hider arrives in time, hider wins.
+    const timerId = setTimeout(() => {
+      _endGameTimers.delete(gameId);
+      // Only fire if the game is still active (not already finished).
+      if (gameLoopManager.getPhase(gameId) === null) return;
+      if (_capturingGames.has(gameId)) return;
+
+      _hiderWinBroadcast.add(gameId);
+      const seekingElapsedMs = gameLoopManager.getPhaseElapsed(gameId);
+      wsHandler.broadcastToGame(gameId, {
+        type: 'capture',
+        gameId,
+        winner: 'hider',
+        captureTeam: null,
+        hiderZone: null,
+        seekersInZone: [],
+        seekingElapsedMs,
+      });
+      if (store) {
+        store.dbUpdateGameStatus({ gameId, status: 'finished' }).catch((err) => {
+          logger.error(LogCategory.ERROR, 'end_game_timeout_db_error', { gameId, error: err?.message });
+        });
+      }
+      gameLoopManager.finishGame(gameId);
+    }, endGameTimeoutMs);
+    _endGameTimers.set(gameId, timerId);
+
+    return { captured: true, endGame: true };
   });
 
   // Register false zone expiry task for the SEEKING phase.
@@ -355,11 +402,19 @@ export function createServer({
     }
 
     if (newPhase === 'finished') {
-      const wasCapture = _capturingGames.has(gameId);
+      const wasCapture    = _capturingGames.has(gameId);
+      const wasHiderWin   = _hiderWinBroadcast.has(gameId);
       _capturingGames.delete(gameId);
+      _hiderWinBroadcast.delete(gameId);
 
-      if (!wasCapture) {
-        // Hider wins by timeout — seekers never captured.
+      // Clear any pending End Game timeout — game is finishing now.
+      if (_endGameTimers.has(gameId)) {
+        clearTimeout(_endGameTimers.get(gameId));
+        _endGameTimers.delete(gameId);
+      }
+
+      if (!wasCapture && !wasHiderWin) {
+        // Hider wins by seeking phase timeout — seekers never entered zone.
         const seekingStarted = _seekingStartedAt.get(gameId);
         const seekingElapsedMs = seekingStarted
           ? Date.now() - seekingStarted

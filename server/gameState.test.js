@@ -191,4 +191,49 @@ describe('GameStateManager', () => {
     gsm.removeGame('g1');
     expect(gsm.getActiveGameCount()).toBe(1);
   });
+
+  // -------------------------------------------------------------------------
+  // End Game active flag
+  // -------------------------------------------------------------------------
+
+  it('isEndGameActive returns false by default', () => {
+    gsm.createGame('g1');
+    expect(gsm.isEndGameActive('g1')).toBe(false);
+  });
+
+  it('setEndGameActive sets and clears the End Game flag', () => {
+    gsm.createGame('g1');
+    expect(gsm.setEndGameActive('g1', true)).toBe(true);
+    expect(gsm.isEndGameActive('g1')).toBe(true);
+    gsm.setEndGameActive('g1', false);
+    expect(gsm.isEndGameActive('g1')).toBe(false);
+  });
+
+  it('setEndGameActive returns false for unknown game', () => {
+    expect(gsm.setEndGameActive('unknown', true)).toBe(false);
+  });
+
+  it('isEndGameActive returns false for unknown game', () => {
+    expect(gsm.isEndGameActive('unknown')).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // getPlayerRole
+  // -------------------------------------------------------------------------
+
+  it('getPlayerRole returns role for a known player', () => {
+    gsm.addPlayerToGame('g1', 'p1', 'hider');
+    gsm.addPlayerToGame('g1', 'p2', 'seeker');
+    expect(gsm.getPlayerRole('g1', 'p1')).toBe('hider');
+    expect(gsm.getPlayerRole('g1', 'p2')).toBe('seeker');
+  });
+
+  it('getPlayerRole returns null for unknown game', () => {
+    expect(gsm.getPlayerRole('unknown', 'p1')).toBeNull();
+  });
+
+  it('getPlayerRole returns null for unknown player in known game', () => {
+    gsm.createGame('g1');
+    expect(gsm.getPlayerRole('g1', 'ghost')).toBeNull();
+  });
 });

@@ -47,6 +47,9 @@ function makeGsm() {
     updatePlayerLocation: vi.fn(),
     getGameState: vi.fn().mockReturnValue({ status: 'waiting', seekerTeams: 0, players: {} }),
     getSeekerTeams: vi.fn().mockReturnValue(0),
+    isEndGameActive: vi.fn().mockReturnValue(false),
+    getPlayerRole: vi.fn().mockReturnValue(null),
+    setPlayerTransit: vi.fn().mockReturnValue(true),
   };
 }
 
@@ -384,6 +387,26 @@ describe('WsHandler — message routing — location_update', () => {
     expect(() =>
       noGsmWs.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 0, lon: 0 }))
     ).not.toThrow();
+  });
+
+  it('silently ignores location_update from hider when End Game is active', () => {
+    gsm.isEndGameActive.mockReturnValue(true);
+    gsm.getPlayerRole.mockReturnValue('hider');
+
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 10, lon: 20 }));
+
+    // GSM should NOT be updated and no broadcast should occur.
+    expect(gsm.updatePlayerLocation).not.toHaveBeenCalled();
+  });
+
+  it('still broadcasts location_update from seeker when End Game is active', () => {
+    gsm.isEndGameActive.mockReturnValue(true);
+    gsm.getPlayerRole.mockReturnValue('seeker');
+
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 10, lon: 20 }));
+
+    // Seeker location updates proceed normally during End Game.
+    expect(gsm.updatePlayerLocation).toHaveBeenCalledWith('g1', 'p1', 10, 20);
   });
 });
 

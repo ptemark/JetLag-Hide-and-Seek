@@ -1135,35 +1135,140 @@ describe('createServer — hider timeout victory', () => {
     vi.useRealTimers();
   });
 
-  it('does not broadcast second capture event when seekers capture (no double-broadcast)', async () => {
+  it('broadcasts end_game_started (not capture) when all seekers enter zone (phase 1)', async () => {
     vi.useFakeTimers();
-    const s = createServer({ tickInterval: 5000, seekingDuration: 600_000 });
+    const s = createServer({ tickInterval: 5000, seekingDuration: 600_000, endGameTimeoutMs: 600_000 });
 
     const mockWs = createMockWs();
     s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
-    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'no-double-game', role: 'seeker' }));
-    s.gameLoopManager.startGame('no-double-game');
-    s.gameLoopManager.beginHiding('no-double-game');
-    s.gameLoopManager.beginSeeking('no-double-game');
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'end-game-phase1', role: 'seeker' }));
+    s.gameLoopManager.startGame('end-game-phase1');
+    s.gameLoopManager.beginHiding('end-game-phase1');
+    s.gameLoopManager.beginSeeking('end-game-phase1');
 
     // Set up a hider in zone so capture_check triggers.
-    s.gameStateManager.addPlayerToGame('no-double-game', 'hider1', 'hider');
-    s.gameStateManager.updatePlayerLocation('no-double-game', 'hider1', 0, 0);
-    s.gameStateManager.updatePlayerLocation('no-double-game', 'p1', 0, 0);
-    s.gameStateManager.setGameZones('no-double-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+    s.gameStateManager.addPlayerToGame('end-game-phase1', 'hider1', 'hider');
+    s.gameStateManager.updatePlayerLocation('end-game-phase1', 'hider1', 0, 0);
+    s.gameStateManager.updatePlayerLocation('end-game-phase1', 'p1', 0, 0);
+    s.gameStateManager.setGameZones('end-game-phase1', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
 
     mockWs.send.mockClear();
 
     // Dispatch the capture task directly.
-    const gameState = s.gameStateManager.getGameState('no-double-game');
+    const gameState = s.gameStateManager.getGameState('end-game-phase1');
     await s.stateDispatcher.dispatch(gameState);
 
     const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
-    const captureEvents = broadcasts.filter((b) => b.type === 'capture');
 
-    // Exactly one capture event, with winner 'seekers'.
+    // Phase 1: end_game_started — no capture event yet.
+    expect(broadcasts.some((b) => b.type === 'end_game_started')).toBe(true);
+    expect(broadcasts.some((b) => b.type === 'capture')).toBe(false);
+
+    // Game is still alive (not finished).
+    expect(s.gameLoopManager.getPhase('end-game-phase1')).toBe('seeking');
+
+    vi.useRealTimers();
+  });
+
+  it('broadcasts capture(winner=hider) when end game timeout expires with no spot_hider', async () => {
+    vi.useFakeTimers();
+    const END_GAME_MS = 500;
+    const s = createServer({ tickInterval: 5000, seekingDuration: 600_000, endGameTimeoutMs: END_GAME_MS });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'eg-timeout-game', role: 'seeker' }));
+    s.gameLoopManager.startGame('eg-timeout-game');
+    s.gameLoopManager.beginHiding('eg-timeout-game');
+    s.gameLoopManager.beginSeeking('eg-timeout-game');
+
+    s.gameStateManager.addPlayerToGame('eg-timeout-game', 'hider1', 'hider');
+    s.gameStateManager.updatePlayerLocation('eg-timeout-game', 'hider1', 0, 0);
+    s.gameStateManager.updatePlayerLocation('eg-timeout-game', 'p1', 0, 0);
+    s.gameStateManager.setGameZones('eg-timeout-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+
+    // Trigger End Game (phase 1).
+    const gameState = s.gameStateManager.getGameState('eg-timeout-game');
+    await s.stateDispatcher.dispatch(gameState);
+    mockWs.send.mockClear();
+
+    // Advance past End Game timeout.
+    vi.advanceTimersByTime(END_GAME_MS + 100);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const captureEvent = broadcasts.find((b) => b.type === 'capture');
+    expect(captureEvent).toBeTruthy();
+    expect(captureEvent.winner).toBe('hider');
+
+    vi.useRealTimers();
+  });
+
+  it('broadcasts capture(winner=seekers) via onSpotConfirmed during End Game', async () => {
+    vi.useFakeTimers();
+    const s = createServer({ tickInterval: 5000, seekingDuration: 600_000, endGameTimeoutMs: 60_000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'spot-end-game', role: 'seeker' }));
+    s.gameLoopManager.startGame('spot-end-game');
+    s.gameLoopManager.beginHiding('spot-end-game');
+    s.gameLoopManager.beginSeeking('spot-end-game');
+
+    s.gameStateManager.addPlayerToGame('spot-end-game', 'hider1', 'hider');
+    s.gameStateManager.updatePlayerLocation('spot-end-game', 'hider1', 0, 0);
+    s.gameStateManager.updatePlayerLocation('spot-end-game', 'p1', 0, 0);
+    s.gameStateManager.setGameZones('spot-end-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+
+    // Trigger End Game (phase 1).
+    const gameState = s.gameStateManager.getGameState('spot-end-game');
+    await s.stateDispatcher.dispatch(gameState);
+    mockWs.send.mockClear();
+
+    // Seeker spots hider within radius via WS spot_hider message.
+    // Inject stub checkSpot that always returns spotted=true.
+    s.wsHandler._checkSpotFn = vi.fn().mockReturnValue({ spotted: true, distance: 5, hiderLat: 0, hiderLon: 0 });
+    mockWs.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'spot-end-game' }));
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const captureEvent = broadcasts.find((b) => b.type === 'capture');
+    expect(captureEvent).toBeTruthy();
+    expect(captureEvent.winner).toBe('seekers');
+    expect(captureEvent.spotterId).toBe('p1');
+
+    vi.useRealTimers();
+  });
+
+  it('hider timeout victory does not double-broadcast when end_game already handled hider win', async () => {
+    vi.useFakeTimers();
+    const END_GAME_MS = 200;
+    const SEEKING_MS  = 600_000;
+    const s = createServer({ tickInterval: 5000, seekingDuration: SEEKING_MS, endGameTimeoutMs: END_GAME_MS });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'no-double-hider', role: 'seeker' }));
+    s.gameLoopManager.startGame('no-double-hider');
+    s.gameLoopManager.beginHiding('no-double-hider');
+    s.gameLoopManager.beginSeeking('no-double-hider');
+
+    s.gameStateManager.addPlayerToGame('no-double-hider', 'hider1', 'hider');
+    s.gameStateManager.updatePlayerLocation('no-double-hider', 'hider1', 0, 0);
+    s.gameStateManager.updatePlayerLocation('no-double-hider', 'p1', 0, 0);
+    s.gameStateManager.setGameZones('no-double-hider', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+
+    // Trigger End Game (phase 1).
+    const gameState = s.gameStateManager.getGameState('no-double-hider');
+    await s.stateDispatcher.dispatch(gameState);
+    mockWs.send.mockClear();
+
+    // Advance past End Game timeout (fires hider win).
+    vi.advanceTimersByTime(END_GAME_MS + 50);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const captureEvents = broadcasts.filter((b) => b.type === 'capture');
+    // Exactly one hider-win capture event (no duplicate from onPhaseChange).
     expect(captureEvents.length).toBe(1);
-    expect(captureEvents[0].winner).toBe('seekers');
+    expect(captureEvents[0].winner).toBe('hider');
 
     vi.useRealTimers();
   });

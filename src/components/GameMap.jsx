@@ -75,10 +75,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
 
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef(null);
+  const endGameActiveRef = useRef(false); // true when End Game is active (hider must not move)
 
   const [players, setPlayers] = useState({});      // { [playerId]: { lat, lon, team?, onTransit? } }
   const [myTeam, setMyTeam] = useState(null);       // 'A' | 'B' | null (assigned by server in two-team mode)
   const [myOnTransit, setMyOnTransit] = useState(false); // true when this seeker is on transit
+  const [endGameActive, setEndGameActive] = useState(false); // true when End Game is in progress
   const [phase, setPhase] = useState(game.status);
   const [captureMsg, setCaptureMsg] = useState(null);
   const [qaRefresh, setQaRefresh] = useState(0);   // increments on question_answered WS event
@@ -293,6 +295,9 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setSpotResult('confirmed');
       } else if (msg.type === 'spot_rejected') {
         setSpotResult('rejected');
+      } else if (msg.type === 'end_game_started') {
+        endGameActiveRef.current = true;
+        setEndGameActive(true);
       }
     }
 
@@ -348,6 +353,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     if (!navigator.geolocation) return;
 
     const send = () => {
+      // Hider must not send location updates once End Game begins (RULES.md §End Game).
+      if (player.role === 'hider' && endGameActiveRef.current) return;
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -384,6 +391,18 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       {wsStatus === 'reconnecting' && (
         <p role="status" data-testid="reconnecting-banner" style={{ background: '#fee2e2', padding: '0.25rem 0.5rem' }}>
           Reconnecting…
+        </p>
+      )}
+
+      {endGameActive && player.role === 'hider' && (
+        <p role="alert" data-testid="end-game-banner-hider" style={{ background: '#fef3c7', padding: '0.5rem', fontWeight: 'bold' }}>
+          End Game: Stay put! Seekers are looking for you.
+        </p>
+      )}
+
+      {endGameActive && player.role === 'seeker' && (
+        <p role="status" data-testid="end-game-banner-seeker" style={{ background: '#dbeafe', padding: '0.5rem', fontWeight: 'bold' }}>
+          End Game! Find and spot the hider.
         </p>
       )}
 

@@ -35,6 +35,12 @@ ALTER TABLE games ADD COLUMN IF NOT EXISTS seeker_teams INTEGER NOT NULL DEFAULT
 -- Idempotent migration: add curse_expires_at for curse card enforcement.
 ALTER TABLE games ADD COLUMN IF NOT EXISTS curse_expires_at TIMESTAMPTZ;
 
+-- Idempotent migration: expand questions category CHECK to include measuring and transit.
+-- The old 4-value constraint is dropped first (IF EXISTS) so this script is safe to re-run.
+ALTER TABLE questions DROP CONSTRAINT IF EXISTS questions_category_check;
+ALTER TABLE questions ADD CONSTRAINT questions_category_check
+  CHECK (category IN ('matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'));
+
 -- -------------------------------------------------------------------------
 -- game_players
 -- Joins players to games, recording each player's role.
@@ -63,7 +69,7 @@ CREATE TABLE IF NOT EXISTS questions (
   asker_id    UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   target_id   UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
   category    TEXT        NOT NULL
-                CHECK (category IN ('matching', 'thermometer', 'photo', 'tentacle')),
+                CHECK (category IN ('matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle')),
   text        TEXT        NOT NULL,
   status      TEXT        NOT NULL DEFAULT 'pending'
                 CHECK (status IN ('pending', 'answered', 'expired')),

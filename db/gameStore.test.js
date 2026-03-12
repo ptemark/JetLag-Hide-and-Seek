@@ -716,6 +716,28 @@ describe('dbCreateQuestion', () => {
     });
     expect(result).toEqual({ conflict: true });
   });
+
+  it.each(['measuring', 'transit'])('creates a question with category %s', async (category) => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })  // pending check
+        .mockResolvedValueOnce({ rows: [{
+          id: `q-${category}`, game_id: 'g1', asker_id: 'a1', target_id: 't1',
+          category, text: `test ${category}`, status: 'pending',
+          expires_at: expiresAt, created_at: new Date(),
+        }] }),
+    };
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category, text: `test ${category}`,
+    });
+    expect(result.questionId).toBe(`q-${category}`);
+    expect(result.category).toBe(category);
+    expect(result.status).toBe('pending');
+    // Verify the INSERT SQL received the correct category value.
+    const insertCall = pool.query.mock.calls[1];
+    expect(insertCall[1][3]).toBe(category);
+  });
 });
 
 // ---------------------------------------------------------------------------

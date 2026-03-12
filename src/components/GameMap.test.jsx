@@ -413,6 +413,46 @@ describe('GameMap', () => {
     expect(screen.queryByTestId('timer-banner')).not.toBeInTheDocument();
   });
 
+  it('shows end_game countdown banner with hider message on timer_sync phase end_game', async () => {
+    const phaseEndsAt = new Date(Date.now() + 9 * 60 * 1000 + 30 * 1000).toISOString();
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'timer_sync', phase: 'end_game', phaseEndsAt }) });
+    });
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner).toBeInTheDocument();
+    expect(banner.textContent).toMatch(/you win if not spotted in/i);
+  });
+
+  it('shows end_game countdown banner with seeker message for seeker role', async () => {
+    const seekerPlayer = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    const phaseEndsAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    render(<GameMap player={seekerPlayer} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'timer_sync', phase: 'end_game', phaseEndsAt }) });
+    });
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner).toBeInTheDocument();
+    expect(banner.textContent).toMatch(/find the hider in/i);
+  });
+
+  it('end_game countdown takes priority over phase timer (end_game before seeking timer_sync)', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    const seekingEndsAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const endGameEndsAt = new Date(Date.now() + 8 * 60 * 1000).toISOString();
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'timer_sync', phase: 'seeking', phaseEndsAt: seekingEndsAt }) });
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'timer_sync', phase: 'end_game', phaseEndsAt: endGameEndsAt }) });
+    });
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner.textContent).toMatch(/you win if not spotted in/i);
+  });
+
   it('renders a decoy circle when false_zone WS event is received', async () => {
     mockCircle.addTo.mockClear();
     render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);

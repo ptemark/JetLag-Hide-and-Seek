@@ -1189,6 +1189,73 @@ describe('createServer — hider timeout victory', () => {
     vi.useRealTimers();
   });
 
+  it('broadcasts timer_sync with phase end_game alongside end_game_started', async () => {
+    vi.useFakeTimers();
+    const END_GAME_MS = 10 * 60_000;
+    const s = createServer({ tickInterval: 5000, seekingDuration: 600_000, endGameTimeoutMs: END_GAME_MS });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=eg-timer-p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'eg-timer-game', role: 'seeker' }));
+    s.gameLoopManager.startGame('eg-timer-game');
+    s.gameLoopManager.beginHiding('eg-timer-game');
+    s.gameLoopManager.beginSeeking('eg-timer-game');
+
+    s.gameStateManager.addPlayerToGame('eg-timer-game', 'eg-hider1', 'hider');
+    s.gameStateManager.updatePlayerLocation('eg-timer-game', 'eg-hider1', 0, 0);
+    s.gameStateManager.updatePlayerLocation('eg-timer-game', 'eg-timer-p1', 0, 0);
+    s.gameStateManager.setGameZones('eg-timer-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+
+    mockWs.send.mockClear();
+    const now = Date.now();
+
+    const gameState = s.gameStateManager.getGameState('eg-timer-game');
+    await s.stateDispatcher.dispatch(gameState);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const timerSync = broadcasts.find((b) => b.type === 'timer_sync' && b.phase === 'end_game');
+    expect(timerSync).toBeTruthy();
+    expect(timerSync.gameId).toBe('eg-timer-game');
+    // phaseEndsAt should be approximately now + END_GAME_MS.
+    const endsAt = new Date(timerSync.phaseEndsAt).getTime();
+    expect(endsAt).toBeGreaterThanOrEqual(now + END_GAME_MS - 100);
+    expect(endsAt).toBeLessThanOrEqual(now + END_GAME_MS + 100);
+
+    vi.useRealTimers();
+  });
+
+  it('periodic tick broadcasts timer_sync for end_game phase when end game is active', async () => {
+    vi.useFakeTimers();
+    const END_GAME_MS = 10 * 60_000;
+    const s = createServer({ tickInterval: 100, seekingDuration: 600_000, endGameTimeoutMs: END_GAME_MS });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=eg-tick-p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'eg-tick-game', role: 'seeker' }));
+    s.gameLoopManager.startGame('eg-tick-game');
+    s.gameLoopManager.beginHiding('eg-tick-game');
+    s.gameLoopManager.beginSeeking('eg-tick-game');
+
+    s.gameStateManager.addPlayerToGame('eg-tick-game', 'eg-tick-hider', 'hider');
+    s.gameStateManager.updatePlayerLocation('eg-tick-game', 'eg-tick-hider', 0, 0);
+    s.gameStateManager.updatePlayerLocation('eg-tick-game', 'eg-tick-p1', 0, 0);
+    s.gameStateManager.setGameZones('eg-tick-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+
+    // Trigger End Game.
+    const gameState = s.gameStateManager.getGameState('eg-tick-game');
+    await s.stateDispatcher.dispatch(gameState);
+    mockWs.send.mockClear();
+
+    // Advance 31 s — periodic timer sync should fire.
+    vi.advanceTimersByTime(31_000);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const timerSync = broadcasts.find((b) => b.type === 'timer_sync' && b.phase === 'end_game');
+    expect(timerSync).toBeTruthy();
+
+    vi.useRealTimers();
+  });
+
   it('broadcasts capture(winner=hider) when end game timeout expires with no spot_hider', async () => {
     vi.useFakeTimers();
     const END_GAME_MS = 500;

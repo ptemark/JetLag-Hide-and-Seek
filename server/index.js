@@ -282,14 +282,24 @@ export function createServer({
   // Track when each game enters the seeking phase so elapsed time is available on timeout.
   const _seekingStartedAt = new Map();
 
+  // Track when each game's End Game started so timer_sync can compute the expiry.
+  const _endGameStartedAt = new Map();
+
   // Track active false zones per game: gameId → Array<{ decoyId, zone, expiresAt }>
   const _falseZones = new Map();
 
   /**
    * Build a timer_sync payload for a game in a timed phase.
    * Returns null for phases with no defined duration (waiting/finished).
+   * Supports 'hiding', 'seeking', and 'end_game' phases.
    */
   function buildTimerSync(gameId, phase) {
+    if (phase === 'end_game') {
+      const startedAt = _endGameStartedAt.get(gameId);
+      if (startedAt == null) return null;
+      const phaseEndsAt = new Date(startedAt + endGameTimeoutMs).toISOString();
+      return { type: 'timer_sync', gameId, phase, phaseEndsAt };
+    }
     if (phase !== 'hiding' && phase !== 'seeking') return null;
     const baseDuration = gameLoopManager.getGameDuration(gameId, phase);
     if (baseDuration == null) return null;
@@ -327,7 +337,15 @@ export function createServer({
 
     // Activate End Game: freeze hider, notify all players.
     gameStateManager.setEndGameActive(gameId, true);
+    const endGameStart = Date.now();
+    _endGameStartedAt.set(gameId, endGameStart);
     wsHandler.broadcastToGame(gameId, { type: 'end_game_started', gameId });
+    // Immediately sync the End Game countdown so all players see the timeout.
+    const endGameTimerMsg = buildTimerSync(gameId, 'end_game');
+    if (endGameTimerMsg) {
+      wsHandler.broadcastToGame(gameId, endGameTimerMsg);
+      _lastTimerSyncAt.set(gameId, endGameStart);
+    }
     logger.info(LogCategory.SERVER, 'end_game_started', { gameId });
 
     // Start End Game timeout: if no spot_hider arrives in time, hider wins.
@@ -438,6 +456,7 @@ export function createServer({
       }
 
       _seekingStartedAt.delete(gameId);
+      _endGameStartedAt.delete(gameId);
       _lastTimerSyncAt.delete(gameId);
       _falseZones.delete(gameId);
     }
@@ -458,10 +477,11 @@ export function createServer({
     if (gameState) {
       stateDispatcher.dispatch(gameState);
     }
-    // Periodic timer sync — at most every 30 s during timed phases.
+    // Periodic timer sync — at most every 30 s during timed phases (including End Game).
     const lastSync = _lastTimerSyncAt.get(gameId) ?? 0;
     if (Date.now() - lastSync >= 30_000) {
-      const timerMsg = buildTimerSync(gameId, phase);
+      const timerPhase = gameStateManager.isEndGameActive(gameId) ? 'end_game' : phase;
+      const timerMsg = buildTimerSync(gameId, timerPhase);
       if (timerMsg) {
         wsHandler.broadcastToGame(gameId, timerMsg);
         _lastTimerSyncAt.set(gameId, Date.now());

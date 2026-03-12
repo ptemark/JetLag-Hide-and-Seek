@@ -416,6 +416,11 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         <p data-testid="timer-banner" style={{ background: '#fef3c7', padding: '0.25rem 0.5rem' }}>
           Question expires in {formatCountdown(pendingQuestionExpiresAt)}
         </p>
+      ) : phaseEndsAt && endGameActive ? (
+        <p data-testid="timer-banner" style={{ background: '#fce7f3', padding: '0.25rem 0.5rem' }}>
+          {player.role === 'hider' ? 'You win if not spotted in' : 'Find the hider in'}{' '}
+          {formatCountdown(phaseEndsAt)}
+        </p>
       ) : phaseEndsAt && (phase === 'hiding' || phase === 'seeking') ? (
         <p data-testid="timer-banner" style={{ background: '#e0f2fe', padding: '0.25rem 0.5rem' }}>
           {phase === 'hiding' ? 'Hiding ends in' : 'Seeking ends in'} {formatCountdown(phaseEndsAt)}

@@ -1043,3 +1043,77 @@ describe('createServer — hider timeout victory', () => {
     vi.useRealTimers();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Time bonus — /internal/notify + extendPhase + timer_sync broadcast
+// ---------------------------------------------------------------------------
+
+describe('createServer — time bonus notify', () => {
+  function sendNotify(server, payload) {
+    return new Promise((resolve) => {
+      let body = '';
+      const req = Object.assign(
+        Object.create(require ? null : null), // plain object is fine for mock
+        {
+          method: 'POST',
+          url: '/internal/notify',
+          headers: { host: 'localhost' },
+          on(ev, cb) {
+            if (ev === 'data') { cb(JSON.stringify(payload)); }
+            if (ev === 'end')  { cb(); }
+          },
+        },
+      );
+      const res = {
+        statusCode: null,
+        writeHead(code) { this.statusCode = code; },
+        end: resolve,
+      };
+      server.httpServer.emit('request', req, res);
+    });
+  }
+
+  it('/internal/notify time_bonus calls extendPhase on the game', async () => {
+    const s = createServer({ tickInterval: 5000, hidingDuration: 600_000, seekingDuration: 600_000 });
+
+    s.gameLoopManager.startGame('tb-game');
+    s.gameLoopManager.beginHiding('tb-game');
+    expect(s.gameLoopManager.getPhaseExtension('tb-game')).toBe(0);
+
+    await sendNotify(s, { type: 'time_bonus', gameId: 'tb-game', minutesAdded: 10 });
+
+    expect(s.gameLoopManager.getPhaseExtension('tb-game')).toBe(600_000);
+
+    s.gameLoopManager.stopGame('tb-game');
+  });
+
+  it('/internal/notify time_bonus broadcasts updated timer_sync to game players', async () => {
+    const s = createServer({ tickInterval: 5000, hidingDuration: 120_000, seekingDuration: 600_000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'tb-sync' }));
+    s.gameLoopManager.startGame('tb-sync');
+    s.gameLoopManager.beginHiding('tb-sync');
+    mockWs.send.mockClear();
+
+    await sendNotify(s, { type: 'time_bonus', gameId: 'tb-sync', minutesAdded: 5 });
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const timerSync = broadcasts.find((b) => b.type === 'timer_sync');
+    expect(timerSync).toBeTruthy();
+    expect(timerSync.phase).toBe('hiding');
+    // phaseEndsAt should be > 120 s in the future (original duration + 5 min extension)
+    const remainingMs = new Date(timerSync.phaseEndsAt) - Date.now();
+    expect(remainingMs).toBeGreaterThan(120_000);
+
+    s.gameLoopManager.stopGame('tb-sync');
+  });
+
+  it('/internal/notify time_bonus with unknown gameId does not throw', async () => {
+    const s = createServer({ tickInterval: 5000 });
+    await expect(
+      sendNotify(s, { type: 'time_bonus', gameId: 'no-such-game', minutesAdded: 10 })
+    ).resolves.not.toThrow();
+  });
+});

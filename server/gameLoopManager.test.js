@@ -467,3 +467,93 @@ describe('GameLoopManager — integration with GameStateManager', () => {
     expect(gsm.getGameState('g1').status).toBe(GamePhase.SEEKING);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GameLoopManager — extendPhase / getPhaseExtension
+// ---------------------------------------------------------------------------
+
+describe('GameLoopManager — extendPhase / getPhaseExtension', () => {
+  let mgr;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mgr = new GameLoopManager({ tickInterval: 100, hidingDuration: 500, seekingDuration: 1000 });
+  });
+
+  afterEach(() => {
+    for (const gameId of [...mgr._games.keys()]) mgr.stopGame(gameId);
+    vi.useRealTimers();
+  });
+
+  it('getPhaseExtension returns 0 for unknown game', () => {
+    expect(mgr.getPhaseExtension('nonexistent')).toBe(0);
+  });
+
+  it('getPhaseExtension returns 0 before any extension', () => {
+    mgr.startGame('g1');
+    expect(mgr.getPhaseExtension('g1')).toBe(0);
+  });
+
+  it('extendPhase accumulates extraMs', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    mgr.extendPhase('g1', 30_000);
+    expect(mgr.getPhaseExtension('g1')).toBe(30_000);
+  });
+
+  it('extendPhase stacks multiple calls', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    mgr.extendPhase('g1', 10_000);
+    mgr.extendPhase('g1', 20_000);
+    expect(mgr.getPhaseExtension('g1')).toBe(30_000);
+  });
+
+  it('extendPhase is a no-op for unknown game', () => {
+    expect(() => mgr.extendPhase('nonexistent', 10_000)).not.toThrow();
+  });
+
+  it('extendPhase ignores zero or negative extraMs', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    mgr.extendPhase('g1', 0);
+    mgr.extendPhase('g1', -5000);
+    expect(mgr.getPhaseExtension('g1')).toBe(0);
+  });
+
+  it('extension resets to 0 on phase transition', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    mgr.extendPhase('g1', 30_000);
+    expect(mgr.getPhaseExtension('g1')).toBe(30_000);
+    mgr.beginSeeking('g1');
+    expect(mgr.getPhaseExtension('g1')).toBe(0);
+  });
+
+  it('extendPhase delays auto-transition from HIDING', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    // hidingDuration = 500 ms; add 300 ms extension → total 800 ms
+    mgr.extendPhase('g1', 300);
+    // At 600 ms (past original 500 ms duration) it should still be HIDING
+    vi.advanceTimersByTime(600);
+    expect(mgr.getPhase('g1')).toBe(GamePhase.HIDING);
+    // At 900 ms it should have advanced
+    vi.advanceTimersByTime(300);
+    expect(mgr.getPhase('g1')).toBe(GamePhase.SEEKING);
+  });
+
+  it('extendPhase delays auto-transition from SEEKING', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    vi.advanceTimersByTime(600); // → SEEKING (hidingDuration=500ms)
+    // seekingDuration = 1000 ms; add 500 ms extension → total 1500 ms
+    mgr.extendPhase('g1', 500);
+    // At 1100 ms past SEEKING start it should still be SEEKING
+    vi.advanceTimersByTime(1100);
+    expect(mgr.getPhase('g1')).toBe(GamePhase.SEEKING);
+    // At 1600 ms it should finish
+    vi.advanceTimersByTime(500);
+    expect(mgr.getPhase('g1')).toBeNull(); // game removed after finish
+  });
+});

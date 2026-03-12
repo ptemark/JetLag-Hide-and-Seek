@@ -109,6 +109,26 @@ export function getCards(req, pool = null) {
 }
 
 /**
+ * Notify the managed server about a time_bonus card play so it can extend the
+ * current phase timer and broadcast an updated timer_sync to all players.
+ * Fire-and-forget — errors are intentionally swallowed.
+ *
+ * @param {{ gameId: string, minutesAdded: number }} options
+ * @param {string|undefined} gameServerUrl
+ * @param {typeof fetch} fetchFn
+ */
+function notifyTimeBonus({ gameId, minutesAdded }, gameServerUrl, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  if (serverUrl && fetchFn) {
+    Promise.resolve(fetchFn(`${serverUrl}/internal/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'time_bonus', gameId, minutesAdded }),
+    })).catch(() => { /* intentionally silent */ });
+  }
+}
+
+/**
  * Activate a curse for a game: persist to DB (if pool) or in-process map,
  * then fire-and-forget notify the managed server so it can broadcast
  * `curse_active` to all connected players.
@@ -181,6 +201,13 @@ export async function playCard(req, pool = null, gameServerUrl, fetchFn = global
         fetchFn,
       );
     }
+    if (card.type === 'time_bonus' && card.gameId) {
+      notifyTimeBonus(
+        { gameId: card.gameId, minutesAdded: card.effect?.minutesAdded ?? 10 },
+        gameServerUrl,
+        fetchFn,
+      );
+    }
     return { status: 200, body: card };
   }
 
@@ -196,6 +223,14 @@ export async function playCard(req, pool = null, gameServerUrl, fetchFn = global
     await activateCurse(
       { gameId: card.gameId, durationMs: card.effect.durationMs ?? 120_000 },
       null,
+      gameServerUrl,
+      fetchFn,
+    );
+  }
+
+  if (card.type === 'time_bonus' && card.gameId) {
+    notifyTimeBonus(
+      { gameId: card.gameId, minutesAdded: card.effect?.minutesAdded ?? 10 },
       gameServerUrl,
       fetchFn,
     );

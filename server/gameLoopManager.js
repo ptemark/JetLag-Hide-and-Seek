@@ -38,7 +38,7 @@ export class GameLoopManager {
     this.seekingDuration = seekingDuration;
     this._logger = logger;
 
-    // gameId -> { phase: GamePhase, phaseStartedAt: number, timer: NodeJS.Timeout|null }
+    // gameId -> { phase: GamePhase, phaseStartedAt: number, phaseExtensionMs: number, timer: NodeJS.Timeout|null }
     this._games = new Map();
 
     /**
@@ -81,6 +81,7 @@ export class GameLoopManager {
     const entry = {
       phase: GamePhase.WAITING,
       phaseStartedAt: Date.now(),
+      phaseExtensionMs: 0,
       timer: null,
     };
     this._games.set(gameId, entry);
@@ -143,6 +144,32 @@ export class GameLoopManager {
     return Date.now() - entry.phaseStartedAt;
   }
 
+  /**
+   * Extend the current phase duration for a game by extraMs milliseconds.
+   * Adds to the per-game phaseExtensionMs accumulator so multiple calls
+   * stack. The extension is reset to 0 on every phase transition.
+   * No-op if the game is not registered.
+   *
+   * @param {string} gameId
+   * @param {number} extraMs
+   */
+  extendPhase(gameId, extraMs) {
+    const entry = this._games.get(gameId);
+    if (!entry || typeof extraMs !== 'number' || extraMs <= 0) return;
+    entry.phaseExtensionMs = (entry.phaseExtensionMs ?? 0) + extraMs;
+  }
+
+  /**
+   * Return the total accumulated phase extension for a game (ms).
+   * Returns 0 for unknown games.
+   *
+   * @param {string} gameId
+   * @returns {number}
+   */
+  getPhaseExtension(gameId) {
+    return this._games.get(gameId)?.phaseExtensionMs ?? 0;
+  }
+
   /** Number of games currently being managed. */
   getActiveGameCount() {
     return this._games.size;
@@ -159,10 +186,11 @@ export class GameLoopManager {
     if (this.onTick) this.onTick(gameId, entry.phase);
 
     const elapsed = Date.now() - entry.phaseStartedAt;
+    const extension = entry.phaseExtensionMs ?? 0;
 
-    if (entry.phase === GamePhase.HIDING && elapsed >= this.hidingDuration) {
+    if (entry.phase === GamePhase.HIDING && elapsed >= this.hidingDuration + extension) {
       this._transition(gameId, GamePhase.SEEKING);
-    } else if (entry.phase === GamePhase.SEEKING && elapsed >= this.seekingDuration) {
+    } else if (entry.phase === GamePhase.SEEKING && elapsed >= this.seekingDuration + extension) {
       this.finishGame(gameId);
     }
   }
@@ -176,6 +204,7 @@ export class GameLoopManager {
 
     entry.phase = newPhase;
     entry.phaseStartedAt = Date.now();
+    entry.phaseExtensionMs = 0; // reset extension on each phase transition
 
     this._logger.info(LogCategory.LOOP, 'phase_change', { gameId, oldPhase, newPhase });
 

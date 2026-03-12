@@ -92,9 +92,23 @@ export function createServer({
       req.on('end', () => {
         try {
           const payload = JSON.parse(body);
-          const { gameId, ...event } = payload;
+          const { gameId, type: eventType, ...rest } = payload;
           if (gameId) {
-            wsHandler.broadcastToGame(gameId, event);
+            if (eventType === 'time_bonus') {
+              // Extend the current phase timer and broadcast updated timer_sync.
+              const extraMs = (rest.minutesAdded ?? 0) * 60_000;
+              if (extraMs > 0) {
+                gameLoopManager.extendPhase(gameId, extraMs);
+              }
+              const currentPhase = gameLoopManager.getPhase(gameId);
+              const timerMsg = buildTimerSync(gameId, currentPhase);
+              if (timerMsg) {
+                wsHandler.broadcastToGame(gameId, timerMsg);
+                _lastTimerSyncAt.set(gameId, Date.now());
+              }
+            } else {
+              wsHandler.broadcastToGame(gameId, { type: eventType, ...rest });
+            }
           }
         } catch { /* malformed payload — ignore */ }
         res.writeHead(204);
@@ -154,7 +168,9 @@ export function createServer({
    */
   function buildTimerSync(gameId, phase) {
     if (phase !== 'hiding' && phase !== 'seeking') return null;
-    const duration = phase === 'hiding' ? hidingDuration : seekingDuration;
+    const baseDuration = phase === 'hiding' ? hidingDuration : seekingDuration;
+    const extension = gameLoopManager.getPhaseExtension(gameId);
+    const duration = baseDuration + extension;
     const elapsed = gameLoopManager.getPhaseElapsed(gameId);
     const phaseEndsAt = new Date(Date.now() - elapsed + duration).toISOString();
     return { type: 'timer_sync', gameId, phase, phaseEndsAt };

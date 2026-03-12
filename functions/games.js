@@ -15,6 +15,16 @@ import { dbCreateGame, dbGetGame } from '../db/gameStore.js';
 export const VALID_SIZES = Object.freeze(['small', 'medium', 'large']);
 export const VALID_STATUSES = Object.freeze(['waiting', 'hiding', 'seeking', 'finished']);
 
+/**
+ * Valid hiding/seeking duration ranges per scale (RULES.md §Game Scales).
+ * All values in minutes.
+ */
+export const SCALE_DURATION_RANGES = Object.freeze({
+  small:  Object.freeze({ min: 30,  max: 60  }),
+  medium: Object.freeze({ min: 60,  max: 180 }),
+  large:  Object.freeze({ min: 180, max: 360 }),
+});
+
 // In-process store — used when no DB pool is provided (tests / local dev).
 const _games = new Map();
 
@@ -123,19 +133,22 @@ export function handleCreateGame(req, pool = null) {
  * Notify the managed server to begin the hiding phase for a game.
  * Fire-and-forget — errors are intentionally swallowed.
  *
- * @param {{ gameId: string, scale?: string }} options
+ * @param {{ gameId: string, scale?: string, hidingDurationMs?: number, seekingDurationMs?: number }} options
  * @param {string|undefined} gameServerUrl
  * @param {typeof fetch} fetchFn
  */
-function notifyGameStart({ gameId, scale }, gameServerUrl, fetchFn) {
+function notifyGameStart({ gameId, scale, hidingDurationMs, seekingDurationMs }, gameServerUrl, fetchFn) {
   const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
   if (serverUrl && fetchFn) {
+    const payload = { scale };
+    if (hidingDurationMs != null) payload.hidingDurationMs = hidingDurationMs;
+    if (seekingDurationMs != null) payload.seekingDurationMs = seekingDurationMs;
     Promise.resolve(fetchFn(
       `${serverUrl}/internal/games/${encodeURIComponent(gameId)}/start`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scale }),
+        body: JSON.stringify(payload),
       },
     )).catch(() => { /* intentionally silent */ });
   }
@@ -144,10 +157,13 @@ function notifyGameStart({ gameId, scale }, gameServerUrl, fetchFn) {
 /**
  * HTTP handler: start a game's hiding phase.
  *
- * POST /games/:gameId/start  { scale? }  → 204
+ * POST /games/:gameId/start  { scale?, hidingDurationMin? }  → 204
  *
  * Notifies the managed game server to call startGame + beginHiding for the
  * given game.  The notify is fire-and-forget; the response is immediate.
+ *
+ * When `hidingDurationMin` is provided it must fall within the valid range for
+ * the given `scale` (see SCALE_DURATION_RANGES).  Out-of-range values return 400.
  *
  * @param {{ method: string, params: { gameId: string }, body: unknown }} req
  * @param {import('pg').Pool|null} [pool]
@@ -165,8 +181,23 @@ export function handleStartGame(req, pool = null, gameServerUrl, fetchFn = globa
     return { status: 400, body: { error: 'gameId param is required' } };
   }
 
-  const { scale } = req.body ?? {};
-  notifyGameStart({ gameId, scale }, gameServerUrl, fetchFn);
+  const { scale, hidingDurationMin } = req.body ?? {};
+
+  if (hidingDurationMin !== undefined) {
+    const range = SCALE_DURATION_RANGES[scale];
+    if (!range) {
+      return { status: 400, body: { error: `scale required when hidingDurationMin is set` } };
+    }
+    if (typeof hidingDurationMin !== 'number' || hidingDurationMin < range.min || hidingDurationMin > range.max) {
+      return {
+        status: 400,
+        body: { error: `hidingDurationMin out of range for scale '${scale}': must be ${range.min}–${range.max} min` },
+      };
+    }
+  }
+
+  const hidingDurationMs = hidingDurationMin != null ? hidingDurationMin * 60_000 : undefined;
+  notifyGameStart({ gameId, scale, hidingDurationMs, seekingDurationMs: hidingDurationMs }, gameServerUrl, fetchFn);
   return { status: 204, body: {} };
 }
 

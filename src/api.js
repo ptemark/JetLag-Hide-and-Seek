@@ -201,19 +201,24 @@ export async function fetchLeaderboard({ limit = 20, gameId } = {}) {
 
 /**
  * Start a game's hiding phase via the serverless endpoint.
- * POST /api/games/:gameId/start  { scale }  → 204
+ * POST /api/games/:gameId/start  { scale, hidingDurationMin? }  → 204
  *
  * The serverless handler notifies the managed game server to call
  * startGame + beginHiding with the correct scale-aware phase durations.
  *
- * @param {{ gameId: string, scale: string }} options
+ * `hidingDurationMin` is optional; when provided it overrides the scale default
+ * and must fall within the valid range for the chosen scale.
+ *
+ * @param {{ gameId: string, scale: string, hidingDurationMin?: number }} options
  * @returns {Promise<void>}
  */
-export async function startGame({ gameId, scale }) {
+export async function startGame({ gameId, scale, hidingDurationMin }) {
+  const body = { scale };
+  if (hidingDurationMin !== undefined) body.hidingDurationMin = hidingDurationMin;
   const res = await fetch(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scale }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`startGame failed: ${res.status}`);
 }

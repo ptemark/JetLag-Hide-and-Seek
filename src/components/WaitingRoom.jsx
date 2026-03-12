@@ -10,15 +10,25 @@
 import { useState } from 'react';
 import { startGame } from '../api.js';
 
+/** Valid hiding duration ranges per scale (RULES.md §Game Scales), in minutes. */
+const SCALE_DURATION_RANGES = {
+  small:  { min: 30,  max: 60  },
+  medium: { min: 60,  max: 180 },
+  large:  { min: 180, max: 360 },
+};
+
 export default function WaitingRoom({ game, player, onStart }) {
   const [error, setError] = useState('');
+  const range = SCALE_DURATION_RANGES[game.size] ?? { min: 30, max: 360 };
+  const [hidingDurationMin, setHidingDurationMin] = useState(range.min);
+
   const showTeam = (game.seekerTeams ?? 0) >= 2 && player?.role === 'seeker' && player?.team;
   const inviteUrl = `${window.location.origin}${window.location.pathname}?gameId=${game.gameId}`;
 
   async function handleStart() {
     setError('');
     try {
-      await startGame({ gameId: game.gameId, scale: game.size });
+      await startGame({ gameId: game.gameId, scale: game.size, hidingDurationMin });
       onStart?.();
     } catch (err) {
       setError(err.message || 'Failed to start game');
@@ -45,6 +55,22 @@ export default function WaitingRoom({ game, player, onStart }) {
         Invite link:{' '}
         <a href={inviteUrl} aria-label="Invite link">{inviteUrl}</a>
       </p>
+      {onStart && (
+        <div>
+          <label>
+            Hiding duration (min):{' '}
+            <input
+              type="number"
+              aria-label="Hiding duration"
+              min={range.min}
+              max={range.max}
+              value={hidingDurationMin}
+              onChange={(e) => setHidingDurationMin(Number(e.target.value))}
+            />
+          </label>
+          <small> ({range.min}–{range.max} min for {game.size} scale)</small>
+        </div>
+      )}
       {onStart && (
         <button onClick={handleStart}>Start Game</button>
       )}

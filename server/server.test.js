@@ -969,6 +969,65 @@ describe('POST /internal/games/:gameId/start', () => {
     expect(server.gameLoopManager.getPhase('dup-game')).toBe(firstPhase);
     expect(server.gameLoopManager.getGameDuration('dup-game', 'hiding')).toBe(30 * 60_000);
   });
+
+  // Task 74 — configurable hiding duration within scale range
+  it('custom hidingDurationMs within small range overrides scale default', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    await fetch(`http://localhost:${port}/internal/games/custom-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small', hidingDurationMs: 45 * 60_000, seekingDurationMs: 45 * 60_000 }),
+    });
+    expect(server.gameLoopManager.getGameDuration('custom-game', 'hiding')).toBe(45 * 60_000);
+    expect(server.gameLoopManager.getGameDuration('custom-game', 'seeking')).toBe(45 * 60_000);
+  });
+
+  it('returns 400 when hidingDurationMs is below the scale minimum', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/low-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small', hidingDurationMs: 10 * 60_000 }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/out of range/i);
+  });
+
+  it('returns 400 when hidingDurationMs exceeds the scale maximum', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/high-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small', hidingDurationMs: 90 * 60_000 }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/out of range/i);
+  });
+
+  it('custom hidingDurationMs without scale is applied directly (no range check)', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/no-scale-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidingDurationMs: 25 * 60_000 }),
+    });
+    expect(res.status).toBe(204);
+    expect(server.gameLoopManager.getGameDuration('no-scale-game', 'hiding')).toBe(25 * 60_000);
+  });
 });
 
 // ---------------------------------------------------------------------------

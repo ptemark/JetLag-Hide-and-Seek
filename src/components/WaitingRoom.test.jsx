@@ -84,7 +84,7 @@ describe('WaitingRoom team display', () => {
 // ---------------------------------------------------------------------------
 
 describe('WaitingRoom Start Game button', () => {
-  it('calls startGame with the correct gameId and scale', async () => {
+  it('calls startGame with the correct gameId, scale, and default hidingDurationMin', async () => {
     const user = userEvent.setup();
     api.startGame.mockResolvedValue(undefined);
     render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
@@ -92,7 +92,7 @@ describe('WaitingRoom Start Game button', () => {
     await user.click(screen.getByRole('button', { name: /start game/i }));
 
     await waitFor(() =>
-      expect(api.startGame).toHaveBeenCalledWith({ gameId: 'g1', scale: 'medium' })
+      expect(api.startGame).toHaveBeenCalledWith({ gameId: 'g1', scale: 'medium', hidingDurationMin: 60 })
     );
   });
 
@@ -107,7 +107,7 @@ describe('WaitingRoom Start Game button', () => {
     await waitFor(() => expect(onStart).toHaveBeenCalledOnce());
   });
 
-  it('passes scale=small when game.size is small', async () => {
+  it('passes scale=small and default min for small game', async () => {
     const user = userEvent.setup();
     api.startGame.mockResolvedValue(undefined);
     const smallGame = { ...GAME, size: 'small' };
@@ -116,7 +116,7 @@ describe('WaitingRoom Start Game button', () => {
     await user.click(screen.getByRole('button', { name: /start game/i }));
 
     await waitFor(() =>
-      expect(api.startGame).toHaveBeenCalledWith({ gameId: 'g1', scale: 'small' })
+      expect(api.startGame).toHaveBeenCalledWith({ gameId: 'g1', scale: 'small', hidingDurationMin: 30 })
     );
   });
 
@@ -156,5 +156,52 @@ describe('WaitingRoom Start Game button', () => {
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Duration picker (Task 74)
+// ---------------------------------------------------------------------------
+
+describe('WaitingRoom duration picker', () => {
+  it('renders duration input when onStart is provided', () => {
+    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+    expect(screen.getByLabelText(/hiding duration/i)).toBeInTheDocument();
+  });
+
+  it('does not render duration input when onStart is not provided', () => {
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+    expect(screen.queryByLabelText(/hiding duration/i)).not.toBeInTheDocument();
+  });
+
+  it('input min/max reflect the medium scale range (60–180)', () => {
+    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+    const input = screen.getByLabelText(/hiding duration/i);
+    expect(Number(input.min)).toBe(60);
+    expect(Number(input.max)).toBe(180);
+  });
+
+  it('input min/max reflect the small scale range (30–60)', () => {
+    const smallGame = { ...GAME, size: 'small' };
+    render(<WaitingRoom game={smallGame} player={PLAYER} onStart={() => {}} />);
+    const input = screen.getByLabelText(/hiding duration/i);
+    expect(Number(input.min)).toBe(30);
+    expect(Number(input.max)).toBe(60);
+  });
+
+  it('passes the user-selected hidingDurationMin to startGame', async () => {
+    const user = userEvent.setup();
+    api.startGame.mockResolvedValue(undefined);
+    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+
+    const input = screen.getByLabelText(/hiding duration/i);
+    await user.clear(input);
+    await user.type(input, '90');
+
+    await user.click(screen.getByRole('button', { name: /start game/i }));
+
+    await waitFor(() =>
+      expect(api.startGame).toHaveBeenCalledWith({ gameId: 'g1', scale: 'medium', hidingDurationMin: 90 })
+    );
   });
 });

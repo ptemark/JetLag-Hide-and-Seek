@@ -29,6 +29,16 @@ const SCALE_DURATIONS = Object.freeze({
 });
 
 /**
+ * Valid hiding/seeking duration ranges per scale (RULES.md §Game Scales).
+ * All values in minutes.
+ */
+export const SCALE_DURATION_RANGES = Object.freeze({
+  small:  Object.freeze({ min: 30,  max: 60  }),
+  medium: Object.freeze({ min: 60,  max: 180 }),
+  large:  Object.freeze({ min: 180, max: 360 }),
+});
+
+/**
  * Offset a zone's lat/lon by a random distance of 0.5–2 km in a random
  * direction and return a new zone object with a unique stationId.
  * 1° latitude ≈ 111 km.  Longitude degrees scale by cos(lat).
@@ -137,12 +147,40 @@ export function createServer({
       let body = '';
       req.on('data', (chunk) => { body += chunk; });
       req.on('end', () => {
-        let scale;
-        try { ({ scale } = JSON.parse(body)); } catch { /* use default durations */ }
+        let scale, hidingDurationMs, seekingDurationMs;
+        try { ({ scale, hidingDurationMs, seekingDurationMs } = JSON.parse(body)); } catch { /* use default durations */ }
+
+        // Validate custom durations against scale bounds when both are provided.
+        if ((hidingDurationMs !== undefined || seekingDurationMs !== undefined) && scale) {
+          const range = SCALE_DURATION_RANGES[scale];
+          if (range) {
+            const hidingMin = hidingDurationMs != null ? hidingDurationMs / 60_000 : null;
+            const seekingMin = seekingDurationMs != null ? seekingDurationMs / 60_000 : null;
+            if (
+              (hidingMin !== null && (hidingMin < range.min || hidingMin > range.max)) ||
+              (seekingMin !== null && (seekingMin < range.min || seekingMin > range.max))
+            ) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                error: `Duration out of range for scale '${scale}': must be ${range.min}–${range.max} min`,
+              }));
+              return;
+            }
+          }
+        }
+
         const scaleDurationMs = SCALE_DURATIONS[scale] ?? null;
-        const opts = scaleDurationMs != null
-          ? { hidingDurationMs: scaleDurationMs, seekingDurationMs: scaleDurationMs }
-          : {};
+        const opts = {};
+        if (hidingDurationMs != null) {
+          opts.hidingDurationMs = hidingDurationMs;
+        } else if (scaleDurationMs != null) {
+          opts.hidingDurationMs = scaleDurationMs;
+        }
+        if (seekingDurationMs != null) {
+          opts.seekingDurationMs = seekingDurationMs;
+        } else if (scaleDurationMs != null) {
+          opts.seekingDurationMs = scaleDurationMs;
+        }
         const { gameId } = startMatch.groups;
         gameLoopManager.startGame(gameId, opts);
         gameLoopManager.beginHiding(gameId);

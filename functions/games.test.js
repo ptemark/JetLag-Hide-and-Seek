@@ -5,6 +5,7 @@ import {
   getGame,
   handleStartGame,
   VALID_SIZES,
+  SCALE_DURATION_RANGES,
   _getStore,
   _clearStore,
 } from './games.js';
@@ -186,5 +187,60 @@ describe('handleStartGame', () => {
     expect(res.status).toBe(204);
     // Should not throw after the rejected promise is handled.
     await expect(new Promise(r => setTimeout(r, 10))).resolves.toBeUndefined();
+  });
+
+  // Task 74 — configurable hiding duration
+  it('returns 400 when hidingDurationMin is below scale minimum', () => {
+    const res = handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small', hidingDurationMin: 10 }),
+      null,
+      undefined,
+      vi.fn(),
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/out of range/i);
+  });
+
+  it('returns 400 when hidingDurationMin exceeds scale maximum', () => {
+    const res = handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'medium', hidingDurationMin: 300 }),
+      null,
+      undefined,
+      vi.fn(),
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/out of range/i);
+  });
+
+  it('returns 400 when hidingDurationMin is set but scale is missing', () => {
+    const res = handleStartGame(
+      makePostReq({ gameId: 'g1' }, { hidingDurationMin: 45 }),
+      null,
+      undefined,
+      vi.fn(),
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/scale required/i);
+  });
+
+  it('passes hidingDurationMs to managed server when hidingDurationMin is valid', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({});
+    const res = handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small', hidingDurationMin: 45 }),
+      null,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(204);
+    await new Promise(r => setTimeout(r, 0));
+    const payload = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(payload.hidingDurationMs).toBe(45 * 60_000);
+    expect(payload.seekingDurationMs).toBe(45 * 60_000);
+  });
+
+  it('SCALE_DURATION_RANGES exports correct bounds for each scale', () => {
+    expect(SCALE_DURATION_RANGES.small).toEqual({ min: 30, max: 60 });
+    expect(SCALE_DURATION_RANGES.medium).toEqual({ min: 60, max: 180 });
+    expect(SCALE_DURATION_RANGES.large).toEqual({ min: 180, max: 360 });
   });
 });

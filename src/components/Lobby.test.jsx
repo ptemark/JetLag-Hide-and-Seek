@@ -7,6 +7,7 @@ vi.mock('../api.js', () => ({
   registerPlayer: vi.fn(),
   createGame: vi.fn(),
   lookupGame: vi.fn(),
+  startGame: vi.fn(),
 }));
 
 import * as api from '../api.js';

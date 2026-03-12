@@ -5,11 +5,25 @@
  * Props:
  *   game    — game record { gameId, size, status, seekerTeams? }
  *   player  — player record { playerId, name, role, team? }
- *   onStart — callback invoked when the host taps "Start Game" (optional)
+ *   onStart — callback invoked after the managed server confirms game start (optional)
  */
+import { useState } from 'react';
+import { startGame } from '../api.js';
+
 export default function WaitingRoom({ game, player, onStart }) {
+  const [error, setError] = useState('');
   const showTeam = (game.seekerTeams ?? 0) >= 2 && player?.role === 'seeker' && player?.team;
   const inviteUrl = `${window.location.origin}${window.location.pathname}?gameId=${game.gameId}`;
+
+  async function handleStart() {
+    setError('');
+    try {
+      await startGame({ gameId: game.gameId, scale: game.size });
+      onStart?.();
+    } catch (err) {
+      setError(err.message || 'Failed to start game');
+    }
+  }
 
   return (
     <div aria-label="Waiting room">
@@ -32,8 +46,9 @@ export default function WaitingRoom({ game, player, onStart }) {
         <a href={inviteUrl} aria-label="Invite link">{inviteUrl}</a>
       </p>
       {onStart && (
-        <button onClick={onStart}>Start Game</button>
+        <button onClick={handleStart}>Start Game</button>
       )}
+      {error && <p role="alert">{error}</p>}
     </div>
   );
 }

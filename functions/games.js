@@ -1,8 +1,9 @@
 /**
  * games.js — Serverless handler for game creation and state queries.
  *
- * POST /games      { size }      → new game record
- * GET  /games/:id               → game state snapshot
+ * POST /games                → new game record
+ * GET  /games/:id            → game state snapshot
+ * POST /games/:gameId/start  → notify managed server to begin hiding phase
  *
  * Pass a pg Pool as the second argument to persist to / read from the
  * database.  Omit the pool to use the in-process Map (tests / local dev).
@@ -116,6 +117,57 @@ export function handleCreateGame(req, pool = null) {
   } catch (err) {
     return { status: 400, body: { error: err.message } };
   }
+}
+
+/**
+ * Notify the managed server to begin the hiding phase for a game.
+ * Fire-and-forget — errors are intentionally swallowed.
+ *
+ * @param {{ gameId: string, scale?: string }} options
+ * @param {string|undefined} gameServerUrl
+ * @param {typeof fetch} fetchFn
+ */
+function notifyGameStart({ gameId, scale }, gameServerUrl, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  if (serverUrl && fetchFn) {
+    Promise.resolve(fetchFn(
+      `${serverUrl}/internal/games/${encodeURIComponent(gameId)}/start`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scale }),
+      },
+    )).catch(() => { /* intentionally silent */ });
+  }
+}
+
+/**
+ * HTTP handler: start a game's hiding phase.
+ *
+ * POST /games/:gameId/start  { scale? }  → 204
+ *
+ * Notifies the managed game server to call startGame + beginHiding for the
+ * given game.  The notify is fire-and-forget; the response is immediate.
+ *
+ * @param {{ method: string, params: { gameId: string }, body: unknown }} req
+ * @param {import('pg').Pool|null} [pool]
+ * @param {string} [gameServerUrl]  Override for GAME_SERVER_URL env var.
+ * @param {typeof fetch} [fetchFn]  Injectable fetch (tests / local dev).
+ * @returns {{ status: number, body: object }}
+ */
+export function handleStartGame(req, pool = null, gameServerUrl, fetchFn = globalThis.fetch) {
+  if (req.method !== 'POST') {
+    return { status: 405, body: { error: 'Method Not Allowed' } };
+  }
+
+  const { gameId } = req.params ?? {};
+  if (!gameId || typeof gameId !== 'string') {
+    return { status: 400, body: { error: 'gameId param is required' } };
+  }
+
+  const { scale } = req.body ?? {};
+  notifyGameStart({ gameId, scale }, gameServerUrl, fetchFn);
+  return { status: 204, body: {} };
 }
 
 /** Return a copy of the in-process game store (for testing). */

@@ -733,3 +733,136 @@ describe('WsHandler — message routing — set_transit', () => {
     ).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// message routing — spot_hider
+// ---------------------------------------------------------------------------
+
+describe('WsHandler — message routing — spot_hider', () => {
+  let handler, loop, gsm, ws;
+
+  /** Shared seeker setup: p1 is a seeker in game g1. */
+  beforeEach(() => {
+    loop = makeLoop();
+    gsm  = makeGsm();
+    // Default GSM state: return a game state that tests can override.
+    gsm.getGameState.mockReturnValue({
+      gameId: 'g1', status: 'seeking',
+      players: {
+        h1: { lat: 51.5,      lon: 0, role: 'hider'  },
+        p1: { lat: 51.50009,  lon: 0, role: 'seeker' }, // ~10 m from hider
+      },
+    });
+    handler = new WsHandler(loop, gsm);
+    ws = mockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    ws.send.mockClear();
+  });
+
+  it('sends error when gameId is missing', () => {
+    ws.emit('message', JSON.stringify({ type: 'spot_hider' }));
+    expect(sentMessages(ws)).toContainEqual({ type: 'error', message: 'gameId required' });
+  });
+
+  it('broadcasts spot_confirmed when spotter is within default spot radius', () => {
+    // Inject a stub that always returns spotted=true.
+    handler._checkSpotFn = vi.fn().mockReturnValue({ spotted: true, distance: 10, hiderLat: 51.5, hiderLon: 0 });
+
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    ws2.send.mockClear();
+    ws.send.mockClear();
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    // Both the spotter and their partner should receive spot_confirmed.
+    const msgs1 = sentMessages(ws);
+    const msgs2 = sentMessages(ws2);
+    expect(msgs1).toContainEqual(expect.objectContaining({ type: 'spot_confirmed', gameId: 'g1', spotterId: 'p1' }));
+    expect(msgs2).toContainEqual(expect.objectContaining({ type: 'spot_confirmed', gameId: 'g1', spotterId: 'p1' }));
+  });
+
+  it('calls onSpotConfirmed callback with gameId and spotterId when confirmed', () => {
+    handler._checkSpotFn = vi.fn().mockReturnValue({ spotted: true, distance: 5, hiderLat: 51.5, hiderLon: 0 });
+    const onSpotConfirmed = vi.fn();
+    handler.onSpotConfirmed = onSpotConfirmed;
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    expect(onSpotConfirmed).toHaveBeenCalledWith('g1', 'p1');
+  });
+
+  it('sends spot_rejected back to the spotter when outside radius', () => {
+    handler._checkSpotFn = vi.fn().mockReturnValue({ spotted: false, distance: 80, hiderLat: 51.5, hiderLon: 0 });
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    const msgs = sentMessages(ws);
+    const rejected = msgs.find(m => m.type === 'spot_rejected');
+    expect(rejected).toBeTruthy();
+    expect(rejected.gameId).toBe('g1');
+    expect(rejected.spotterId).toBe('p1');
+    expect(rejected.distanceM).toBe(80);
+    expect(rejected.spotRadiusM).toBe(30); // default
+  });
+
+  it('does NOT call onSpotConfirmed when spot is rejected', () => {
+    handler._checkSpotFn = vi.fn().mockReturnValue({ spotted: false, distance: 200, hiderLat: 51.5, hiderLon: 0 });
+    const onSpotConfirmed = vi.fn();
+    handler.onSpotConfirmed = onSpotConfirmed;
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    expect(onSpotConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('does not broadcast spot_rejected to other players (private response)', () => {
+    handler._checkSpotFn = vi.fn().mockReturnValue({ spotted: false, distance: 200, hiderLat: 51.5, hiderLon: 0 });
+
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    ws2.send.mockClear();
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    // p2 should NOT receive spot_rejected
+    expect(sentMessages(ws2).some(m => m.type === 'spot_rejected')).toBe(false);
+  });
+
+  it('respects a custom spotRadiusM set on the handler', () => {
+    // Set a very tight radius — even a 10 m spotter should be rejected with 5 m limit.
+    handler.spotRadiusM = 5;
+    handler._checkSpotFn = vi.fn().mockReturnValue({ spotted: false, distance: 10, hiderLat: 51.5, hiderLon: 0 });
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    const msgs = sentMessages(ws);
+    const rejected = msgs.find(m => m.type === 'spot_rejected');
+    expect(rejected).toBeTruthy();
+    expect(rejected.spotRadiusM).toBe(5);
+  });
+
+  it('passes gameState from GSM to checkSpot', () => {
+    const fakeState = { gameId: 'g1', status: 'seeking', players: { h1: { lat: 1, lon: 2, role: 'hider' }, p1: { lat: 1, lon: 2, role: 'seeker' } } };
+    gsm.getGameState.mockReturnValue(fakeState);
+    handler._checkSpotFn = vi.fn().mockReturnValue({ spotted: false, distance: null, hiderLat: null, hiderLon: null });
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    expect(handler._checkSpotFn).toHaveBeenCalledWith(fakeState, 'p1', handler.spotRadiusM);
+  });
+
+  it('handles spot_hider gracefully when GSM is absent', () => {
+    const noGsmHandler = new WsHandler(loop);
+    noGsmHandler._checkSpotFn = vi.fn().mockReturnValue({ spotted: false, distance: null, hiderLat: null, hiderLon: null });
+    const noGsmWs = mockWs();
+    noGsmHandler.handleConnection(noGsmWs, 'p1');
+    noGsmWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    expect(() =>
+      noGsmWs.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }))
+    ).not.toThrow();
+  });
+});

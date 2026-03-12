@@ -90,6 +90,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [wsStatus, setWsStatus] = useState('connecting'); // 'connecting' | 'connected' | 'reconnecting'
   const [curseEndsAt, setCurseEndsAt] = useState(null);   // ISO from curse_active; null when inactive
   const [falseZones, setFalseZones] = useState([]);        // [{ decoyId, zone }] — active decoy zones
+  const [spotResult, setSpotResult] = useState(null);      // null | 'pending' | 'confirmed' | 'rejected'
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -288,6 +289,10 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setFalseZones((prev) => [...prev, { decoyId: msg.zone.decoyId, zone: msg.zone }]);
       } else if (msg.type === 'false_zone_expired') {
         setFalseZones((prev) => prev.filter((fz) => fz.decoyId !== msg.decoyId));
+      } else if (msg.type === 'spot_confirmed') {
+        setSpotResult('confirmed');
+      } else if (msg.type === 'spot_rejected') {
+        setSpotResult('rejected');
       }
     }
 
@@ -431,6 +436,42 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           >
             {myOnTransit ? '🚌 On Transit' : '🚶 Off Transit'}
           </button>
+        </div>
+      )}
+
+      {player.role === 'seeker' && phase === 'seeking' && (
+        <div style={{ padding: '0.5rem 0' }}>
+          <button
+            data-testid="spot-hider-btn"
+            disabled={spotResult === 'pending' || spotResult === 'confirmed'}
+            onClick={() => {
+              setSpotResult('pending');
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({
+                  type: 'spot_hider',
+                  gameId: game.gameId,
+                  playerId: player.playerId,
+                }));
+              }
+            }}
+            style={{
+              background: spotResult === 'confirmed' ? '#bbf7d0'
+                : spotResult === 'rejected'  ? '#fee2e2'
+                : '#fef9c3',
+              border: '1px solid #999',
+              borderRadius: '0.375rem',
+              padding: '0.375rem 0.75rem',
+              cursor: spotResult === 'pending' || spotResult === 'confirmed' ? 'not-allowed' : 'pointer',
+              fontWeight: 'bold',
+            }}
+          >
+            {spotResult === 'confirmed' ? 'Hider Spotted!' : spotResult === 'rejected' ? 'Not Close Enough' : 'I See the Hider!'}
+          </button>
+          {spotResult === 'rejected' && (
+            <span data-testid="spot-rejected-msg" style={{ marginLeft: '0.5rem', color: '#b91c1c', fontSize: '0.875rem' }}>
+              You are not close enough to the hider yet.
+            </span>
+          )}
         </div>
       )}
 

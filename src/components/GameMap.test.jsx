@@ -480,6 +480,85 @@ describe('GameMap', () => {
     expect(screen.getByTestId('map-container')).toBeInTheDocument();
   });
 
+  // ---------------------------------------------------------------------------
+  // "I See the Hider!" button — Task 70
+  // ---------------------------------------------------------------------------
+
+  it('shows "I See the Hider!" button for seeker in seeking phase', () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.getByTestId('spot-hider-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('spot-hider-btn')).toHaveTextContent('I See the Hider!');
+  });
+
+  it('does not show "I See the Hider!" button for hiders', () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('spot-hider-btn')).not.toBeInTheDocument();
+  });
+
+  it('does not show "I See the Hider!" button during hiding phase for seekers', () => {
+    const seeker = { ...player, role: 'seeker' };
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('spot-hider-btn')).not.toBeInTheDocument();
+  });
+
+  it('sends spot_hider WS message when "I See the Hider!" is clicked', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    const ws = MockWebSocket.last;
+    ws.readyState = WebSocket.OPEN;
+
+    await act(async () => {
+      screen.getByTestId('spot-hider-btn').click();
+    });
+
+    const sent = ws.send.mock.calls.map((c) => JSON.parse(c[0]));
+    const spotMsg = sent.find((m) => m.type === 'spot_hider');
+    expect(spotMsg).toBeTruthy();
+    expect(spotMsg.gameId).toBe('g1');
+    expect(spotMsg.playerId).toBe('p1');
+  });
+
+  it('changes button label to "Not Close Enough" on spot_rejected response', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'spot_rejected', gameId: 'g1', spotterId: 'p1', distanceM: 80, spotRadiusM: 30 }),
+      });
+    });
+    expect(screen.getByTestId('spot-hider-btn')).toHaveTextContent('Not Close Enough');
+    expect(screen.getByTestId('spot-rejected-msg')).toBeInTheDocument();
+  });
+
+  it('changes button label to "Hider Spotted!" on spot_confirmed response', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'spot_confirmed', gameId: 'g1', spotterId: 'p1', distanceM: 10 }),
+      });
+    });
+    expect(screen.getByTestId('spot-hider-btn')).toHaveTextContent('Hider Spotted!');
+  });
+
+  it('disables button after spot_confirmed', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'spot_confirmed', gameId: 'g1', spotterId: 'p1', distanceM: 10 }),
+      });
+    });
+    expect(screen.getByTestId('spot-hider-btn')).toBeDisabled();
+  });
+
   it('removes decoy circle when false_zone_expired WS event is received', async () => {
     mockCircle.remove.mockClear();
     render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);

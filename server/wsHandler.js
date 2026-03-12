@@ -1,13 +1,38 @@
+import { checkSpot as _checkSpotImpl } from './captureDetector.js';
+
 const WS_OPEN = 1;
 
 /** Default grace period (ms) before a disconnected player is purged from game state. */
 const DEFAULT_RECONNECT_GRACE_MS = 30_000;
 
+/**
+ * Default spot radius (metres): maximum distance between a spotter and the
+ * hider for a `spot_hider` claim to be confirmed.  Matches RULES.md §End Game
+ * (~2 m physical, but 30 m is used as GPS practical range).
+ */
+const DEFAULT_SPOT_RADIUS_M = 30;
+
 export class WsHandler {
-  constructor(gameLoop, gameStateManager = null, reconnectGraceMs = DEFAULT_RECONNECT_GRACE_MS) {
+  /**
+   * @param {object}  gameLoop          - GameLoop instance.
+   * @param {object}  [gameStateManager] - GameStateManager instance (optional).
+   * @param {number}  [reconnectGraceMs] - Grace period before finalising a disconnect.
+   * @param {number}  [spotRadiusM]      - Max metres to confirm a spot_hider claim.
+   * @param {Function} [onSpotConfirmed] - Called with (gameId, spotterId) when a spot
+   *                                       claim is within range. Typically finishes the game.
+   */
+  constructor(
+    gameLoop,
+    gameStateManager = null,
+    reconnectGraceMs = DEFAULT_RECONNECT_GRACE_MS,
+    spotRadiusM = DEFAULT_SPOT_RADIUS_M,
+    onSpotConfirmed = null,
+  ) {
     this.gameLoop = gameLoop;
     this.gameStateManager = gameStateManager;
     this.reconnectGraceMs = reconnectGraceMs;
+    this.spotRadiusM = spotRadiusM;
+    this.onSpotConfirmed = onSpotConfirmed;
     this.clients = new Map();      // playerId -> ws
     this.gameClients = new Map();  // gameId   -> Map<playerId, ws>
     this.playerGames = new Map();  // playerId -> Set<gameId>
@@ -78,6 +103,9 @@ export class WsHandler {
         break;
       case 'request_state':
         this._handleRequestState(ws, message);
+        break;
+      case 'spot_hider':
+        this._handleSpotHider(ws, playerId, message);
         break;
       default:
         this._send(ws, { type: 'ack', received: message.type, playerId });
@@ -215,6 +243,53 @@ export class WsHandler {
       ? this.gameStateManager.getGameState(gameId)
       : null;
     this._send(ws, { type: 'game_state', gameId, state });
+  }
+
+  /**
+   * Handle a `spot_hider` message from a seeker.
+   *
+   * The seeker claims they can physically see the hider. The server checks
+   * whether the spotter's last known location is within `spotRadiusM` of the
+   * hider's last known location.
+   *
+   * - If confirmed: broadcast `spot_confirmed` to the game and call
+   *   `this.onSpotConfirmed(gameId, spotterId)` (which typically calls
+   *   `gameLoopManager.finishGame`).
+   * - If rejected (out of range or unknown locations): send `spot_rejected`
+   *   back to the requesting seeker with the measured distance.
+   *
+   * @param {object} ws
+   * @param {string} playerId
+   * @param {{ gameId: string }} message
+   */
+  _handleSpotHider(ws, playerId, { gameId }) {
+    if (!gameId) {
+      this._send(ws, { type: 'error', message: 'gameId required' });
+      return;
+    }
+
+    const gameState = this.gameStateManager
+      ? this.gameStateManager.getGameState(gameId)
+      : null;
+
+    // Allow tests to inject a stub by setting instance._checkSpotFn.
+    const checkSpot = this._checkSpotFn ?? _checkSpotImpl;
+    const { spotted, distance } = checkSpot(gameState, playerId, this.spotRadiusM);
+
+    if (spotted) {
+      this.broadcastToGame(gameId, { type: 'spot_confirmed', gameId, spotterId: playerId, distanceM: distance });
+      if (this.onSpotConfirmed) {
+        this.onSpotConfirmed(gameId, playerId);
+      }
+    } else {
+      this._send(ws, {
+        type: 'spot_rejected',
+        gameId,
+        spotterId: playerId,
+        distanceM: distance,
+        spotRadiusM: this.spotRadiusM,
+      });
+    }
   }
 
   _handleDisconnect(playerId) {

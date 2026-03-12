@@ -11,6 +11,11 @@
  *   3. Players whose lat/lon is null are excluded (location not yet reported).
  *   4. Seekers with onTransit === true are excluded (they are still travelling).
  *   5. No hiders or no seekers with known locations → no capture.
+ *
+ * Two-phase End Game (RULES.md §End Game):
+ *   Phase 1: All seekers enter the hiding zone (checkCapture).
+ *   Phase 2: A seeker sends spot_hider; server calls checkSpot to verify the
+ *            spotter is within spotRadiusM of the hider before finalising capture.
  */
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -100,4 +105,39 @@ export function checkCapture(gameState, zones) {
 
   const captured = seekersInZone.length === seekers.length;
   return { captured, hiderZone, seekersInZone, captureTeam: null };
+}
+
+/**
+ * Check whether a specific seeker (the "spotter") is within spotRadiusM of
+ * the hider's last known location. Used for the second phase of End Game
+ * capture: the spotter sends a `spot_hider` WS message and the server calls
+ * this function to confirm physical proximity before finalising the game.
+ *
+ * @param {object} gameState
+ *   Snapshot from GameStateManager.getGameState():
+ *   { gameId, status, players: { [playerId]: { lat, lon, role } } }
+ * @param {string} spotterId  Player ID of the seeker claiming to see the hider.
+ * @param {number} spotRadiusM  Maximum metres between spotter and hider.
+ * @returns {{
+ *   spotted:  boolean,
+ *   distance: number | null,
+ *   hiderLat: number | null,
+ *   hiderLon: number | null,
+ * }}
+ */
+export function checkSpot(gameState, spotterId, spotRadiusM) {
+  const empty = { spotted: false, distance: null, hiderLat: null, hiderLon: null };
+  if (!gameState || !spotterId || spotRadiusM == null) return empty;
+
+  const players = Object.entries(gameState.players ?? {});
+  const hiders  = players.filter(([, p]) => p.role === 'hider'  && p.lat != null && p.lon != null);
+  const spotter = gameState.players?.[spotterId];
+
+  if (hiders.length === 0) return empty;
+  if (!spotter || spotter.lat == null || spotter.lon == null) return empty;
+
+  const [, hider] = hiders[0];
+  const distance = haversineDistance(spotter.lat, spotter.lon, hider.lat, hider.lon);
+  const spotted  = distance <= spotRadiusM;
+  return { spotted, distance, hiderLat: hider.lat, hiderLon: hider.lon };
 }

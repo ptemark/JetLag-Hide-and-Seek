@@ -13,6 +13,9 @@ import { nullAlertManager, AlertType } from './alerting.js';
 import { nullAutoScaler } from './autoScaler.js';
 import { checkCapture } from './captureDetector.js';
 
+/** Default spot radius in metres (RULES.md §End Game GPS practical range). */
+const DEFAULT_SPOT_RADIUS_M = 30;
+
 const FALSE_ZONE_DURATION_MS = 5 * 60_000;
 
 /**
@@ -57,6 +60,7 @@ export function createServer({
   hidingDuration = 120_000,
   seekingDuration = 600_000,
   reconnectGraceMs = 30_000,
+  spotRadiusM   = DEFAULT_SPOT_RADIUS_M,
   logger        = new Logger({ level: LogLevel.INFO }),
   metrics       = new MetricsCollector(),
   alertManager  = nullAlertManager,
@@ -227,7 +231,15 @@ export function createServer({
   gameStateManager = new GameStateManager();
   const stateDispatcher = new StateDispatcher({ logger });
   const wss = new WebSocketServer({ server: httpServer });
-  wsHandler = new WsHandler(gameLoop, gameStateManager, reconnectGraceMs);
+
+  // onSpotConfirmed: called when a seeker's spot_hider claim is within spotRadiusM.
+  // Record the spotter and immediately finish the game — seekers win.
+  const onSpotConfirmed = (gameId, spotterId) => {
+    logger.info(LogCategory.SERVER, 'spot_confirmed', { gameId, spotterId });
+    gameLoopManager.finishGame(gameId);
+  };
+
+  wsHandler = new WsHandler(gameLoop, gameStateManager, reconnectGraceMs, spotRadiusM, onSpotConfirmed);
   const heartbeatManager = new HeartbeatManager(wss, { interval: heartbeatInterval });
 
   // Track last timer_sync broadcast time per game to enforce 30 s throttle.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { haversineDistance, checkCapture } from './captureDetector.js';
+import { haversineDistance, checkCapture, checkSpot } from './captureDetector.js';
 
 // ---------------------------------------------------------------------------
 // haversineDistance
@@ -334,5 +334,114 @@ describe('checkCapture — onTransit exclusion', () => {
     });
     const result = checkCapture(state, [zone]);
     expect(result.captured).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkSpot — two-phase End Game spotting
+// ---------------------------------------------------------------------------
+
+describe('checkSpot', () => {
+  const SPOT_RADIUS_M = 30;
+
+  function makeSpotState(players) {
+    return { gameId: 'g1', status: 'seeking', players };
+  }
+
+  it('returns not-spotted when gameState is null', () => {
+    const result = checkSpot(null, 's1', SPOT_RADIUS_M);
+    expect(result.spotted).toBe(false);
+    expect(result.distance).toBeNull();
+  });
+
+  it('returns not-spotted when spotterId is null', () => {
+    const state = makeSpotState({
+      h1: { lat: 51.5, lon: 0, role: 'hider' },
+      s1: { lat: 51.5, lon: 0, role: 'seeker' },
+    });
+    expect(checkSpot(state, null, SPOT_RADIUS_M).spotted).toBe(false);
+  });
+
+  it('returns not-spotted when spotRadiusM is null', () => {
+    const state = makeSpotState({
+      h1: { lat: 51.5, lon: 0, role: 'hider' },
+      s1: { lat: 51.5, lon: 0, role: 'seeker' },
+    });
+    expect(checkSpot(state, 's1', null).spotted).toBe(false);
+  });
+
+  it('returns not-spotted when there are no hiders', () => {
+    const state = makeSpotState({
+      s1: { lat: 51.5, lon: 0, role: 'seeker' },
+    });
+    expect(checkSpot(state, 's1', SPOT_RADIUS_M).spotted).toBe(false);
+  });
+
+  it('returns not-spotted when hider location is unknown', () => {
+    const state = makeSpotState({
+      h1: { lat: null, lon: null, role: 'hider' },
+      s1: { lat: 51.5, lon: 0, role: 'seeker' },
+    });
+    expect(checkSpot(state, 's1', SPOT_RADIUS_M).spotted).toBe(false);
+  });
+
+  it('returns not-spotted when spotter location is unknown', () => {
+    const state = makeSpotState({
+      h1: { lat: 51.5, lon: 0, role: 'hider' },
+      s1: { lat: null, lon: null, role: 'seeker' },
+    });
+    expect(checkSpot(state, 's1', SPOT_RADIUS_M).spotted).toBe(false);
+  });
+
+  it('returns not-spotted when spotter is not in the game', () => {
+    const state = makeSpotState({
+      h1: { lat: 51.5, lon: 0, role: 'hider' },
+    });
+    expect(checkSpot(state, 'unknown', SPOT_RADIUS_M).spotted).toBe(false);
+  });
+
+  it('confirms spot when spotter is within spotRadiusM of hider (~10 m)', () => {
+    // 10 m north of hider at (51.5, 0) — both within 30 m
+    const state = makeSpotState({
+      h1: { lat: 51.5,      lon: 0, role: 'hider'  },
+      s1: { lat: 51.50009,  lon: 0, role: 'seeker' },  // ~10 m north
+    });
+    const result = checkSpot(state, 's1', SPOT_RADIUS_M);
+    expect(result.spotted).toBe(true);
+    expect(result.distance).toBeGreaterThan(0);
+    expect(result.distance).toBeLessThan(SPOT_RADIUS_M);
+    expect(result.hiderLat).toBe(51.5);
+    expect(result.hiderLon).toBe(0);
+  });
+
+  it('rejects spot when spotter is outside spotRadiusM of hider (~50 m)', () => {
+    // ~55 m north — outside default 30 m radius
+    const state = makeSpotState({
+      h1: { lat: 51.5,      lon: 0, role: 'hider'  },
+      s1: { lat: 51.5005,   lon: 0, role: 'seeker' },  // ~55 m north
+    });
+    const result = checkSpot(state, 's1', SPOT_RADIUS_M);
+    expect(result.spotted).toBe(false);
+    expect(result.distance).toBeGreaterThan(SPOT_RADIUS_M);
+  });
+
+  it('uses the custom spotRadiusM when provided', () => {
+    // Spotter ~50 m away — confirmed with 100 m radius, rejected with 30 m radius
+    const state = makeSpotState({
+      h1: { lat: 51.5,    lon: 0, role: 'hider'  },
+      s1: { lat: 51.5005, lon: 0, role: 'seeker' },  // ~55 m
+    });
+    expect(checkSpot(state, 's1', 100).spotted).toBe(true);
+    expect(checkSpot(state, 's1', 30).spotted).toBe(false);
+  });
+
+  it('returns correct hiderLat/hiderLon in the result', () => {
+    const state = makeSpotState({
+      h1: { lat: 51.1234, lon: -0.5678, role: 'hider'  },
+      s1: { lat: 51.1234, lon: -0.5678, role: 'seeker' },
+    });
+    const result = checkSpot(state, 's1', SPOT_RADIUS_M);
+    expect(result.hiderLat).toBe(51.1234);
+    expect(result.hiderLon).toBe(-0.5678);
   });
 });

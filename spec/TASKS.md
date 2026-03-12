@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 69 complete. Wire game start from serverless; 1153 tests pass._
+_Task 70 complete. Two-phase End Game capture (spot_hider); 1180 tests pass._
 
 ---
 
@@ -233,4 +233,4 @@ Tasks are ordered by dependency. Complete them top to bottom.
 
 - [x] **69** — Wire game start from serverless: when a game host clicks "Start Game" in the frontend, notify the managed server to begin the hiding phase. Add `POST /api/games/:gameId/start` serverless endpoint; handler calls `POST /internal/games/:gameId/start` on the managed server (fire-and-forget, same pattern as cards notify). Update `WaitingRoom`'s "Start Game" button to call `POST /api/games/:gameId/start` instead of directly sending `begin_hiding` WS. Add tests in `functions/games.test.js` and `src/components/WaitingRoom.test.jsx`.
 
-- [ ] **70** — Two-phase End Game capture: `RULES.md` requires seekers to physically *spot* the hider (within GPS practical range, ~30 m) after entering the hiding zone. Currently `checkCapture` finishes the game the moment all seekers are inside the zone radius. Add a `spot_hider` WS message that a seeker sends when they believe they can see the hider. Server records the spotting seeker; only triggers `finishGame` if the spotter is within a configurable `spotRadiusM` (default 30 m) of the hider's last reported location. Add `spotRadiusM` option to `createServer`. Tests: `server/wsHandler.test.js` (spot_hider message), `server/captureDetector.test.js` (spot within/outside radius), `src/components/GameMap.test.jsx` ("I See the Hider!" button in seeking phase).
+- [x] **70** — Two-phase End Game capture: `RULES.md` requires seekers to physically *spot* the hider (within GPS practical range, ~30 m) after entering the hiding zone. Currently `checkCapture` finishes the game the moment all seekers are inside the zone radius. Add a `spot_hider` WS message that a seeker sends when they believe they can see the hider. Server records the spotting seeker; only triggers `finishGame` if the spotter is within a configurable `spotRadiusM` (default 30 m) of the hider's last reported location. Add `spotRadiusM` option to `createServer`. Tests: `server/wsHandler.test.js` (spot_hider message), `server/captureDetector.test.js` (spot within/outside radius), `src/components/GameMap.test.jsx` ("I See the Hider!" button in seeking phase).

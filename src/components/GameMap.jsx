@@ -76,8 +76,9 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef(null);
 
-  const [players, setPlayers] = useState({});      // { [playerId]: { lat, lon, team? } }
+  const [players, setPlayers] = useState({});      // { [playerId]: { lat, lon, team?, onTransit? } }
   const [myTeam, setMyTeam] = useState(null);       // 'A' | 'B' | null (assigned by server in two-team mode)
+  const [myOnTransit, setMyOnTransit] = useState(false); // true when this seeker is on transit
   const [phase, setPhase] = useState(game.status);
   const [captureMsg, setCaptureMsg] = useState(null);
   const [qaRefresh, setQaRefresh] = useState(0);   // increments on question_answered WS event
@@ -155,12 +156,15 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       } else {
         const isMe = pid === player.playerId;
         const color = markerColor(pid, pos.team ?? null);
-        const label = isMe ? `You${myTeam ? ` (Team ${myTeam})` : ''}` : pid;
+        const isOnTransit = pos.onTransit ?? false;
+        const transitIcon = isOnTransit ? ' 🚌' : '';
+        const baseLabel = isMe ? `You${myTeam ? ` (Team ${myTeam})` : ''}` : pid;
+        const label = `${baseLabel}${transitIcon}`;
         markersRef.current[pid] = L.circleMarker([pos.lat, pos.lon], {
           radius: isMe ? 10 : 7,
           color,
           fillColor: color,
-          fillOpacity: 0.7,
+          fillOpacity: isOnTransit ? 0.3 : 0.7,
         })
           .bindTooltip(label, { permanent: false })
           .addTo(map);
@@ -268,6 +272,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setPendingQuestionExpiresAt(null);
       } else if (msg.type === 'zone_locked') {
         setLockedZone(msg.zone ?? null);
+      } else if (msg.type === 'player_transit') {
+        setPlayers((prev) => {
+          const existing = prev[msg.playerId];
+          if (!existing) return prev;
+          return { ...prev, [msg.playerId]: { ...existing, onTransit: !!msg.onTransit } };
+        });
       } else if (msg.type === 'timer_sync') {
         setPhaseEndsAt(msg.phaseEndsAt ?? null);
       } else if (msg.type === 'question_pending') {
@@ -393,6 +403,36 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         data-testid="map-container"
         style={{ height: '60vh', width: '100%', border: '1px solid #ccc' }}
       />
+
+      {player.role === 'seeker' && phase === 'seeking' && (
+        <div style={{ padding: '0.5rem 0' }}>
+          <button
+            data-testid="transit-toggle"
+            onClick={() => {
+              const next = !myOnTransit;
+              setMyOnTransit(next);
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({
+                  type: 'set_transit',
+                  gameId: game.gameId,
+                  playerId: player.playerId,
+                  onTransit: next,
+                }));
+              }
+            }}
+            style={{
+              background: myOnTransit ? '#fbbf24' : '#d1fae5',
+              border: '1px solid #999',
+              borderRadius: '0.375rem',
+              padding: '0.375rem 0.75rem',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+            }}
+          >
+            {myOnTransit ? '🚌 On Transit' : '🚶 Off Transit'}
+          </button>
+        </div>
+      )}
 
       {player.role === 'seeker' && (
         <QuestionPanel player={player} game={game} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} />

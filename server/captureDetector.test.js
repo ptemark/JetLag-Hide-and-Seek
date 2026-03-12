@@ -287,3 +287,52 @@ describe('checkCapture — two-team mode', () => {
     expect(result.captureTeam).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Transit mode — onTransit exclusion
+// ---------------------------------------------------------------------------
+
+describe('checkCapture — onTransit exclusion', () => {
+  const zone = { stationId: 's1', name: 'Test', lat: 51.5, lon: 0, radiusM: 500 };
+
+  it('excludes a seeker with onTransit=true from the capture check', () => {
+    // s1 is in zone but on transit — no capture because the only eligible seeker is on transit
+    const state = makeGameState({
+      h1: { lat: 51.5001, lon: 0, role: 'hider',  onTransit: false },
+      s1: { lat: 51.5002, lon: 0, role: 'seeker', onTransit: true },
+    });
+    const result = checkCapture(state, [zone]);
+    expect(result.captured).toBe(false);
+    expect(result.seekersInZone).toEqual([]);
+  });
+
+  it('captures when a seeker with onTransit=false is in zone (other seeker on transit)', () => {
+    // s1 on transit (excluded), s2 off transit and in zone → only s2 counts → captured
+    const state = makeGameState({
+      h1: { lat: 51.5001, lon: 0,   role: 'hider',  onTransit: false },
+      s1: { lat: 51.5002, lon: 0,   role: 'seeker', onTransit: true  }, // excluded
+      s2: { lat: 51.4999, lon: 0,   role: 'seeker', onTransit: false }, // included and in zone
+    });
+    const result = checkCapture(state, [zone]);
+    expect(result.captured).toBe(true);
+    expect(result.seekersInZone).toEqual(['s2']);
+  });
+
+  it('does not capture when seeker with onTransit=false is outside zone', () => {
+    const state = makeGameState({
+      h1: { lat: 51.5001, lon: 0,  role: 'hider',  onTransit: false },
+      s1: { lat: 51.56,   lon: 0,  role: 'seeker', onTransit: false }, // off transit but far away
+    });
+    const result = checkCapture(state, [zone]);
+    expect(result.captured).toBe(false);
+  });
+
+  it('treats onTransit=false the same as onTransit absent (normal seek behaviour)', () => {
+    const state = makeGameState({
+      h1: { lat: 51.5001, lon: 0, role: 'hider'  },
+      s1: { lat: 51.5002, lon: 0, role: 'seeker', onTransit: false },
+    });
+    const result = checkCapture(state, [zone]);
+    expect(result.captured).toBe(true);
+  });
+});

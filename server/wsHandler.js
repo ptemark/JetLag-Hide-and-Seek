@@ -73,6 +73,9 @@ export class WsHandler {
       case 'location_update':
         this._handleLocationUpdate(playerId, message);
         break;
+      case 'set_transit':
+        this._handleSetTransit(playerId, message);
+        break;
       case 'request_state':
         this._handleRequestState(ws, message);
         break;
@@ -186,6 +189,21 @@ export class WsHandler {
         ws.send(payload);
       }
     }
+  }
+
+  _handleSetTransit(playerId, { gameId, onTransit }) {
+    if (!gameId) return;
+
+    if (this.gameStateManager) {
+      this.gameStateManager.setPlayerTransit(gameId, playerId, !!onTransit);
+    }
+
+    this.broadcastToGame(gameId, {
+      type: 'player_transit',
+      gameId,
+      playerId,
+      onTransit: !!onTransit,
+    });
   }
 
   _handleRequestState(ws, { gameId }) {

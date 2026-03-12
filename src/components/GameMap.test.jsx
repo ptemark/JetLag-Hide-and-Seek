@@ -432,6 +432,54 @@ describe('GameMap', () => {
     expect(mockCircle.addTo).toHaveBeenCalled();
   });
 
+  it('shows On Transit / Off Transit toggle for seeker during seeking phase', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.getByTestId('transit-toggle')).toBeInTheDocument();
+    expect(screen.getByTestId('transit-toggle')).toHaveTextContent('Off Transit');
+  });
+
+  it('does not show transit toggle for hiders', () => {
+    render(<GameMap player={player} game={{ ...game, status: 'seeking' }} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('transit-toggle')).not.toBeInTheDocument();
+  });
+
+  it('does not show transit toggle during hiding phase for seekers', () => {
+    const seeker = { ...player, role: 'seeker' };
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('transit-toggle')).not.toBeInTheDocument();
+  });
+
+  it('toggles to On Transit on click and sends set_transit WS message', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    const ws = MockWebSocket.last;
+    ws.readyState = WebSocket.OPEN;
+
+    const btn = screen.getByTestId('transit-toggle');
+    await act(async () => { btn.click(); });
+
+    expect(screen.getByTestId('transit-toggle')).toHaveTextContent('On Transit');
+    const sent = ws.send.mock.calls.map((c) => JSON.parse(c[0]));
+    const transitMsg = sent.find((m) => m.type === 'set_transit');
+    expect(transitMsg).toBeTruthy();
+    expect(transitMsg.onTransit).toBe(true);
+  });
+
+  it('handles player_transit WS event without crashing', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_transit', gameId: 'g1', playerId: 'p2', onTransit: true }),
+      });
+    });
+    expect(screen.getByTestId('map-container')).toBeInTheDocument();
+  });
+
   it('removes decoy circle when false_zone_expired WS event is received', async () => {
     mockCircle.remove.mockClear();
     render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);

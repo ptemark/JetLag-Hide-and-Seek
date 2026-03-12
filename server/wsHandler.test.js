@@ -676,3 +676,60 @@ describe('WsHandler — reconnect within grace period', () => {
     expect(handler.getGamePlayerCount('g1')).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// message routing — set_transit
+// ---------------------------------------------------------------------------
+
+describe('WsHandler — message routing — set_transit', () => {
+  let handler, loop, gsm, ws;
+
+  beforeEach(() => {
+    loop = makeLoop();
+    gsm = makeGsm();
+    // Add setPlayerTransit to the gsm stub
+    gsm.setPlayerTransit = vi.fn();
+    handler = new WsHandler(loop, gsm);
+    ws = mockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    ws.send.mockClear();
+  });
+
+  it('calls gsm.setPlayerTransit with onTransit=true', () => {
+    ws.emit('message', JSON.stringify({ type: 'set_transit', gameId: 'g1', onTransit: true }));
+    expect(gsm.setPlayerTransit).toHaveBeenCalledWith('g1', 'p1', true);
+  });
+
+  it('calls gsm.setPlayerTransit with onTransit=false', () => {
+    ws.emit('message', JSON.stringify({ type: 'set_transit', gameId: 'g1', onTransit: false }));
+    expect(gsm.setPlayerTransit).toHaveBeenCalledWith('g1', 'p1', false);
+  });
+
+  it('broadcasts player_transit to all players in the game', () => {
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    ws2.send.mockClear();
+
+    ws.emit('message', JSON.stringify({ type: 'set_transit', gameId: 'g1', onTransit: true }));
+
+    const msgs = sentMessages(ws2);
+    expect(msgs).toContainEqual({ type: 'player_transit', gameId: 'g1', playerId: 'p1', onTransit: true });
+  });
+
+  it('is silent when gameId is missing', () => {
+    ws.emit('message', JSON.stringify({ type: 'set_transit', onTransit: true }));
+    expect(gsm.setPlayerTransit).not.toHaveBeenCalled();
+  });
+
+  it('works without a GSM (no crash)', () => {
+    const noGsmHandler = new WsHandler(loop);
+    const noGsmWs = mockWs();
+    noGsmHandler.handleConnection(noGsmWs, 'p1');
+    noGsmWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    expect(() =>
+      noGsmWs.emit('message', JSON.stringify({ type: 'set_transit', gameId: 'g1', onTransit: true }))
+    ).not.toThrow();
+  });
+});

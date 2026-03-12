@@ -53,7 +53,7 @@ describe('GameStateManager', () => {
   it('adds a player to a game (auto-creates game)', () => {
     gsm.addPlayerToGame('g1', 'p1', 'seeker');
     const state = gsm.getGameState('g1');
-    expect(state.players['p1']).toEqual({ lat: null, lon: null, role: 'seeker', team: null });
+    expect(state.players['p1']).toEqual({ lat: null, lon: null, role: 'seeker', team: null, onTransit: false });
   });
 
   it('defaults role to hider', () => {
@@ -87,6 +87,49 @@ describe('GameStateManager', () => {
 
   it('ignores removePlayerFromGame for unknown game', () => {
     expect(() => gsm.removePlayerFromGame('unknown', 'p1')).not.toThrow();
+  });
+
+  // -------------------------------------------------------------------------
+  // Transit state
+  // -------------------------------------------------------------------------
+
+  it('initialises player onTransit to false', () => {
+    gsm.addPlayerToGame('g1', 'p1', 'seeker');
+    expect(gsm.getPlayerTransit('g1', 'p1')).toBe(false);
+  });
+
+  it('sets player transit status to true', () => {
+    gsm.addPlayerToGame('g1', 'p1', 'seeker');
+    const ok = gsm.setPlayerTransit('g1', 'p1', true);
+    expect(ok).toBe(true);
+    expect(gsm.getPlayerTransit('g1', 'p1')).toBe(true);
+  });
+
+  it('sets player transit status back to false', () => {
+    gsm.addPlayerToGame('g1', 'p1', 'seeker');
+    gsm.setPlayerTransit('g1', 'p1', true);
+    gsm.setPlayerTransit('g1', 'p1', false);
+    expect(gsm.getPlayerTransit('g1', 'p1')).toBe(false);
+  });
+
+  it('returns false from setPlayerTransit for unknown game', () => {
+    expect(gsm.setPlayerTransit('unknown', 'p1', true)).toBe(false);
+  });
+
+  it('returns false from setPlayerTransit for unknown player', () => {
+    gsm.createGame('g1');
+    expect(gsm.setPlayerTransit('g1', 'unknown', true)).toBe(false);
+  });
+
+  it('returns false from getPlayerTransit for unknown game', () => {
+    expect(gsm.getPlayerTransit('unknown', 'p1')).toBe(false);
+  });
+
+  it('getGameState snapshot includes onTransit field', () => {
+    gsm.addPlayerToGame('g1', 'p1', 'seeker');
+    gsm.setPlayerTransit('g1', 'p1', true);
+    const state = gsm.getGameState('g1');
+    expect(state.players['p1'].onTransit).toBe(true);
   });
 
   // -------------------------------------------------------------------------

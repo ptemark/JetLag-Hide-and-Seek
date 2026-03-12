@@ -7,9 +7,10 @@
  *
  * Capture rules (RULES.md):
  *   1. Find the zone that currently contains the hider.
- *   2. All seekers with known locations must be within that zone's radius.
+ *   2. All seekers with known locations AND not on transit must be within that zone's radius.
  *   3. Players whose lat/lon is null are excluded (location not yet reported).
- *   4. No hiders or no seekers with known locations → no capture.
+ *   4. Seekers with onTransit === true are excluded (they are still travelling).
+ *   5. No hiders or no seekers with known locations → no capture.
  */
 
 const EARTH_RADIUS_M = 6_371_000;
@@ -61,7 +62,8 @@ export function checkCapture(gameState, zones) {
 
   const players = Object.entries(gameState.players ?? {});
   const hiders  = players.filter(([, p]) => p.role === 'hider'  && p.lat != null && p.lon != null);
-  const seekers = players.filter(([, p]) => p.role === 'seeker' && p.lat != null && p.lon != null);
+  // Exclude seekers on transit (onTransit === true) — same as null-location exclusion.
+  const seekers = players.filter(([, p]) => p.role === 'seeker' && p.lat != null && p.lon != null && !p.onTransit);
 
   if (hiders.length === 0 || seekers.length === 0) return empty;
 

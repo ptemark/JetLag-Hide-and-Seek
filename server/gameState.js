@@ -40,7 +40,7 @@ export class GameStateManager {
     }
     const game = this._games.get(gameId);
     if (!game.players.has(playerId)) {
-      game.players.set(playerId, { lat: null, lon: null, role, team });
+      game.players.set(playerId, { lat: null, lon: null, role, team, onTransit: false });
     }
   }
 
@@ -51,6 +51,19 @@ export class GameStateManager {
     if (game.players.size === 0) {
       this._games.delete(gameId);
     }
+  }
+
+  setPlayerTransit(gameId, playerId, onTransit) {
+    const game = this._games.get(gameId);
+    if (!game) return false;
+    const player = game.players.get(playerId);
+    if (!player) return false;
+    player.onTransit = !!onTransit;
+    return true;
+  }
+
+  getPlayerTransit(gameId, playerId) {
+    return this._games.get(gameId)?.players.get(playerId)?.onTransit ?? false;
   }
 
   updatePlayerLocation(gameId, playerId, lat, lon) {

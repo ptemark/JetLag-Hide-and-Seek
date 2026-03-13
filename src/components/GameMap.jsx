@@ -10,6 +10,7 @@ import { submitScore } from '../api.js';
 
 const LOCATION_INTERVAL_MS = 10_000;
 const TIMER_TICK_MS = 1_000;
+const MAX_TRAIL_POINTS = 500;
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const OSM_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 const MAX_RECONNECT_ATTEMPTS = 6; // 1 s, 2 s, 4 s, 8 s, 16 s, 30 s
@@ -68,6 +69,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const mapRef = useRef(null);
   const markersRef = useRef({});          // { [playerId]: L.circleMarker }
   const falseZoneLayersRef = useRef({}); // { [decoyId]: L.circle }
+  const trailPolylineRef = useRef(null); // L.Polyline for hider journey trail
   const wsRef = useRef(null);
   const hidingStartedAtRef = useRef(null); // timestamp (ms) when hiding phase began
   const bonusSecondsRef = useRef(0);       // accumulated time_bonus card seconds
@@ -93,6 +95,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [curseEndsAt, setCurseEndsAt] = useState(null);   // ISO from curse_active; null when inactive
   const [falseZones, setFalseZones] = useState([]);        // [{ decoyId, zone }] — active decoy zones
   const [spotResult, setSpotResult] = useState(null);      // null | 'pending' | 'confirmed' | 'rejected'
+  const [locationTrail, setLocationTrail] = useState([]); // [{lat, lon}] hider's own route (hider only)
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -217,6 +220,25 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     }
   }, [falseZones, player.role]);
 
+  // ── Render hider journey trail polyline ───────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || player.role !== 'hider') return;
+
+    const latlngs = locationTrail.map((p) => [p.lat, p.lon]);
+
+    if (trailPolylineRef.current) {
+      trailPolylineRef.current.setLatLngs(latlngs);
+    } else if (latlngs.length >= 2) {
+      trailPolylineRef.current = L.polyline(latlngs, {
+        color: '#0000cc',
+        weight: 3,
+        opacity: 0.6,
+        dashArray: null,
+      }).addTo(map);
+    }
+  }, [locationTrail, player.role]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── WebSocket connection with exponential backoff reconnect ───────────────
   useEffect(() => {
     if (!serverUrl) return;
@@ -236,6 +258,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           ...prev,
           [msg.playerId]: { lat: msg.lat, lon: msg.lon },
         }));
+        // Accumulate the hider's own route trail for transit/measuring question context.
+        if (player.role === 'hider' && msg.playerId === player.playerId) {
+          setLocationTrail((prev) => {
+            const next = [...prev, { lat: msg.lat, lon: msg.lon }];
+            return next.length > MAX_TRAIL_POINTS ? next.slice(next.length - MAX_TRAIL_POINTS) : next;
+          });
+        }
       } else if (msg.type === 'game_state') {
         const positions = {};
         for (const p of msg.players ?? []) {
@@ -249,6 +278,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setPendingQuestionExpiresAt(null); // phase change clears any pending question timer
         if (msg.newPhase === 'hiding' || msg.phase === 'hiding') {
           hidingStartedAtRef.current = Date.now();
+          if (player.role === 'hider') setLocationTrail([]); // fresh trail at hiding start
         }
         if (msg.newPhase === 'finished' || msg.phase === 'finished') {
           const elapsedMs = hidingStartedAtRef.current

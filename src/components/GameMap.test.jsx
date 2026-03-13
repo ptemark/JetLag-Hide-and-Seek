@@ -17,7 +17,7 @@ vi.mock('../api.js', () => ({
 }));
 
 // ── Hoist mock objects so they're available inside vi.mock factory ─────────────
-const { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockL } = vi.hoisted(() => {
+const { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockPolyline, mockL } = vi.hoisted(() => {
   const mockMarker = {
     bindTooltip: vi.fn().mockReturnThis(),
     addTo: vi.fn().mockReturnThis(),
@@ -33,6 +33,7 @@ const { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockL } =
   const mockTileLayer = { addTo: vi.fn() };
   const mockRectangle = { addTo: vi.fn() };
   const mockCircle = { addTo: vi.fn(), bindTooltip: vi.fn().mockReturnThis(), remove: vi.fn() };
+  const mockPolyline = { addTo: vi.fn().mockReturnThis(), setLatLngs: vi.fn() };
 
   const mockL = {
     map: vi.fn().mockReturnValue(mockMap),
@@ -40,9 +41,10 @@ const { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockL } =
     rectangle: vi.fn().mockReturnValue(mockRectangle),
     circle: vi.fn().mockReturnValue(mockCircle),
     circleMarker: vi.fn().mockReturnValue(mockMarker),
+    polyline: vi.fn().mockReturnValue(mockPolyline),
   };
 
-  return { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockL };
+  return { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockPolyline, mockL };
 });
 
 vi.mock('leaflet', () => ({ default: mockL }));
@@ -84,11 +86,13 @@ describe('GameMap', () => {
     mockMap.setView.mockReturnValue(mockMap);
     mockMarker.bindTooltip.mockReturnThis();
     mockMarker.addTo.mockReturnThis();
+    mockPolyline.addTo.mockReturnThis();
     mockL.map.mockReturnValue(mockMap);
     mockL.tileLayer.mockReturnValue(mockTileLayer);
     mockL.rectangle.mockReturnValue(mockRectangle);
     mockL.circle.mockReturnValue(mockCircle);
     mockL.circleMarker.mockReturnValue(mockMarker);
+    mockL.polyline.mockReturnValue(mockPolyline);
   });
 
   afterEach(() => {
@@ -709,5 +713,100 @@ describe('GameMap', () => {
     render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
     expect(screen.queryByTestId('end-game-banner-hider')).not.toBeInTheDocument();
     expect(screen.queryByTestId('end-game-banner-seeker')).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Hider journey trail — Task 75
+  // ---------------------------------------------------------------------------
+
+  it('creates a polyline on the Leaflet map after hider receives 2+ player_location events', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.05, lon: -0.05 }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.06, lon: -0.06 }),
+      });
+    });
+    expect(mockL.polyline).toHaveBeenCalled();
+    expect(mockPolyline.addTo).toHaveBeenCalled();
+  });
+
+  it('updates polyline latlngs (not re-creates) on subsequent hider location events', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    // First two events create the polyline.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.05, lon: -0.05 }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.06, lon: -0.06 }),
+      });
+    });
+    const createCount = mockL.polyline.mock.calls.length;
+    // Third event should call setLatLngs, not create a new polyline.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.07, lon: -0.07 }),
+      });
+    });
+    expect(mockL.polyline.mock.calls.length).toBe(createCount); // no new polyline created
+    expect(mockPolyline.setLatLngs).toHaveBeenCalled();
+  });
+
+  it('enforces MAX_TRAIL_POINTS cap — trail never exceeds 500 points', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    // Send 501 location events (batched in one act → single render).
+    // React 18 batches all functional state updates, so the trail is capped at 500 before the
+    // first render, meaning L.polyline is created with exactly 500 latlngs.
+    await act(async () => {
+      for (let i = 0; i < 501; i++) {
+        MockWebSocket.last.onmessage?.({
+          data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.0 + i * 0.0001, lon: -0.05 }),
+        });
+      }
+    });
+    // L.polyline should have been created with exactly 500 points (cap enforced).
+    expect(mockL.polyline).toHaveBeenCalled();
+    const creationLatlngs = mockL.polyline.mock.calls[0][0];
+    expect(creationLatlngs).toHaveLength(500);
+  });
+
+  it('does not create a polyline for seeker player_location events', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    render(<GameMap player={seeker} game={{ ...game, status: 'seeking' }} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.05, lon: -0.05 }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.06, lon: -0.06 }),
+      });
+    });
+    expect(mockL.polyline).not.toHaveBeenCalled();
+  });
+
+  it('resets trail (clears polyline points) on phase_change to hiding', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    // Build up a trail.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.05, lon: -0.05 }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.06, lon: -0.06 }),
+      });
+    });
+    expect(mockL.polyline).toHaveBeenCalled();
+    // Transition back to hiding (e.g. replay).
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', phase: 'hiding' }),
+      });
+    });
+    // After reset the polyline should be updated to an empty array.
+    const lastSetLatLngs = mockPolyline.setLatLngs.mock.calls.at(-1);
+    expect(lastSetLatLngs[0]).toHaveLength(0);
   });
 });

@@ -49,11 +49,30 @@ export class GameStateManager {
     return this._games.get(gameId)?.players.get(playerId)?.role ?? null;
   }
 
+  /**
+   * Return the playerId of the current hider in a game, or null if none has
+   * joined yet.  Used to enforce the one-hider-per-game rule.
+   */
+  getHiderId(gameId) {
+    const game = this._games.get(gameId);
+    if (!game) return null;
+    for (const [pid, data] of game.players.entries()) {
+      if (data.role === 'hider') return pid;
+    }
+    return null;
+  }
+
   addPlayerToGame(gameId, playerId, role = 'hider', team = null) {
     if (!this._games.has(gameId)) {
       this.createGame(gameId);
     }
     const game = this._games.get(gameId);
+    if (role === 'hider') {
+      const existingHiderId = this.getHiderId(gameId);
+      if (existingHiderId !== null && existingHiderId !== playerId) {
+        throw new Error('HIDER_SLOT_TAKEN');
+      }
+    }
     if (!game.players.has(playerId)) {
       game.players.set(playerId, { lat: null, lon: null, role, team, onTransit: false });
     }

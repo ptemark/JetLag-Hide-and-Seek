@@ -96,6 +96,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [falseZones, setFalseZones] = useState([]);        // [{ decoyId, zone }] — active decoy zones
   const [spotResult, setSpotResult] = useState(null);      // null | 'pending' | 'confirmed' | 'rejected'
   const [locationTrail, setLocationTrail] = useState([]); // [{lat, lon}] hider's own route (hider only)
+  const [joinError, setJoinError] = useState(null);       // error message when server rejects join
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -328,6 +329,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       } else if (msg.type === 'end_game_started') {
         endGameActiveRef.current = true;
         setEndGameActive(true);
+      } else if (msg.type === 'error') {
+        setJoinError(msg.message ?? 'An error occurred');
       }
     }
 
@@ -421,6 +424,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       {wsStatus === 'reconnecting' && (
         <p role="status" data-testid="reconnecting-banner" style={{ background: '#fee2e2', padding: '0.25rem 0.5rem' }}>
           Reconnecting…
+        </p>
+      )}
+
+      {joinError && (
+        <p role="alert" data-testid="join-error-banner" style={{ background: '#fecaca', padding: '0.5rem', fontWeight: 'bold' }}>
+          {joinError}
         </p>
       )}
 

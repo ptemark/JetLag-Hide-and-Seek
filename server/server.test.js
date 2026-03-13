@@ -286,11 +286,11 @@ describe('WsHandler — game routing', () => {
     const ws1 = createMockWs();
     const ws2 = createMockWs();
     handler.handleConnection(ws1, 'p1');
-    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
     ws1.send.mockClear();
 
     handler.handleConnection(ws2, 'p2');
-    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
 
     expect(ws1.send).toHaveBeenCalledWith(
       JSON.stringify({ type: 'player_joined', gameId: 'g1', playerId: 'p2', team: null })
@@ -320,8 +320,8 @@ describe('WsHandler — game routing', () => {
     const ws2 = createMockWs();
     handler.handleConnection(ws1, 'p1');
     handler.handleConnection(ws2, 'p2');
-    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
-    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
     expect(handler.getGamePlayerCount('g1')).toBe(2);
   });
 
@@ -359,8 +359,8 @@ describe('WsHandler — game routing', () => {
     const ws2 = createMockWs();
     handler.handleConnection(ws1, 'p1');
     handler.handleConnection(ws2, 'p2');
-    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
-    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws1.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
     ws1.send.mockClear();
     ws2.emit('message', JSON.stringify({ type: 'leave_game', gameId: 'g1' }));
     expect(ws1.send).toHaveBeenCalledWith(

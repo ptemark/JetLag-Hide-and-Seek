@@ -71,8 +71,8 @@ describe('GameStateManager', () => {
   });
 
   it('removes a player from a game', () => {
-    gsm.addPlayerToGame('g1', 'p1');
-    gsm.addPlayerToGame('g1', 'p2');
+    gsm.addPlayerToGame('g1', 'p1', 'hider');
+    gsm.addPlayerToGame('g1', 'p2', 'seeker');
     gsm.removePlayerFromGame('g1', 'p1');
     const state = gsm.getGameState('g1');
     expect(state.players).not.toHaveProperty('p1');
@@ -235,5 +235,48 @@ describe('GameStateManager', () => {
   it('getPlayerRole returns null for unknown player in known game', () => {
     gsm.createGame('g1');
     expect(gsm.getPlayerRole('g1', 'ghost')).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // getHiderId
+  // -------------------------------------------------------------------------
+
+  it('getHiderId returns null when no hider has joined', () => {
+    gsm.createGame('g1');
+    expect(gsm.getHiderId('g1')).toBeNull();
+  });
+
+  it('getHiderId returns null for unknown game', () => {
+    expect(gsm.getHiderId('unknown')).toBeNull();
+  });
+
+  it('getHiderId returns the hider playerId once a hider joins', () => {
+    gsm.addPlayerToGame('g1', 'p1', 'hider');
+    gsm.addPlayerToGame('g1', 'p2', 'seeker');
+    expect(gsm.getHiderId('g1')).toBe('p1');
+  });
+
+  // -------------------------------------------------------------------------
+  // Single-hider enforcement in addPlayerToGame
+  // -------------------------------------------------------------------------
+
+  it('throws HIDER_SLOT_TAKEN when a second different player tries to join as hider', () => {
+    gsm.addPlayerToGame('g1', 'p1', 'hider');
+    expect(() => gsm.addPlayerToGame('g1', 'p2', 'hider')).toThrow('HIDER_SLOT_TAKEN');
+  });
+
+  it('does not throw when the same hider player rejoins as hider (idempotent)', () => {
+    gsm.addPlayerToGame('g1', 'p1', 'hider');
+    expect(() => gsm.addPlayerToGame('g1', 'p1', 'hider')).not.toThrow();
+  });
+
+  it('allows unlimited seekers to join even when a hider exists', () => {
+    gsm.addPlayerToGame('g1', 'p1', 'hider');
+    expect(() => {
+      gsm.addPlayerToGame('g1', 'p2', 'seeker');
+      gsm.addPlayerToGame('g1', 'p3', 'seeker');
+      gsm.addPlayerToGame('g1', 'p4', 'seeker');
+    }).not.toThrow();
+    expect(Object.keys(gsm.getGameState('g1').players)).toHaveLength(4);
   });
 });

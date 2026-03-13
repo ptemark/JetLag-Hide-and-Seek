@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS game_players (
 -- Idempotent migration: add team column if it doesn't exist yet.
 ALTER TABLE game_players ADD COLUMN IF NOT EXISTS team TEXT CHECK (team IN ('A', 'B'));
 
+-- Idempotent migration: enforce exactly one hider per game at the DB level.
+CREATE UNIQUE INDEX IF NOT EXISTS game_players_one_hider
+  ON game_players (game_id) WHERE role = 'hider';
+
 -- -------------------------------------------------------------------------
 -- questions
 -- Questions submitted by seekers to narrow down the hider's location.

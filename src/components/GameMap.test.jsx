@@ -809,4 +809,40 @@ describe('GameMap', () => {
     const lastSetLatLngs = mockPolyline.setLatLngs.mock.calls.at(-1);
     expect(lastSetLatLngs[0]).toHaveLength(0);
   });
+
+  // ---------------------------------------------------------------------------
+  // Join error banner — Task 76
+  // ---------------------------------------------------------------------------
+
+  it('does not show join-error-banner on initial render', () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('join-error-banner')).not.toBeInTheDocument();
+  });
+
+  it('shows join-error-banner when server sends an error message', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({
+          type: 'error',
+          code: 'HIDER_SLOT_TAKEN',
+          message: 'A hider has already joined this game',
+        }),
+      });
+    });
+    expect(screen.getByTestId('join-error-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('join-error-banner')).toHaveTextContent(
+      'A hider has already joined this game',
+    );
+  });
+
+  it('shows fallback text in join-error-banner when error message is missing', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'error' }),
+      });
+    });
+    expect(screen.getByTestId('join-error-banner')).toHaveTextContent('An error occurred');
+  });
 });

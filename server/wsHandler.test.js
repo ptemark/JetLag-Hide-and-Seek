@@ -284,6 +284,31 @@ describe('WsHandler — message routing — join_game', () => {
       noGsmWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }))
     ).not.toThrow();
   });
+
+  it('sends HIDER_SLOT_TAKEN error and does not send joined_game when GSM throws', () => {
+    gsm.addPlayerToGame.mockImplementation(() => { throw new Error('HIDER_SLOT_TAKEN'); });
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    const msgs = sentMessages(ws);
+    expect(msgs).toContainEqual({
+      type: 'error',
+      code: 'HIDER_SLOT_TAKEN',
+      message: 'A hider has already joined this game',
+    });
+    expect(msgs.find(m => m.type === 'joined_game')).toBeUndefined();
+  });
+
+  it('removes the player from gameClients after HIDER_SLOT_TAKEN so the slot is not leaked', () => {
+    gsm.addPlayerToGame.mockImplementation(() => { throw new Error('HIDER_SLOT_TAKEN'); });
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    expect(handler.getGamePlayerCount('g1')).toBe(0);
+  });
+
+  it('re-throws unexpected errors from GSM (non-HIDER_SLOT_TAKEN)', () => {
+    gsm.addPlayerToGame.mockImplementation(() => { throw new Error('UNEXPECTED'); });
+    expect(() =>
+      ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }))
+    ).toThrow('UNEXPECTED');
+  });
 });
 
 // ---------------------------------------------------------------------------

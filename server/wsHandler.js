@@ -153,7 +153,27 @@ export class WsHandler {
     }
 
     if (this.gameStateManager) {
-      this.gameStateManager.addPlayerToGame(gameId, playerId, role, assignedTeam);
+      try {
+        this.gameStateManager.addPlayerToGame(gameId, playerId, role, assignedTeam);
+      } catch (err) {
+        if (err.message === 'HIDER_SLOT_TAKEN') {
+          // Roll back the connection bookkeeping — this player cannot join as hider.
+          const gamePlayers = this.gameClients.get(gameId);
+          if (gamePlayers) {
+            gamePlayers.delete(playerId);
+            if (gamePlayers.size === 0) this.gameClients.delete(gameId);
+          }
+          this.playerGames.get(playerId)?.delete(gameId);
+          if (this.playerTeams.has(playerId)) this.playerTeams.delete(playerId);
+          this._send(ws, {
+            type: 'error',
+            code: 'HIDER_SLOT_TAKEN',
+            message: 'A hider has already joined this game',
+          });
+          return;
+        }
+        throw err;
+      }
     }
 
     // Confirm join to the new player, including team assignment if applicable.

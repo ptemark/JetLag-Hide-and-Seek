@@ -149,8 +149,8 @@ describe('Message delivery — closed-client safety', () => {
     handler.handleConnection(open, 'p1');
     handler.handleConnection(closed, 'p2');
 
-    open.emit('message', msg('join_game', { gameId: 'g1' }));
-    closed.emit('message', msg('join_game', { gameId: 'g1' }));
+    open.emit('message', msg('join_game', { gameId: 'g1', role: 'hider' }));
+    closed.emit('message', msg('join_game', { gameId: 'g1', role: 'seeker' }));
 
     open.send.mockClear();
     closed.send.mockClear();
@@ -214,8 +214,8 @@ describe('Connection reliability — multi-game cleanup', () => {
     handler.handleConnection(ws1, 'p1');
     handler.handleConnection(ws2, 'p2');
 
-    ws1.emit('message', msg('join_game', { gameId: 'g1' }));
-    ws2.emit('message', msg('join_game', { gameId: 'g1' }));
+    ws1.emit('message', msg('join_game', { gameId: 'g1', role: 'hider' }));
+    ws2.emit('message', msg('join_game', { gameId: 'g1', role: 'seeker' }));
 
     ws2.send.mockClear();
     ws1.emit('close');
@@ -468,7 +468,7 @@ describe('Connection reliability — concurrent players', () => {
     for (let i = 0; i < 5; i++) {
       const ws = createMockWs();
       handler.handleConnection(ws, `p${i}`);
-      ws.emit('message', msg('join_game', { gameId: 'notify-game' }));
+      ws.emit('message', msg('join_game', { gameId: 'notify-game', role: i === 0 ? 'hider' : 'seeker' }));
       sockets.push(ws);
     }
 

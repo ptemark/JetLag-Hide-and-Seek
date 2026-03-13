@@ -845,4 +845,83 @@ describe('GameMap', () => {
     });
     expect(screen.getByTestId('join-error-banner')).toHaveTextContent('An error occurred');
   });
+
+  // ---------------------------------------------------------------------------
+  // Out-of-zone banners — Task 77
+  // ---------------------------------------------------------------------------
+
+  it('does not show out-of-zone-banner on initial render', () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('out-of-zone-banner')).not.toBeInTheDocument();
+  });
+
+  it('shows out-of-zone-banner for hider on zone_warning HIDER_OUT_OF_ZONE', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'zone_warning', code: 'HIDER_OUT_OF_ZONE', message: 'You are outside your hiding zone' }),
+      });
+    });
+    expect(screen.getByTestId('out-of-zone-banner')).toBeInTheDocument();
+  });
+
+  it('does not show out-of-zone-banner for a zone_warning with a different code', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'zone_warning', code: 'OTHER_CODE' }),
+      });
+    });
+    expect(screen.queryByTestId('out-of-zone-banner')).not.toBeInTheDocument();
+  });
+
+  it('resets out-of-zone-banner on phase_change', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'zone_warning', code: 'HIDER_OUT_OF_ZONE', message: 'Outside' }),
+      });
+    });
+    expect(screen.getByTestId('out-of-zone-banner')).toBeInTheDocument();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+      });
+    });
+    expect(screen.queryByTestId('out-of-zone-banner')).not.toBeInTheDocument();
+  });
+
+  it('does not show hider-out-of-zone-banner on initial render', () => {
+    const seekerPlayer = { playerId: 'p1', name: 'Alice', role: 'seeker' };
+    render(<GameMap player={seekerPlayer} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('hider-out-of-zone-banner')).not.toBeInTheDocument();
+  });
+
+  it('shows hider-out-of-zone-banner for seeker on hider_out_of_zone event', async () => {
+    const seekerPlayer = { playerId: 'p1', name: 'Alice', role: 'seeker' };
+    render(<GameMap player={seekerPlayer} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'hider_out_of_zone', gameId: 'g1' }),
+      });
+    });
+    expect(screen.getByTestId('hider-out-of-zone-banner')).toBeInTheDocument();
+  });
+
+  it('resets hider-out-of-zone-banner for seeker on phase_change', async () => {
+    const seekerPlayer = { playerId: 'p1', name: 'Alice', role: 'seeker' };
+    render(<GameMap player={seekerPlayer} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'hider_out_of_zone', gameId: 'g1' }),
+      });
+    });
+    expect(screen.getByTestId('hider-out-of-zone-banner')).toBeInTheDocument();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+      });
+    });
+    expect(screen.queryByTestId('hider-out-of-zone-banner')).not.toBeInTheDocument();
+  });
 });

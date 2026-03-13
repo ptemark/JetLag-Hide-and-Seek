@@ -110,6 +110,10 @@ export class GameStateManager {
     return true;
   }
 
+  getGameStatus(gameId) {
+    return this._games.get(gameId)?.status ?? null;
+  }
+
   setGameStatus(gameId, status) {
     const game = this._games.get(gameId);
     if (!game) return false;

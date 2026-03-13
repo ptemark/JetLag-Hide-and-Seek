@@ -7,7 +7,11 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 76 complete. Single hider enforcement; getHiderId + HIDER_SLOT_TAKEN in gameState.js; wsHandler rolls back gameClients on error; partial unique DB index; joinError banner in GameMap.jsx; 1235 tests pass._
+_Task 77 complete. Hider out-of-zone warning; getGameStatus in GameStateManager; zone boundary check in wsHandler._handleLocationUpdate using haversineDistance; zone_warning + hider_out_of_zone events; frontend banners with phase_change reset; 1249 tests pass._
+
+### Phase 24 — Rules Enforcement
+
+- [x] **77** — Hider out-of-zone warning during seeking phase: `RULES.md` §Hiding Rules rule 4 states "At end of hiding period, Hider must remain within their hiding zone." Nothing currently enforces or signals this. Changes needed: (1) `server/gameState.js` — add `getGameStatus(gameId)` returning `this._games.get(gameId)?.status ?? null` for efficient phase checks. (2) `server/wsHandler.js` — in `_handleLocationUpdate`, after updating and echoing the hider's position, if the game status is `'seeking'` and the game has zones, check whether the hider's lat/lon is inside any zone (`haversineDistance` from `captureDetector.js`). If outside all zones, send `{ type: 'zone_warning', code: 'HIDER_OUT_OF_ZONE', message: 'You are outside your hiding zone' }` to the hider's own socket, and broadcast `{ type: 'hider_out_of_zone', gameId }` to all players in the game. (3) `src/components/GameMap.jsx` — add `outOfZone` state (boolean); handle `zone_warning` with `code: 'HIDER_OUT_OF_ZONE'` by setting `outOfZone = true`; reset to `false` on `phase_change`; render a warning banner to the hider when `outOfZone` is true. Handle `hider_out_of_zone` by setting a `hiderOutOfZone` boolean state and rendering a seeker notification. Tests: `server/wsHandler.test.js` (hider in zone during seeking → no warning; hider outside zone during seeking → zone_warning to hider + hider_out_of_zone broadcast; wrong phase → no warning; seeker → no warning; no zones → no warning); `src/components/GameMap.test.jsx` (zone_warning renders hider banner; hider_out_of_zone renders seeker notification; phase_change resets hider banner).
 
 ---
 
@@ -15,6 +19,7 @@ _Task 76 complete. Single hider enforcement; getHiderId + HIDER_SLOT_TAKEN in ga
 
 | # | Date | Task | Files | Notes |
 |---|------|------|-------|-------|
+| 77 | 2026-03-13 | Hider out-of-zone warning | server/gameState.js, server/wsHandler.js, src/components/GameMap.jsx, server/wsHandler.test.js, src/components/GameMap.test.jsx | getGameStatus added; zone_warning + hider_out_of_zone events; banners with phase reset; 1249 tests pass |
 | 1 | 2026-03-05 | Initialize project repository | README.md, LICENSE, src/, functions/, docs/, config/ | Git initialized; MIT license; placeholder dirs with .gitkeep |
 | 2 | 2026-03-05 | Set up build and deployment tools | package.json, vite.config.js, index.html, src/main.jsx, src/App.jsx, src/App.test.jsx, .gitignore, .github/workflows/ci.yml | React+Vite+Vitest; build and 2 tests pass; CI placeholder added |
 | 4 | 2026-03-05 | Define environment configuration | .env.example, config/env.js, config/env.test.js | Typed ENV config module; 16 new tests; build clean; no secrets committed |

@@ -1,4 +1,4 @@
-import { checkSpot as _checkSpotImpl } from './captureDetector.js';
+import { checkSpot as _checkSpotImpl, haversineDistance } from './captureDetector.js';
 
 const WS_OPEN = 1;
 
@@ -232,6 +232,28 @@ export class WsHandler {
       if (hiderWs) {
         this._send(hiderWs, message);
       }
+
+      // RULES.md §Hiding Rules rule 4: hider must remain within their zone during seeking.
+      // Warn the hider (and inform all players) if GPS shows them outside the zone.
+      if (this.gameStateManager?.getGameStatus(gameId) === 'seeking') {
+        const zones = this.gameStateManager.getGameZones(gameId);
+        if (zones.length > 0) {
+          const inZone = zones.some(
+            (z) => haversineDistance(lat, lon, z.lat, z.lon) <= z.radiusM,
+          );
+          if (!inZone) {
+            if (hiderWs) {
+              this._send(hiderWs, {
+                type: 'zone_warning',
+                code: 'HIDER_OUT_OF_ZONE',
+                message: 'You are outside your hiding zone',
+              });
+            }
+            this.broadcastToGame(gameId, { type: 'hider_out_of_zone', gameId });
+          }
+        }
+      }
+
       return;
     }
 

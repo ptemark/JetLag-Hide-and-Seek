@@ -50,6 +50,8 @@ function makeGsm() {
     isEndGameActive: vi.fn().mockReturnValue(false),
     getPlayerRole: vi.fn().mockReturnValue(null),
     setPlayerTransit: vi.fn().mockReturnValue(true),
+    getGameStatus: vi.fn().mockReturnValue(null),
+    getGameZones: vi.fn().mockReturnValue([]),
   };
 }
 
@@ -962,5 +964,123 @@ describe('WsHandler — message routing — spot_hider', () => {
     expect(() =>
       noGsmWs.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }))
     ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// location_update — hider out-of-zone warning (Task 77)
+// ---------------------------------------------------------------------------
+
+describe('WsHandler — hider out-of-zone warning', () => {
+  let handler, loop, gsm, hiderWs, seekerWs;
+
+  // A zone centred at (51.5, 0) with 500 m radius.
+  const zone = { stationId: 's1', lat: 51.5, lon: 0, radiusM: 500 };
+
+  beforeEach(() => {
+    loop = makeLoop();
+    gsm  = makeGsm();
+    gsm.isEndGameActive.mockReturnValue(false);
+    handler = new WsHandler(loop, gsm);
+
+    hiderWs = mockWs();
+    handler.handleConnection(hiderWs, 'h1');
+    hiderWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'hider' }));
+    hiderWs.send.mockClear();
+
+    seekerWs = mockWs();
+    handler.handleConnection(seekerWs, 's1');
+    seekerWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
+    seekerWs.send.mockClear();
+  });
+
+  it('sends no zone_warning when hider is inside zone during seeking', () => {
+    gsm.getPlayerRole.mockReturnValue('hider');
+    gsm.getGameStatus.mockReturnValue('seeking');
+    gsm.getGameZones.mockReturnValue([zone]);
+
+    // lat 51.5, lon 0 — centre of zone, distance = 0
+    hiderWs.emit('message', JSON.stringify({
+      type: 'location_update', gameId: 'g1', playerId: 'h1', lat: 51.5, lon: 0,
+    }));
+
+    const msgs = sentMessages(hiderWs);
+    expect(msgs.some(m => m.type === 'zone_warning')).toBe(false);
+  });
+
+  it('sends no hider_out_of_zone broadcast when hider is inside zone', () => {
+    gsm.getPlayerRole.mockReturnValue('hider');
+    gsm.getGameStatus.mockReturnValue('seeking');
+    gsm.getGameZones.mockReturnValue([zone]);
+
+    hiderWs.emit('message', JSON.stringify({
+      type: 'location_update', gameId: 'g1', playerId: 'h1', lat: 51.5, lon: 0,
+    }));
+
+    expect(sentMessages(seekerWs).some(m => m.type === 'hider_out_of_zone')).toBe(false);
+  });
+
+  it('sends zone_warning to hider when outside zone during seeking', () => {
+    gsm.getPlayerRole.mockReturnValue('hider');
+    gsm.getGameStatus.mockReturnValue('seeking');
+    gsm.getGameZones.mockReturnValue([zone]);
+
+    // lat 51.51 is ~1.1 km from 51.5 — outside 500 m radius
+    hiderWs.emit('message', JSON.stringify({
+      type: 'location_update', gameId: 'g1', playerId: 'h1', lat: 51.51, lon: 0,
+    }));
+
+    const msgs = sentMessages(hiderWs);
+    const warning = msgs.find(m => m.type === 'zone_warning');
+    expect(warning).toBeTruthy();
+    expect(warning.code).toBe('HIDER_OUT_OF_ZONE');
+  });
+
+  it('broadcasts hider_out_of_zone to all players when hider leaves zone', () => {
+    gsm.getPlayerRole.mockReturnValue('hider');
+    gsm.getGameStatus.mockReturnValue('seeking');
+    gsm.getGameZones.mockReturnValue([zone]);
+
+    hiderWs.emit('message', JSON.stringify({
+      type: 'location_update', gameId: 'g1', playerId: 'h1', lat: 51.51, lon: 0,
+    }));
+
+    expect(sentMessages(seekerWs).some(m => m.type === 'hider_out_of_zone' && m.gameId === 'g1')).toBe(true);
+  });
+
+  it('sends no warning during hiding phase (wrong phase)', () => {
+    gsm.getPlayerRole.mockReturnValue('hider');
+    gsm.getGameStatus.mockReturnValue('hiding');
+    gsm.getGameZones.mockReturnValue([zone]);
+
+    hiderWs.emit('message', JSON.stringify({
+      type: 'location_update', gameId: 'g1', playerId: 'h1', lat: 51.51, lon: 0,
+    }));
+
+    expect(sentMessages(hiderWs).some(m => m.type === 'zone_warning')).toBe(false);
+  });
+
+  it('sends no warning for a seeker location update (wrong role)', () => {
+    gsm.getPlayerRole.mockReturnValue('seeker');
+    gsm.getGameStatus.mockReturnValue('seeking');
+    gsm.getGameZones.mockReturnValue([zone]);
+
+    seekerWs.emit('message', JSON.stringify({
+      type: 'location_update', gameId: 'g1', playerId: 's1', lat: 51.51, lon: 0,
+    }));
+
+    expect(sentMessages(seekerWs).some(m => m.type === 'zone_warning')).toBe(false);
+  });
+
+  it('sends no warning during seeking when no zones are set', () => {
+    gsm.getPlayerRole.mockReturnValue('hider');
+    gsm.getGameStatus.mockReturnValue('seeking');
+    gsm.getGameZones.mockReturnValue([]); // no locked zone
+
+    hiderWs.emit('message', JSON.stringify({
+      type: 'location_update', gameId: 'g1', playerId: 'h1', lat: 51.51, lon: 0,
+    }));
+
+    expect(sentMessages(hiderWs).some(m => m.type === 'zone_warning')).toBe(false);
   });
 });

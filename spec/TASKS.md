@@ -7,7 +7,11 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 77 complete. Hider out-of-zone warning; getGameStatus in GameStateManager; zone boundary check in wsHandler._handleLocationUpdate using haversineDistance; zone_warning + hider_out_of_zone events; frontend banners with phase_change reset; 1249 tests pass._
+_Task 78 complete. movement_locked sent to hider when End Game blocks location update; endGameActive reset on phase_change → finished/hiding; movementLocked banner; submitScore added to test mock; 1254 tests pass._
+
+### Phase 27 — End Game Correctness
+
+- [x] **78** — Hider movement-locked server notification and End Game state cleanup: Two related gaps: (1) When the hider sends `location_update` during End Game, `server/wsHandler.js` silently discards it but never tells the hider why. Send `{ type: 'movement_locked', code: 'END_GAME_ACTIVE', message: 'You cannot move during End Game' }` to the hider's socket before returning, so the client receives explicit feedback. (2) `src/components/GameMap.jsx` — `endGameActive` state and `endGameActiveRef` are set to `true` on `end_game_started` but never reset to `false`, so the End Game banner persists even after the game transitions to `finished`. Fix: in the `phase_change` handler, when `msg.phase === 'finished'` or `msg.phase === 'hiding'` set `endGameActive(false)` and `endGameActiveRef.current = false`. Also handle the `movement_locked` message with `code: 'END_GAME_ACTIVE'` by showing a brief banner (or rely on the existing End Game banner already shown). Tests: `server/wsHandler.test.js` (hider location_update during end_game sends movement_locked to hider; seeker during end_game is unaffected — no movement_locked); `src/components/GameMap.test.jsx` (movement_locked with END_GAME_ACTIVE renders banner; endGameActive resets to false on phase_change → finished; endGameActive resets to false on phase_change → hiding).
 
 ### Phase 24 — Rules Enforcement
 
@@ -19,6 +23,7 @@ _Task 77 complete. Hider out-of-zone warning; getGameStatus in GameStateManager;
 
 | # | Date | Task | Files | Notes |
 |---|------|------|-------|-------|
+| 78 | 2026-03-13 | Hider movement-locked notification + End Game state fix | server/wsHandler.js, src/components/GameMap.jsx, server/wsHandler.test.js, src/components/GameMap.test.jsx | movement_locked sent to hider on End Game block; endGameActive reset on phase → finished/hiding; movementLocked banner; 1254 tests pass |
 | 77 | 2026-03-13 | Hider out-of-zone warning | server/gameState.js, server/wsHandler.js, src/components/GameMap.jsx, server/wsHandler.test.js, src/components/GameMap.test.jsx | getGameStatus added; zone_warning + hider_out_of_zone events; banners with phase reset; 1249 tests pass |
 | 1 | 2026-03-05 | Initialize project repository | README.md, LICENSE, src/, functions/, docs/, config/ | Git initialized; MIT license; placeholder dirs with .gitkeep |
 | 2 | 2026-03-05 | Set up build and deployment tools | package.json, vite.config.js, index.html, src/main.jsx, src/App.jsx, src/App.test.jsx, .gitignore, .github/workflows/ci.yml | React+Vite+Vitest; build and 2 tests pass; CI placeholder added |

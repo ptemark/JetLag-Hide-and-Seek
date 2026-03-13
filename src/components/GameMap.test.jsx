@@ -14,6 +14,7 @@ vi.mock('../api.js', () => ({
   fetchCards:     vi.fn().mockResolvedValue({ hand: [] }),
   playCardApi:    vi.fn(),
   lockZone:       vi.fn(),
+  submitScore:    vi.fn().mockResolvedValue({}),
 }));
 
 // ── Hoist mock objects so they're available inside vi.mock factory ─────────────
@@ -923,5 +924,79 @@ describe('GameMap', () => {
       });
     });
     expect(screen.queryByTestId('hider-out-of-zone-banner')).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Movement locked — Task 78
+  // ---------------------------------------------------------------------------
+
+  it('shows movement-locked-banner for hider on movement_locked END_GAME_ACTIVE', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'movement_locked', code: 'END_GAME_ACTIVE', message: 'You cannot move during End Game' }),
+      });
+    });
+    expect(screen.getByTestId('movement-locked-banner')).toBeInTheDocument();
+  });
+
+  it('does not show movement-locked-banner for movement_locked with different code', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'movement_locked', code: 'OTHER_CODE' }),
+      });
+    });
+    expect(screen.queryByTestId('movement-locked-banner')).not.toBeInTheDocument();
+  });
+
+  it('resets movement-locked-banner on phase_change', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'movement_locked', code: 'END_GAME_ACTIVE', message: 'You cannot move during End Game' }),
+      });
+    });
+    expect(screen.getByTestId('movement-locked-banner')).toBeInTheDocument();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', phase: 'hiding' }),
+      });
+    });
+    expect(screen.queryByTestId('movement-locked-banner')).not.toBeInTheDocument();
+  });
+
+  it('resets End Game banner on phase_change to finished', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }),
+      });
+    });
+    expect(screen.getByTestId('end-game-banner-hider')).toBeInTheDocument();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', phase: 'finished', winner: 'hider' }),
+      });
+    });
+    expect(screen.queryByTestId('end-game-banner-hider')).not.toBeInTheDocument();
+  });
+
+  it('resets End Game banner on phase_change to hiding', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }),
+      });
+    });
+    expect(screen.getByTestId('end-game-banner-hider')).toBeInTheDocument();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', phase: 'hiding' }),
+      });
+    });
+    expect(screen.queryByTestId('end-game-banner-hider')).not.toBeInTheDocument();
   });
 });

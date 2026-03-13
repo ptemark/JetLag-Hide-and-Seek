@@ -215,7 +215,17 @@ export class WsHandler {
 
     // Hider must stay put once End Game begins (RULES.md §End Game).
     if (this.gameStateManager?.isEndGameActive(gameId)) {
-      if (role === 'hider') return;
+      if (role === 'hider') {
+        const hiderWs = this.clients.get(playerId);
+        if (hiderWs) {
+          this._send(hiderWs, {
+            type: 'movement_locked',
+            code: 'END_GAME_ACTIVE',
+            message: 'You cannot move during End Game',
+          });
+        }
+        return;
+      }
     }
 
     if (this.gameStateManager) {

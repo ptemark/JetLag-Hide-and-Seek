@@ -99,6 +99,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [joinError, setJoinError] = useState(null);       // error message when server rejects join
   const [outOfZone, setOutOfZone] = useState(false);      // hider is outside their hiding zone (hider view)
   const [hiderOutOfZone, setHiderOutOfZone] = useState(false); // hider left zone (seeker view)
+  const [movementLocked, setMovementLocked] = useState(false); // server blocked hider movement (End Game)
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -281,11 +282,16 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setPendingQuestionExpiresAt(null); // phase change clears any pending question timer
         setOutOfZone(false);              // zone warnings reset on phase transition
         setHiderOutOfZone(false);
+        setMovementLocked(false);
         if (msg.newPhase === 'hiding' || msg.phase === 'hiding') {
+          endGameActiveRef.current = false;
+          setEndGameActive(false);
           hidingStartedAtRef.current = Date.now();
           if (player.role === 'hider') setLocationTrail([]); // fresh trail at hiding start
         }
         if (msg.newPhase === 'finished' || msg.phase === 'finished') {
+          endGameActiveRef.current = false;
+          setEndGameActive(false);
           const elapsedMs = hidingStartedAtRef.current
             ? Date.now() - hidingStartedAtRef.current
             : 0;
@@ -337,6 +343,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setOutOfZone(true);
       } else if (msg.type === 'hider_out_of_zone') {
         setHiderOutOfZone(true);
+      } else if (msg.type === 'movement_locked' && msg.code === 'END_GAME_ACTIVE') {
+        setMovementLocked(true);
       } else if (msg.type === 'error') {
         setJoinError(msg.message ?? 'An error occurred');
       }
@@ -450,6 +458,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       {hiderOutOfZone && player.role === 'seeker' && (
         <p role="status" data-testid="hider-out-of-zone-banner" style={{ background: '#dcfce7', padding: '0.5rem', fontWeight: 'bold' }}>
           The hider has left their hiding zone!
+        </p>
+      )}
+
+      {movementLocked && player.role === 'hider' && (
+        <p role="alert" data-testid="movement-locked-banner" style={{ background: '#fecaca', padding: '0.5rem', fontWeight: 'bold' }}>
+          Movement locked — you cannot move during End Game!
         </p>
       )}
 

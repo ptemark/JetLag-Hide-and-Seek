@@ -417,17 +417,22 @@ describe('WsHandler — message routing — location_update', () => {
     ).not.toThrow();
   });
 
-  it('silently ignores location_update from hider when End Game is active', () => {
+  it('sends movement_locked to hider when End Game is active and blocks location update', () => {
     gsm.isEndGameActive.mockReturnValue(true);
     gsm.getPlayerRole.mockReturnValue('hider');
 
     ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 10, lon: 20 }));
 
-    // GSM should NOT be updated and no broadcast should occur.
+    // GSM should NOT be updated.
     expect(gsm.updatePlayerLocation).not.toHaveBeenCalled();
+    // Hider's own socket receives movement_locked notification.
+    const sent = ws.send.mock.calls.map((c) => JSON.parse(c[0]));
+    const locked = sent.find((m) => m.type === 'movement_locked');
+    expect(locked).toBeDefined();
+    expect(locked.code).toBe('END_GAME_ACTIVE');
   });
 
-  it('still broadcasts location_update from seeker when End Game is active', () => {
+  it('does NOT send movement_locked to seeker when End Game is active', () => {
     gsm.isEndGameActive.mockReturnValue(true);
     gsm.getPlayerRole.mockReturnValue('seeker');
 
@@ -435,6 +440,9 @@ describe('WsHandler — message routing — location_update', () => {
 
     // Seeker location updates proceed normally during End Game.
     expect(gsm.updatePlayerLocation).toHaveBeenCalledWith('g1', 'p1', 10, 20);
+    // No movement_locked sent to seeker.
+    const sent = ws.send.mock.calls.map((c) => JSON.parse(c[0]));
+    expect(sent.find((m) => m.type === 'movement_locked')).toBeUndefined();
   });
 
   // ── Hider location privacy (Task 72) ──────────────────────────────────────

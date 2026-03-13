@@ -577,7 +577,38 @@ describe('GameMap', () => {
       });
     });
     expect(screen.getByTestId('spot-hider-btn')).toHaveTextContent('Not Close Enough');
-    expect(screen.getByTestId('spot-rejected-msg')).toBeInTheDocument();
+    expect(screen.getByTestId('spot-rejected-msg')).toHaveTextContent('You are 80 m away; need to be within 30 m');
+  });
+
+  it('shows generic fallback message on spot_rejected without distanceM', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'spot_rejected', gameId: 'g1', spotterId: 'p1' }),
+      });
+    });
+    expect(screen.getByTestId('spot-rejected-msg')).toHaveTextContent('You are not close enough to the hider yet.');
+  });
+
+  it('clears stale spot distance when a new spot attempt is made', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    // First attempt rejected with distance
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'spot_rejected', gameId: 'g1', spotterId: 'p1', distanceM: 80, spotRadiusM: 30 }),
+      });
+    });
+    expect(screen.getByTestId('spot-rejected-msg')).toHaveTextContent('You are 80 m away');
+    // Click again — state resets to pending; distance clears before next response
+    await act(async () => {
+      screen.getByTestId('spot-hider-btn').click();
+    });
+    // While pending the rejection message is not visible
+    expect(screen.queryByTestId('spot-rejected-msg')).not.toBeInTheDocument();
   });
 
   it('changes button label to "Hider Spotted!" on spot_confirmed response', async () => {

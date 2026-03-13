@@ -95,6 +95,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [curseEndsAt, setCurseEndsAt] = useState(null);   // ISO from curse_active; null when inactive
   const [falseZones, setFalseZones] = useState([]);        // [{ decoyId, zone }] — active decoy zones
   const [spotResult, setSpotResult] = useState(null);      // null | 'pending' | 'confirmed' | 'rejected'
+  const [spotDistance, setSpotDistance] = useState({ distanceM: null, spotRadiusM: null }); // from spot_rejected
   const [locationTrail, setLocationTrail] = useState([]); // [{lat, lon}] hider's own route (hider only)
   const [joinError, setJoinError] = useState(null);       // error message when server rejects join
   const [outOfZone, setOutOfZone] = useState(false);      // hider is outside their hiding zone (hider view)
@@ -336,6 +337,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setSpotResult('confirmed');
       } else if (msg.type === 'spot_rejected') {
         setSpotResult('rejected');
+        setSpotDistance({ distanceM: msg.distanceM ?? null, spotRadiusM: msg.spotRadiusM ?? null });
       } else if (msg.type === 'end_game_started') {
         endGameActiveRef.current = true;
         setEndGameActive(true);
@@ -543,6 +545,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
             disabled={spotResult === 'pending' || spotResult === 'confirmed'}
             onClick={() => {
               setSpotResult('pending');
+              setSpotDistance({ distanceM: null, spotRadiusM: null });
               if (wsRef.current?.readyState === WebSocket.OPEN) {
                 wsRef.current.send(JSON.stringify({
                   type: 'spot_hider',
@@ -566,7 +569,9 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           </button>
           {spotResult === 'rejected' && (
             <span data-testid="spot-rejected-msg" style={{ marginLeft: '0.5rem', color: '#b91c1c', fontSize: '0.875rem' }}>
-              You are not close enough to the hider yet.
+              {spotDistance.distanceM != null && spotDistance.spotRadiusM != null
+                ? `You are ${Math.round(spotDistance.distanceM)} m away; need to be within ${spotDistance.spotRadiusM} m`
+                : 'You are not close enough to the hider yet.'}
             </span>
           )}
         </div>

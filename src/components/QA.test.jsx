@@ -479,4 +479,80 @@ describe('AnswerPanel', () => {
     await waitFor(() => screen.getByLabelText(/your answer/i));
     expect(screen.queryByTestId('thermometer-hint')).not.toBeInTheDocument();
   });
+
+  // ── Tentacle hints ────────────────────────────────────────────────────────
+
+  it('shows "within radius" tentacle hint when withinRadius is true', async () => {
+    const q = { ...QUESTION, category: 'tentacle', tentacleWithinRadius: true, tentacleDistanceKm: 1.23 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('tentacle-hint')).toHaveTextContent(/within radius/i)
+    );
+    expect(screen.getByTestId('tentacle-hint')).toHaveTextContent('1.23 km away');
+  });
+
+  it('shows "outside radius" tentacle hint when withinRadius is false', async () => {
+    const q = { ...QUESTION, category: 'tentacle', tentacleWithinRadius: false, tentacleDistanceKm: 5.67 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('tentacle-hint')).toHaveTextContent(/outside radius/i)
+    );
+    expect(screen.getByTestId('tentacle-hint')).toHaveTextContent('5.67 km away');
+  });
+
+  it('shows "unknown" tentacle hint when withinRadius and distanceKm are null', async () => {
+    const q = { ...QUESTION, category: 'tentacle', tentacleWithinRadius: null, tentacleDistanceKm: null };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('tentacle-hint')).toHaveTextContent(/unknown/i)
+    );
+  });
+
+  it('does not render a tentacle hint for non-tentacle questions', async () => {
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [QUESTION] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.queryByTestId('tentacle-hint')).not.toBeInTheDocument();
+  });
+});
+
+// ── QuestionPanel tentacle inputs ─────────────────────────────────────────────
+
+describe('QuestionPanel tentacle', () => {
+  it('shows target lat/lon/radius inputs when category is tentacle', async () => {
+    const user = userEvent.setup();
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await user.selectOptions(screen.getByLabelText(/category/i), 'tentacle');
+    expect(screen.getByLabelText(/target latitude/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/target longitude/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/radius \(km\)/i)).toBeInTheDocument();
+  });
+
+  it('includes tentacle params in submitQuestion call when category is tentacle', async () => {
+    const user = userEvent.setup();
+    api.submitQuestion.mockResolvedValue({ ...QUESTION, category: 'tentacle', questionId: 'q-t1' });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+
+    await user.type(screen.getByLabelText(/hider id/i), 'p2');
+    await user.selectOptions(screen.getByLabelText(/category/i), 'tentacle');
+    await user.type(screen.getByRole('textbox', { name: /question/i }), 'Are you near the tower?');
+    await user.type(screen.getByLabelText(/target latitude/i), '51.5');
+    await user.type(screen.getByLabelText(/target longitude/i), '-0.1');
+    await user.type(screen.getByLabelText(/radius \(km\)/i), '2');
+    await user.click(screen.getByRole('button', { name: /submit question/i }));
+
+    await waitFor(() =>
+      expect(api.submitQuestion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category:           'tentacle',
+          tentacleTargetLat:  51.5,
+          tentacleTargetLon:  -0.1,
+          tentacleRadiusKm:   2,
+        })
+      )
+    );
+  });
 });

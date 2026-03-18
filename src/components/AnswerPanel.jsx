@@ -2,6 +2,18 @@ import { useState, useEffect } from 'react';
 import { listQuestions, submitAnswer, uploadQuestionPhoto } from '../api.js';
 
 /**
+ * Derive the tentacle result label from proximity data.
+ * @param {boolean|null} withinRadius - whether hider is within the target radius
+ * @param {number|null} distanceKm - distance from hider to target in km
+ * @returns {string} human-readable hint
+ */
+function tentacleHint(withinRadius, distanceKm) {
+  if (withinRadius === true)  return `Tentacle hint: within radius — ${distanceKm.toFixed(2)} km away`;
+  if (withinRadius === false) return `Tentacle hint: outside radius — ${distanceKm.toFixed(2)} km away`;
+  return 'Tentacle hint: unknown — position unavailable';
+}
+
+/**
  * Derive the thermometer result label from two distance readings.
  * @param {number|null} current - distance in metres at question time
  * @param {number|null} previous - distance in metres one location update earlier
@@ -104,6 +116,11 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
           {q.category === 'thermometer' && (
             <p data-testid="thermometer-hint">
               {thermometerHint(q.thermometerCurrentDistanceM, q.thermometerPreviousDistanceM)}
+            </p>
+          )}
+          {q.category === 'tentacle' && (
+            <p data-testid="tentacle-hint">
+              {tentacleHint(q.tentacleWithinRadius, q.tentacleDistanceKm)}
             </p>
           )}
           <form

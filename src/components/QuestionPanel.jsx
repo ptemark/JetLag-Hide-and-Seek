@@ -31,6 +31,9 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
   const [targetId, setTargetId] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [text, setText] = useState('');
+  const [tentacleTargetLat, setTentacleTargetLat] = useState('');
+  const [tentacleTargetLon, setTentacleTargetLon] = useState('');
+  const [tentacleRadiusKm, setTentacleRadiusKm] = useState('');
   const [submitted, setSubmitted] = useState([]);  // optimistic local submissions
   const [history, setHistory] = useState([]);       // server-side Q&A history
   const [historyError, setHistoryError] = useState(null);
@@ -75,12 +78,18 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
     setError(null);
     setSubmitting(true);
     try {
+      const tentacleParams = category === 'tentacle' ? {
+        tentacleTargetLat: Number(tentacleTargetLat),
+        tentacleTargetLon: Number(tentacleTargetLon),
+        tentacleRadiusKm:  Number(tentacleRadiusKm),
+      } : {};
       const question = await submitQuestion({
         gameId:   game.gameId,
         askerId:  player.playerId,
         targetId: targetId.trim(),
         category,
         text:     text.trim(),
+        ...tentacleParams,
       });
       setSubmitted((prev) => [question, ...prev]);
       setText('');
@@ -138,6 +147,42 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
             rows={3}
           />
         </label>
+
+        {category === 'tentacle' && (
+          <>
+            <label>
+              Target latitude
+              <input
+                type="number"
+                step="0.000001"
+                value={tentacleTargetLat}
+                onChange={(e) => setTentacleTargetLat(e.target.value)}
+                aria-label="Target latitude"
+              />
+            </label>
+            <label>
+              Target longitude
+              <input
+                type="number"
+                step="0.000001"
+                value={tentacleTargetLon}
+                onChange={(e) => setTentacleTargetLon(e.target.value)}
+                aria-label="Target longitude"
+              />
+            </label>
+            <label>
+              Radius (km)
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={tentacleRadiusKm}
+                onChange={(e) => setTentacleRadiusKm(e.target.value)}
+                aria-label="Radius (km)"
+              />
+            </label>
+          </>
+        )}
 
         <button type="submit" disabled={submitting || isCurseActive}>
           {submitting ? 'Sending…' : 'Submit question'}

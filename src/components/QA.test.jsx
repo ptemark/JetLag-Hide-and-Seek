@@ -794,3 +794,91 @@ describe('QuestionPanel photo display', () => {
     expect(screen.queryByTestId('question-photo-img')).not.toBeInTheDocument();
   });
 });
+
+// ── QuestionPanel computed hints in history ────────────────────────────────────
+
+describe('QuestionPanel computed hints in history', () => {
+  const answered = { text: 'OK.', createdAt: '2026-01-01T00:02:00Z' };
+
+  it('shows thermometer hint for answered thermometer question', async () => {
+    const q = {
+      questionId: 'q-th1', gameId: 'g1', askerId: 'p1', targetId: 'p2',
+      category: 'thermometer', text: 'Are you warmer?', status: 'answered',
+      answer: answered,
+      thermometerCurrentDistanceM: 300, thermometerPreviousDistanceM: 500,
+    };
+    api.listQuestions.mockResolvedValue({ questions: [q] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => expect(screen.getByTestId('question-thermometer-hint')).toBeInTheDocument());
+    expect(screen.getByTestId('question-thermometer-hint')).toHaveTextContent('warmer');
+  });
+
+  it('shows tentacle hint for answered tentacle question', async () => {
+    const q = {
+      questionId: 'q-tn1', gameId: 'g1', askerId: 'p1', targetId: 'p2',
+      category: 'tentacle', text: 'Within 5 km?', status: 'answered',
+      answer: answered,
+      tentacleWithinRadius: false, tentacleDistanceKm: 7.42,
+    };
+    api.listQuestions.mockResolvedValue({ questions: [q] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => expect(screen.getByTestId('question-tentacle-hint')).toBeInTheDocument());
+    expect(screen.getByTestId('question-tentacle-hint')).toHaveTextContent('outside radius');
+  });
+
+  it('shows measuring hint for answered measuring question', async () => {
+    const q = {
+      questionId: 'q-me1', gameId: 'g1', askerId: 'p1', targetId: 'p2',
+      category: 'measuring', text: 'Closer to tower?', status: 'answered',
+      answer: answered,
+      measuringHiderIsCloser: true, measuringHiderDistanceKm: 1.2, measuringSeekerDistanceKm: 3.5,
+    };
+    api.listQuestions.mockResolvedValue({ questions: [q] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => expect(screen.getByTestId('question-measuring-hint')).toBeInTheDocument());
+    expect(screen.getByTestId('question-measuring-hint')).toHaveTextContent('hider is closer');
+  });
+
+  it('shows transit hint for answered transit question', async () => {
+    const q = {
+      questionId: 'q-tr1', gameId: 'g1', askerId: 'p1', targetId: 'p2',
+      category: 'transit', text: 'On my route?', status: 'answered',
+      answer: answered,
+      transitNearestStationName: 'Central Station', transitNearestStationDistanceKm: 0.35,
+    };
+    api.listQuestions.mockResolvedValue({ questions: [q] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => expect(screen.getByTestId('question-transit-hint')).toBeInTheDocument());
+    expect(screen.getByTestId('question-transit-hint')).toHaveTextContent('Central Station');
+  });
+
+  it('shows matching hint for answered matching question', async () => {
+    const q = {
+      questionId: 'q-ma1', gameId: 'g1', askerId: 'p1', targetId: 'p2',
+      category: 'matching', text: 'Same airport?', status: 'answered',
+      answer: answered,
+      matchingFeaturesMatch: true, matchingFeatureType: 'airport',
+      matchingHiderFeatureName: 'Heathrow', matchingSeekerFeatureName: 'Heathrow',
+    };
+    api.listQuestions.mockResolvedValue({ questions: [q] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => expect(screen.getByTestId('question-matching-hint')).toBeInTheDocument());
+    expect(screen.getByTestId('question-matching-hint')).toHaveTextContent('same airport');
+  });
+
+  it('does not render any computed hint for unanswered questions', async () => {
+    const q = {
+      questionId: 'q-th2', gameId: 'g1', askerId: 'p1', targetId: 'p2',
+      category: 'thermometer', text: 'Are you warmer?', status: 'pending',
+      thermometerCurrentDistanceM: 300, thermometerPreviousDistanceM: 500,
+    };
+    api.listQuestions.mockResolvedValue({ questions: [q] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => screen.getByText(/Are you warmer/));
+    expect(screen.queryByTestId('question-thermometer-hint')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('question-tentacle-hint')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('question-measuring-hint')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('question-transit-hint')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('question-matching-hint')).not.toBeInTheDocument();
+  });
+});

@@ -74,7 +74,7 @@ export class GameStateManager {
       }
     }
     if (!game.players.has(playerId)) {
-      game.players.set(playerId, { lat: null, lon: null, role, team, onTransit: false });
+      game.players.set(playerId, { lat: null, lon: null, role, team, onTransit: false, previousLocation: null });
     }
   }
 
@@ -105,9 +105,16 @@ export class GameStateManager {
     if (!game) return false;
     const player = game.players.get(playerId);
     if (!player) return false;
+    player.previousLocation = (player.lat != null && player.lon != null)
+      ? { lat: player.lat, lon: player.lon }
+      : null;
     player.lat = lat;
     player.lon = lon;
     return true;
+  }
+
+  getPreviousPlayerLocation(gameId, playerId) {
+    return this._games.get(gameId)?.players.get(playerId)?.previousLocation ?? null;
   }
 
   getGameStatus(gameId) {

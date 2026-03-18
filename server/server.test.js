@@ -1599,3 +1599,114 @@ describe('false_zone_expiry StateDispatcher task', () => {
     expect(broadcasts.find((b) => b.type === 'false_zone_expired')).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /internal/games/:gameId/thermometer
+// ---------------------------------------------------------------------------
+
+describe('GET /internal/games/:gameId/thermometer', () => {
+  let server;
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop();
+      server = null;
+    }
+    vi.useRealTimers();
+  });
+
+  it('returns 401 when no Authorization header and adminApiKey is configured', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/g1/thermometer?seekerId=s1`);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toMatch(/unauthorized/i);
+  });
+
+  it('returns 401 when wrong token is provided', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/g1/thermometer?seekerId=s1`, {
+      headers: { 'Authorization': 'Bearer wrong-key' },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for an unknown game', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/no-game/thermometer?seekerId=s1`, {
+      headers: { 'Authorization': 'Bearer secret-key' },
+    });
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/game not found/i);
+  });
+
+  it('returns thermometer result when seeker moved closer to hider (warmer)', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('therm-game', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('therm-game', 'hider1', 'hider');
+    server.gameStateManager.addPlayerToGame('therm-game', 'seeker1', 'seeker');
+    // Hider position
+    server.gameStateManager.updatePlayerLocation('therm-game', 'hider1', 51.5, 0);
+    // Seeker: first update sets previousLocation, second moves closer
+    server.gameStateManager.updatePlayerLocation('therm-game', 'seeker1', 51.6, 0);   // ~11 km from hider
+    server.gameStateManager.updatePlayerLocation('therm-game', 'seeker1', 51.51, 0);  // ~1 km from hider
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/therm-game/thermometer?seekerId=seeker1`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result).toBe('warmer');
+    expect(typeof body.currentDistanceM).toBe('number');
+    expect(typeof body.previousDistanceM).toBe('number');
+    expect(body.currentDistanceM).toBeLessThan(body.previousDistanceM);
+  });
+
+  it('returns unknown result when seeker has no previous location', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('therm-noprev', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('therm-noprev', 'hider1', 'hider');
+    server.gameStateManager.addPlayerToGame('therm-noprev', 'seeker1', 'seeker');
+    server.gameStateManager.updatePlayerLocation('therm-noprev', 'hider1', 51.5, 0);
+    // Only one location update — no previousLocation yet.
+    server.gameStateManager.updatePlayerLocation('therm-noprev', 'seeker1', 51.51, 0);
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/therm-noprev/thermometer?seekerId=seeker1`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result).toBe('unknown');
+  });
+
+  it('allows access when no adminApiKey is configured (open endpoint)', async () => {
+    server = createServer({ tickInterval: 5000 }); // no adminApiKey
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('open-game', { status: 'seeking' });
+
+    const res = await fetch(`http://localhost:${port}/internal/games/open-game/thermometer?seekerId=s1`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.result).toBe('unknown'); // seeker not in game → unknown
+  });
+});

@@ -929,3 +929,105 @@ describe('dbGetCurseExpiry', () => {
     await expect(dbGetCurseExpiry(pool, 'g1')).rejects.toThrow('timeout');
   });
 });
+
+// ---------------------------------------------------------------------------
+// dbCreateQuestion — thermometer columns
+// ---------------------------------------------------------------------------
+
+describe('dbCreateQuestion — thermometer columns', () => {
+  it('passes thermometer distances as INSERT parameters and returns them', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedParams = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
+        .mockImplementationOnce((sql, params) => {
+          capturedParams.all = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-t', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'thermometer', text: 'warmer?', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: params[6],
+            thermometer_previous_distance_m: params[7],
+          }] });
+        }),
+    };
+
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1',
+      category: 'thermometer', text: 'warmer?',
+      thermometerCurrentDistanceM: 350,
+      thermometerPreviousDistanceM: 800,
+    });
+
+    expect(result.thermometerCurrentDistanceM).toBe(350);
+    expect(result.thermometerPreviousDistanceM).toBe(800);
+    expect(capturedParams.all[6]).toBe(350);
+    expect(capturedParams.all[7]).toBe(800);
+  });
+
+  it('stores null thermometer distances when not provided', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedParams = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockImplementationOnce((sql, params) => {
+          capturedParams.all = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-m', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'matching', text: 'test', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null,
+            thermometer_previous_distance_m: null,
+          }] });
+        }),
+    };
+
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'test',
+    });
+
+    expect(result.thermometerCurrentDistanceM).toBeNull();
+    expect(result.thermometerPreviousDistanceM).toBeNull();
+    expect(capturedParams.all[6]).toBeNull();
+    expect(capturedParams.all[7]).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForPlayer — thermometer columns
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForPlayer — thermometer columns', () => {
+  it('returns thermometer distances when present', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-therm', game_id: 'g1', asker_id: 'a1', target_id: 'p1',
+        category: 'thermometer', text: 'warmer?', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: 450,
+        thermometer_previous_distance_m: 900,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForPlayer(pool, 'p1');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].thermometerCurrentDistanceM).toBe(450);
+    expect(questions[0].thermometerPreviousDistanceM).toBe(900);
+  });
+
+  it('returns null thermometer distances when columns are null', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-match', game_id: 'g1', asker_id: 'a1', target_id: 'p1',
+        category: 'matching', text: 'test', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null,
+        thermometer_previous_distance_m: null,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForPlayer(pool, 'p1');
+    expect(questions[0].thermometerCurrentDistanceM).toBeNull();
+    expect(questions[0].thermometerPreviousDistanceM).toBeNull();
+  });
+});

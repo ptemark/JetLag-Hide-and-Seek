@@ -53,7 +53,7 @@ describe('GameStateManager', () => {
   it('adds a player to a game (auto-creates game)', () => {
     gsm.addPlayerToGame('g1', 'p1', 'seeker');
     const state = gsm.getGameState('g1');
-    expect(state.players['p1']).toEqual({ lat: null, lon: null, role: 'seeker', team: null, onTransit: false });
+    expect(state.players['p1']).toEqual({ lat: null, lon: null, role: 'seeker', team: null, onTransit: false, previousLocation: null });
   });
 
   it('defaults role to hider', () => {
@@ -152,6 +152,29 @@ describe('GameStateManager', () => {
   it('returns false when updating location for unknown player', () => {
     gsm.createGame('g1');
     expect(gsm.updatePlayerLocation('g1', 'unknown', 0, 0)).toBe(false);
+  });
+
+  it('saves previousLocation as null on first location update', () => {
+    gsm.addPlayerToGame('g1', 'p1');
+    gsm.updatePlayerLocation('g1', 'p1', 51.5, -0.1);
+    expect(gsm.getPreviousPlayerLocation('g1', 'p1')).toBeNull();
+  });
+
+  it('saves previousLocation on second location update', () => {
+    gsm.addPlayerToGame('g1', 'p1');
+    gsm.updatePlayerLocation('g1', 'p1', 51.5, -0.1);
+    gsm.updatePlayerLocation('g1', 'p1', 51.6, -0.2);
+    const prev = gsm.getPreviousPlayerLocation('g1', 'p1');
+    expect(prev).toEqual({ lat: 51.5, lon: -0.1 });
+  });
+
+  it('getPreviousPlayerLocation returns null for unknown game', () => {
+    expect(gsm.getPreviousPlayerLocation('no-game', 'p1')).toBeNull();
+  });
+
+  it('getPreviousPlayerLocation returns null for unknown player', () => {
+    gsm.createGame('g1');
+    expect(gsm.getPreviousPlayerLocation('g1', 'no-player')).toBeNull();
   });
 
   // -------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { haversineDistance, checkCapture, checkSpot } from './captureDetector.js';
+import { haversineDistance, checkCapture, checkSpot, calculateThermometer } from './captureDetector.js';
 
 // ---------------------------------------------------------------------------
 // haversineDistance
@@ -443,5 +443,82 @@ describe('checkSpot', () => {
     const result = checkSpot(state, 's1', SPOT_RADIUS_M);
     expect(result.hiderLat).toBe(51.1234);
     expect(result.hiderLon).toBe(-0.5678);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calculateThermometer
+// ---------------------------------------------------------------------------
+
+describe('calculateThermometer', () => {
+  /** Build a minimal gameState with previousLocation on the seeker. */
+  function makeThermState(players) {
+    return { gameId: 'g1', status: 'seeking', players };
+  }
+
+  it('returns unknown when gameState is null', () => {
+    expect(calculateThermometer(null, 's1', 51.5, 0)).toEqual({ result: 'unknown' });
+  });
+
+  it('returns unknown when seekerId is null', () => {
+    const state = makeThermState({ s1: { lat: 51.5, lon: 0, role: 'seeker', previousLocation: { lat: 51.6, lon: 0 } } });
+    expect(calculateThermometer(state, null, 51.5, 0)).toEqual({ result: 'unknown' });
+  });
+
+  it('returns unknown when hiderLat is null', () => {
+    const state = makeThermState({ s1: { lat: 51.5, lon: 0, role: 'seeker', previousLocation: { lat: 51.6, lon: 0 } } });
+    expect(calculateThermometer(state, 's1', null, 0)).toEqual({ result: 'unknown' });
+  });
+
+  it('returns unknown when hiderLon is null', () => {
+    const state = makeThermState({ s1: { lat: 51.5, lon: 0, role: 'seeker', previousLocation: { lat: 51.6, lon: 0 } } });
+    expect(calculateThermometer(state, 's1', 51.5, null)).toEqual({ result: 'unknown' });
+  });
+
+  it('returns unknown when seeker has no current location', () => {
+    const state = makeThermState({ s1: { lat: null, lon: null, role: 'seeker', previousLocation: { lat: 51.6, lon: 0 } } });
+    expect(calculateThermometer(state, 's1', 51.5, 0)).toEqual({ result: 'unknown' });
+  });
+
+  it('returns unknown when seeker has no previousLocation', () => {
+    const state = makeThermState({ s1: { lat: 51.5, lon: 0, role: 'seeker', previousLocation: null } });
+    expect(calculateThermometer(state, 's1', 51.52, 0)).toEqual({ result: 'unknown' });
+  });
+
+  it('returns unknown when seekerId does not exist in gameState', () => {
+    const state = makeThermState({ s1: { lat: 51.5, lon: 0, role: 'seeker', previousLocation: { lat: 51.6, lon: 0 } } });
+    expect(calculateThermometer(state, 'no-such-player', 51.5, 0)).toEqual({ result: 'unknown' });
+  });
+
+  it('returns warmer when seeker moved closer to hider', () => {
+    // Hider at 51.5, 0. Seeker was at 51.6 (~11 km away), now at 51.51 (~1 km away).
+    const state = makeThermState({
+      s1: { lat: 51.51, lon: 0, role: 'seeker', previousLocation: { lat: 51.6, lon: 0 } },
+    });
+    const result = calculateThermometer(state, 's1', 51.5, 0);
+    expect(result.result).toBe('warmer');
+    expect(result.currentDistanceM).toBeLessThan(result.previousDistanceM);
+    expect(typeof result.currentDistanceM).toBe('number');
+    expect(typeof result.previousDistanceM).toBe('number');
+  });
+
+  it('returns colder when seeker moved farther from hider', () => {
+    // Hider at 51.5, 0. Seeker was at 51.51 (~1 km), now at 51.6 (~11 km).
+    const state = makeThermState({
+      s1: { lat: 51.6, lon: 0, role: 'seeker', previousLocation: { lat: 51.51, lon: 0 } },
+    });
+    const result = calculateThermometer(state, 's1', 51.5, 0);
+    expect(result.result).toBe('colder');
+    expect(result.currentDistanceM).toBeGreaterThan(result.previousDistanceM);
+  });
+
+  it('returns same when seeker stayed at the same distance from hider', () => {
+    // Hider at 0, 0. Seeker at (0.01, 0) and was also at (0.01, 0).
+    const state = makeThermState({
+      s1: { lat: 0.01, lon: 0, role: 'seeker', previousLocation: { lat: 0.01, lon: 0 } },
+    });
+    const result = calculateThermometer(state, 's1', 0, 0);
+    expect(result.result).toBe('same');
+    expect(result.currentDistanceM).toBe(result.previousDistanceM);
   });
 });

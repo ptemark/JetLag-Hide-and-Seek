@@ -903,3 +903,120 @@ describe('getQuestionPhoto', () => {
     expect(status).toBe(404);
   });
 });
+
+// ── submitQuestion — thermometer enrichment ────────────────────────────────
+
+describe('submitQuestion — thermometer enrichment', () => {
+  beforeEach(() => _clearStores());
+
+  it('fetches thermometer endpoint and stores distances for thermometer questions (in-process)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ result: 'warmer', currentDistanceM: 500, previousDistanceM: 1200 }),
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'thermometer', text: 'warmer or colder?' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.thermometerCurrentDistanceM).toBe(500);
+    expect(body.thermometerPreviousDistanceM).toBe(1200);
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toContain('/internal/games/game-1/thermometer');
+    expect(url).toContain('seekerId=seeker-1');
+    expect(opts.headers['Authorization']).toBe('Bearer test-admin-key');
+  });
+
+  it('stores null distances when thermometer fetch fails (in-process)', async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error('network error'));
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'thermometer', text: 'warmer or colder?' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.thermometerCurrentDistanceM).toBeNull();
+    expect(body.thermometerPreviousDistanceM).toBeNull();
+  });
+
+  it('does not fetch thermometer endpoint for non-thermometer categories (in-process)', async () => {
+    const mockFetch = vi.fn();
+
+    await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'matching', text: 'Is it near water?' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    // mockFetch only called for question_pending notify, not for thermometer
+    const thermometerCalls = mockFetch.mock.calls.filter(([url]) =>
+      typeof url === 'string' && url.includes('/thermometer'),
+    );
+    expect(thermometerCalls).toHaveLength(0);
+  });
+
+  it('stores null distances when no gameServerUrl is configured (in-process)', async () => {
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'thermometer', text: 'warmer?' }) },
+      null,
+      undefined,     // no gameServerUrl
+      undefined,     // no fetch
+      null,          // no adminApiKey
+    );
+
+    expect(status).toBe(201);
+    expect(body.thermometerCurrentDistanceM).toBeNull();
+    expect(body.thermometerPreviousDistanceM).toBeNull();
+  });
+
+  it('fetches thermometer endpoint and passes distances to dbCreateQuestion (pool path)', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedArgs = {};
+
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })   // no active curse
+        .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
+        .mockImplementationOnce((sql, params) => {
+          capturedArgs.params = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-therm', game_id: 'game-1', asker_id: 'seeker-1', target_id: 'hider-1',
+            category: 'thermometer', text: 'warmer?', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: params[6],
+            thermometer_previous_distance_m: params[7],
+          }] });
+        }),
+    };
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ result: 'colder', currentDistanceM: 900, previousDistanceM: 400 }),
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'thermometer', text: 'warmer?' }) },
+      pool,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.thermometerCurrentDistanceM).toBe(900);
+    expect(body.thermometerPreviousDistanceM).toBe(400);
+    // Verify distances were passed as INSERT params
+    expect(capturedArgs.params[6]).toBe(900);
+    expect(capturedArgs.params[7]).toBe(400);
+  });
+});

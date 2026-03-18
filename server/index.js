@@ -11,7 +11,7 @@ import { Logger, LogCategory, LogLevel } from './logger.js';
 import { MetricsCollector, MetricKey, RateTracker } from './monitoring.js';
 import { nullAlertManager, AlertType } from './alerting.js';
 import { nullAutoScaler } from './autoScaler.js';
-import { checkCapture } from './captureDetector.js';
+import { checkCapture, calculateThermometer } from './captureDetector.js';
 
 /** Default spot radius in metres (RULES.md §End Game GPS practical range). */
 const DEFAULT_SPOT_RADIUS_M = 30;
@@ -75,6 +75,7 @@ export function createServer({
   reconnectGraceMs = 30_000,
   spotRadiusM        = DEFAULT_SPOT_RADIUS_M,
   endGameTimeoutMs   = DEFAULT_END_GAME_TIMEOUT_MS,
+  adminApiKey        = null,
   logger        = new Logger({ level: LogLevel.INFO }),
   metrics       = new MetricsCollector(),
   alertManager  = nullAlertManager,
@@ -108,6 +109,38 @@ export function createServer({
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(state));
       }
+      return;
+    }
+
+    // GET /internal/games/:gameId/thermometer?seekerId= — compute warmer/colder
+    // delta for a seeker relative to the hider's current position. Protected by
+    // ADMIN_API_KEY Bearer token when adminApiKey is configured.
+    const thermometerMatch = req.method === 'GET'
+      && urlPath.match(/^\/internal\/games\/(?<gameId>[^/]+)\/thermometer$/);
+    if (thermometerMatch) {
+      const authHeader = req.headers['authorization'] ?? '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (adminApiKey && token !== adminApiKey) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+      const { gameId } = thermometerMatch.groups;
+      const gameState = gameStateManager.getGameState(gameId);
+      if (!gameState) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'game not found' }));
+        return;
+      }
+      const reqUrl = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      const seekerId = reqUrl.searchParams.get('seekerId');
+      const players = Object.entries(gameState.players ?? {});
+      const hiderEntry = players.find(([, p]) => p.role === 'hider' && p.lat != null && p.lon != null);
+      const hiderLat = hiderEntry?.[1].lat ?? null;
+      const hiderLon = hiderEntry?.[1].lon ?? null;
+      const result = calculateThermometer(gameState, seekerId, hiderLat, hiderLon);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
       return;
     }
 

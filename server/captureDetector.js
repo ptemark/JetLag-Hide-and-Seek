@@ -40,6 +40,50 @@ export function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Determine whether a seeker is getting warmer or colder relative to the hider
+ * by comparing their current distance to their previous distance.
+ *
+ * Returns `{ result: 'unknown' }` when the seeker has no previous location,
+ * has no current location, or hiderLat/hiderLon are null.
+ *
+ * @param {object} gameState
+ *   Snapshot from GameStateManager.getGameState():
+ *   { gameId, status, players: { [playerId]: { lat, lon, role, previousLocation } } }
+ * @param {string} seekerId  Player ID of the seeker asking the thermometer question.
+ * @param {number|null} hiderLat  Hider's current latitude.
+ * @param {number|null} hiderLon  Hider's current longitude.
+ * @returns {{
+ *   result: 'warmer' | 'colder' | 'same' | 'unknown',
+ *   currentDistanceM?: number,
+ *   previousDistanceM?: number,
+ * }}
+ */
+export function calculateThermometer(gameState, seekerId, hiderLat, hiderLon) {
+  const unknown = { result: 'unknown' };
+  if (!gameState || !seekerId || hiderLat == null || hiderLon == null) return unknown;
+
+  const seeker = gameState.players?.[seekerId];
+  if (!seeker || seeker.lat == null || seeker.lon == null) return unknown;
+  if (!seeker.previousLocation) return unknown;
+
+  const currentDistanceM  = haversineDistance(seeker.lat, seeker.lon, hiderLat, hiderLon);
+  const previousDistanceM = haversineDistance(
+    seeker.previousLocation.lat, seeker.previousLocation.lon, hiderLat, hiderLon,
+  );
+
+  let result;
+  if (currentDistanceM < previousDistanceM) {
+    result = 'warmer';
+  } else if (currentDistanceM > previousDistanceM) {
+    result = 'colder';
+  } else {
+    result = 'same';
+  }
+
+  return { result, currentDistanceM, previousDistanceM };
+}
+
+/**
  * Check whether seekers have captured the hider.
  *
  * In single-team mode (seekerTeams = 0), all seekers with known locations

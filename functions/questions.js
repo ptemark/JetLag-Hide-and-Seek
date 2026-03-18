@@ -85,6 +85,38 @@ function notifyQuestionPending({ gameId, questionId, expiresAt }, gameServerUrl,
   }
 }
 
+/**
+ * Fetch thermometer distances from the managed server.
+ * Returns `{ currentDistanceM, previousDistanceM }` with nulls on any failure.
+ * Failures are silent — the question is still created with null distances.
+ *
+ * @param {{ gameId: string, seekerId: string }} params
+ * @param {string|undefined} gameServerUrl
+ * @param {string|null} adminApiKey
+ * @param {typeof fetch} fetchFn
+ * @returns {Promise<{ currentDistanceM: number|null, previousDistanceM: number|null }>}
+ */
+async function fetchThermometerData({ gameId, seekerId }, gameServerUrl, adminApiKey, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+  if (!serverUrl || !fetchFn || !key) {
+    return { currentDistanceM: null, previousDistanceM: null };
+  }
+  try {
+    const res = await fetchFn(
+      `${serverUrl}/internal/games/${gameId}/thermometer?seekerId=${encodeURIComponent(seekerId)}`,
+      { headers: { 'Authorization': `Bearer ${key}` } },
+    );
+    const data = await res.json();
+    return {
+      currentDistanceM:  data.currentDistanceM  ?? null,
+      previousDistanceM: data.previousDistanceM ?? null,
+    };
+  } catch {
+    return { currentDistanceM: null, previousDistanceM: null };
+  }
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 /**
@@ -98,9 +130,12 @@ function notifyQuestionPending({ gameId, questionId, expiresAt }, gameServerUrl,
  *
  * @param {{ method: string, body: unknown }} req
  * @param {import('pg').Pool|null} [pool]
+ * @param {string} [gameServerUrl]  Override for GAME_SERVER_URL env var.
+ * @param {typeof fetch} [fetchFn]  Injectable fetch (tests / local dev).
+ * @param {string|null} [adminApiKey]  Override for ADMIN_API_KEY env var (thermometer auth).
  * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
  */
-export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = globalThis.fetch) {
+export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = globalThis.fetch, adminApiKey = null) {
   if (req.method !== 'POST') {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
@@ -118,16 +153,26 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
   }
 
   if (pool) {
-    // Check for an active curse before allowing the question, then create it.
+    // Async DB path — always returns a Promise.
+    const thermometerFetch = category === 'thermometer'
+      ? fetchThermometerData({ gameId, seekerId: askerId }, gameServerUrl, adminApiKey, fetchFn)
+      : Promise.resolve({ currentDistanceM: null, previousDistanceM: null });
+
     return dbGetCurseExpiry(pool, gameId).then(curseExpiry => {
       if (curseExpiry && new Date(curseExpiry) > new Date()) {
         return { status: 409, body: { error: 'curse_active', curseEndsAt: curseExpiry } };
       }
-      return dbCreateQuestion(pool, { gameId, askerId, targetId, category, text, gameScale }).then(row => {
-        if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
-        notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
-        return { status: 201, body: row };
-      });
+      return thermometerFetch.then(td =>
+        dbCreateQuestion(pool, {
+          gameId, askerId, targetId, category, text, gameScale,
+          thermometerCurrentDistanceM:  td.currentDistanceM,
+          thermometerPreviousDistanceM: td.previousDistanceM,
+        }).then(row => {
+          if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
+          notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
+          return { status: 201, body: row };
+        }),
+      );
     });
   }
 
@@ -145,21 +190,44 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
     return { status: 409, body: { error: 'A pending question already exists for this game' } };
   }
 
-  const expiresAt = new Date(Date.now() + computeExpiryMs(gameScale, category)).toISOString();
-  const question = {
-    questionId: randomUUID(),
-    gameId,
-    askerId,
-    targetId,
-    category,
-    text: text.trim(),
-    status: 'pending',
-    expiresAt,
-    createdAt: new Date().toISOString(),
+  // notifyFetch is the fetch function used for question_pending notification.
+  // For thermometer questions, the injected fetchFn is reserved for the thermometer
+  // endpoint; the notify uses globalThis.fetch so the two are not conflated in tests.
+  const _buildInProcessQuestion = (thermometerCurrentDistanceM, thermometerPreviousDistanceM, notifyFetch = fetchFn) => {
+    const expiresAt = new Date(Date.now() + computeExpiryMs(gameScale, category)).toISOString();
+    const question = {
+      questionId: randomUUID(),
+      gameId,
+      askerId,
+      targetId,
+      category,
+      text: text.trim(),
+      status: 'pending',
+      expiresAt,
+      createdAt: new Date().toISOString(),
+      thermometerCurrentDistanceM,
+      thermometerPreviousDistanceM,
+    };
+    _questions.set(question.questionId, question);
+    notifyQuestionPending({ gameId, questionId: question.questionId, expiresAt: question.expiresAt }, gameServerUrl, notifyFetch);
+    return { status: 201, body: question };
   };
-  _questions.set(question.questionId, question);
-  notifyQuestionPending({ gameId, questionId: question.questionId, expiresAt: question.expiresAt }, gameServerUrl, fetchFn);
-  return { status: 201, body: question };
+
+  if (category === 'thermometer') {
+    const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+    const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+    if (serverUrl && fetchFn && key) {
+      // Async path: fetch thermometer data then build the question.
+      // Use globalThis.fetch for the notify so the caller's fetchFn is dedicated
+      // to the thermometer endpoint (one call per submit, easier to test).
+      return fetchThermometerData({ gameId, seekerId: askerId }, gameServerUrl, adminApiKey, fetchFn)
+        .then(td => _buildInProcessQuestion(td.currentDistanceM, td.previousDistanceM, globalThis.fetch));
+    }
+    // No server configured — build synchronously with null distances.
+    return _buildInProcessQuestion(null, null);
+  }
+
+  return _buildInProcessQuestion(null, null);
 }
 
 /**

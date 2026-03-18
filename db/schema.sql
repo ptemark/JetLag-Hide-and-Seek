@@ -81,6 +81,10 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Idempotent migration: add thermometer distance columns for thermometer questions.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS thermometer_current_distance_m FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS thermometer_previous_distance_m FLOAT;
+
 -- -------------------------------------------------------------------------
 -- answers
 -- Hider responses to seeker questions.

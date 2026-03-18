@@ -9,6 +9,7 @@ import {
   _getAnswerStore,
   _getPhotoStore,
   _clearStores,
+  _teamMemberships,
 } from './questions.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -420,6 +421,57 @@ describe('listQuestions', () => {
     expect(body.gameId).toBe('g1');
     expect(body.questions).toHaveLength(0);
     expect(pool.query).toHaveBeenCalledOnce();
+  });
+
+  // ── teamId filtering ──────────────────────────────────────────────────────
+
+  it('in-process: teamId filters questions to only that team\'s askers', async () => {
+    const { body: q1 } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'tg-1', askerId: 'sA', targetId: 'h1' }) });
+    // Answer q1 so the pending-per-game constraint allows a second submission.
+    await submitAnswer({ method: 'POST', params: { questionId: q1.questionId }, body: { responderId: 'h1', text: 'yes' } });
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'tg-1', askerId: 'sB', targetId: 'h1' }) });
+    _teamMemberships.set('tg-1:sA', 'A');
+    _teamMemberships.set('tg-1:sB', 'B');
+
+    const { body } = listQuestions({ method: 'GET', query: { gameId: 'tg-1', teamId: 'A' } });
+    expect(body.questions).toHaveLength(1);
+    expect(body.questions[0].askerId).toBe('sA');
+  });
+
+  it('in-process: without teamId returns all questions regardless of team', async () => {
+    const { body: q1 } = submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'tg-2', askerId: 'sA', targetId: 'h1' }) });
+    // Answer q1 so the pending-per-game constraint allows a second submission.
+    await submitAnswer({ method: 'POST', params: { questionId: q1.questionId }, body: { responderId: 'h1', text: 'yes' } });
+    submitQuestion({ method: 'POST', body: makeQuestion({ gameId: 'tg-2', askerId: 'sB', targetId: 'h1' }) });
+    _teamMemberships.set('tg-2:sA', 'A');
+    _teamMemberships.set('tg-2:sB', 'B');
+
+    const { body } = listQuestions({ method: 'GET', query: { gameId: 'tg-2' } });
+    expect(body.questions).toHaveLength(2);
+  });
+
+  it('pool path: passes teamId to dbGetQuestionsForGame', async () => {
+    const capturedParams = [];
+    const pool = {
+      query: vi.fn((sql, params) => {
+        capturedParams.push(params);
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+    await listQuestions({ method: 'GET', query: { gameId: 'g1', teamId: 'B' } }, pool);
+    expect(capturedParams[0]).toEqual(['g1', 'B']);
+  });
+
+  it('pool path: passes null teamId when teamId is absent', async () => {
+    const capturedParams = [];
+    const pool = {
+      query: vi.fn((sql, params) => {
+        capturedParams.push(params);
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+    await listQuestions({ method: 'GET', query: { gameId: 'g1' } }, pool);
+    expect(capturedParams[0]).toEqual(['g1']);
   });
 });
 

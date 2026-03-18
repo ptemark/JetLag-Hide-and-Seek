@@ -80,12 +80,13 @@ export async function submitQuestion({ gameId, askerId, targetId, category, text
  * GET /api/questions?playerId=  → { playerId, questions: [...] }
  * GET /api/questions?gameId=    → { gameId,   questions: [...] }
  *
- * @param {{ playerId?: string, gameId?: string }} options
+ * @param {{ playerId?: string, gameId?: string, teamId?: string }} options
  */
-export async function listQuestions({ playerId, gameId } = {}) {
+export async function listQuestions({ playerId, gameId, teamId } = {}) {
   const params = new URLSearchParams();
-  if (gameId)   params.append('gameId',   gameId);
+  if (gameId)        params.append('gameId',   gameId);
   else if (playerId) params.append('playerId', playerId);
+  if (teamId)        params.append('teamId',   teamId);
   const res = await fetch(`${BASE_URL}/api/questions?${params}`);
   if (!res.ok) throw new Error(`listQuestions failed: ${res.status}`);
   return res.json();

@@ -248,6 +248,23 @@ describe('QuestionPanel', () => {
     expect(screen.queryByTestId('curse-banner')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /submit question/i })).not.toBeDisabled();
   });
+
+  it('passes teamId to listQuestions when game.teamId is set', async () => {
+    const gameWithTeam = { gameId: 'g1', teamId: 'A' };
+    render(<QuestionPanel player={SEEKER} game={gameWithTeam} />);
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ gameId: 'g1', teamId: 'A' }),
+    ));
+  });
+
+  it('does not pass teamId to listQuestions when game.teamId is absent', async () => {
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ gameId: 'g1' }),
+    ));
+    const call = api.listQuestions.mock.calls[0][0];
+    expect(call.teamId).toBeUndefined();
+  });
 });
 
 // ── AnswerPanel ───────────────────────────────────────────────────────────────

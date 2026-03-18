@@ -67,7 +67,7 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
   // Fetch full Q&A history for the game on mount and whenever qaRefresh changes.
   useEffect(() => {
     setHistoryError(null);
-    listQuestions({ gameId: game.gameId })
+    listQuestions({ gameId: game.gameId, teamId: game.teamId ?? undefined })
       .then((data) => {
         setHistory(data.questions ?? []);
         // Drop optimistically-submitted questions that are now in the server history.

@@ -1559,3 +1559,72 @@ describe('dbGetQuestionsForGame — matching columns', () => {
     expect(questions[0].answer).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForGame — teamId filtering
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForGame — teamId filtering', () => {
+  it('passes teamId to the query and joins game_players when teamId is provided', async () => {
+    const capturedSql = [];
+    const capturedParams = [];
+    const pool = {
+      query: vi.fn((sql, params) => {
+        capturedSql.push(sql);
+        capturedParams.push(params);
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+
+    await dbGetQuestionsForGame(pool, 'g1', 'A');
+
+    expect(capturedSql[0]).toMatch(/JOIN game_players gp/);
+    expect(capturedSql[0]).toMatch(/gp\.team = \$2/);
+    expect(capturedParams[0]).toEqual(['g1', 'A']);
+  });
+
+  it('omits the team join and uses only gameId param when teamId is null', async () => {
+    const capturedSql = [];
+    const capturedParams = [];
+    const pool = {
+      query: vi.fn((sql, params) => {
+        capturedSql.push(sql);
+        capturedParams.push(params);
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+
+    await dbGetQuestionsForGame(pool, 'g1', null);
+
+    expect(capturedSql[0]).not.toMatch(/JOIN game_players/);
+    expect(capturedSql[0]).not.toMatch(/gp\.team/);
+    expect(capturedParams[0]).toEqual(['g1']);
+  });
+
+  it('returns only the rows returned by the pool when teamId is provided', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-team', game_id: 'g1', asker_id: 'sA', target_id: 'h1',
+        category: 'thermometer', text: 'Warmer?', status: 'answered',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: 500, thermometer_previous_distance_m: 800,
+        tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+        tentacle_distance_km: null, tentacle_within_radius: null,
+        measuring_target_lat: null, measuring_target_lon: null,
+        measuring_hider_distance_km: null, measuring_seeker_distance_km: null,
+        measuring_hider_is_closer: null,
+        transit_nearest_station_name: null, transit_nearest_station_lat: null,
+        transit_nearest_station_lon: null, transit_nearest_station_distance_km: null,
+        matching_feature_type: null, matching_hider_feature_name: null,
+        matching_seeker_feature_name: null, matching_features_match: null,
+        answer_text: 'Warmer', answer_created_at: new Date(),
+      }] }),
+    );
+
+    const questions = await dbGetQuestionsForGame(pool, 'g1', 'A');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].askerId).toBe('sA');
+    expect(questions[0].thermometerCurrentDistanceM).toBe(500);
+    expect(questions[0].answer).toEqual(expect.objectContaining({ text: 'Warmer' }));
+  });
+});

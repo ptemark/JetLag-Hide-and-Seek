@@ -355,6 +355,13 @@ const _questions = new Map();
 const _answers   = new Map();
 const _photos    = new Map(); // Map<questionId, { photoId, questionId, photoData, uploadedAt }>
 
+/**
+ * Per-game team membership for the in-process path.
+ * Keyed `${gameId}:${playerId}` → team string (e.g. 'A' or 'B').
+ * Set this in tests to simulate two-team games.
+ */
+export const _teamMemberships = new Map();
+
 /** Return a copy of the in-process question store (for testing). */
 export function _getQuestionStore() { return new Map(_questions); }
 
@@ -365,7 +372,7 @@ export function _getAnswerStore() { return new Map(_answers); }
 export function _getPhotoStore() { return new Map(_photos); }
 
 /** Clear all in-process stores (for test isolation). */
-export function _clearStores() { _questions.clear(); _answers.clear(); _photos.clear(); }
+export function _clearStores() { _questions.clear(); _answers.clear(); _photos.clear(); _teamMemberships.clear(); }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -701,19 +708,26 @@ export function listQuestions(req, pool = null) {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
 
-  const { playerId, gameId } = req.query ?? {};
+  const { playerId, gameId, teamId } = req.query ?? {};
 
   // ── gameId path: full Q&A history for a game ─────────────────────────────
   if (gameId && typeof gameId === 'string') {
+    const resolvedTeamId = (teamId && typeof teamId === 'string') ? teamId : null;
     if (pool) {
-      return dbGetQuestionsForGame(pool, gameId).then(questions => ({
+      return dbGetQuestionsForGame(pool, gameId, resolvedTeamId).then(questions => ({
         status: 200,
         body: { gameId, questions },
       }));
     }
     // In-process: build history by joining _questions and _answers.
     const questions = [..._questions.values()]
-      .filter(q => q.gameId === gameId)
+      .filter(q => {
+        if (q.gameId !== gameId) return false;
+        if (resolvedTeamId) {
+          return _teamMemberships.get(`${gameId}:${q.askerId}`) === resolvedTeamId;
+        }
+        return true;
+      })
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
       .map(q => {
         const answer = [..._answers.values()].find(a => a.questionId === q.questionId) ?? null;

@@ -506,9 +506,17 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
  *
  * @param {import('pg').Pool} pool
  * @param {string} gameId
+ * @param {string|null} [teamId]  When provided, only questions whose asker belongs to this team are returned.
  * @returns {Promise<Array<{ questionId, gameId, askerId, targetId, category, text, status, expiresAt, createdAt, answer: { text, createdAt }|null }>>}
  */
-export async function dbGetQuestionsForGame(pool, gameId) {
+export async function dbGetQuestionsForGame(pool, gameId, teamId = null) {
+  const params = [gameId];
+  const teamJoin = teamId
+    ? 'JOIN game_players gp ON gp.player_id = q.asker_id AND gp.game_id = q.game_id'
+    : '';
+  const teamWhere = teamId ? ' AND gp.team = $2' : '';
+  if (teamId) params.push(teamId);
+
   const res = await pool.query(
     `SELECT q.id, q.game_id, q.asker_id, q.target_id, q.category, q.text,
             q.status, q.expires_at, q.created_at,
@@ -524,10 +532,11 @@ export async function dbGetQuestionsForGame(pool, gameId) {
             q.matching_seeker_feature_name, q.matching_features_match,
             a.text AS answer_text, a.created_at AS answer_created_at
      FROM questions q
+     ${teamJoin}
      LEFT JOIN answers a ON a.question_id = q.id
-     WHERE q.game_id = $1
+     WHERE q.game_id = $1${teamWhere}
      ORDER BY q.created_at DESC`,
-    [gameId],
+    params,
   );
   return res.rows.map(row => ({
     questionId:  row.id,

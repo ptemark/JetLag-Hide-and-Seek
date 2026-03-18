@@ -225,6 +225,36 @@ export function createServer({
       return;
     }
 
+    // GET /internal/games/:gameId/hider-position — return the hider's current
+    // lat/lon from in-memory game state so serverless functions can look up
+    // nearby transit stations.  lat/lon are null when the hider has not yet
+    // sent a location update.  Protected by ADMIN_API_KEY Bearer token.
+    const hiderPositionMatch = req.method === 'GET'
+      && urlPath.match(/^\/internal\/games\/(?<gameId>[^/]+)\/hider-position$/);
+    if (hiderPositionMatch) {
+      const authHeader = req.headers['authorization'] ?? '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (adminApiKey && token !== adminApiKey) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+      const { gameId } = hiderPositionMatch.groups;
+      const gameState = gameStateManager.getGameState(gameId);
+      if (!gameState) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'game not found' }));
+        return;
+      }
+      const players = Object.entries(gameState.players ?? {});
+      const hiderEntry = players.find(([, p]) => p.role === 'hider');
+      const lat = hiderEntry?.[1].lat ?? null;
+      const lon = hiderEntry?.[1].lon ?? null;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ lat, lon }));
+      return;
+    }
+
     // POST /internal/games/:gameId/zones — register hiding zones for a game so
     // the capture detector can evaluate seeker proximity each tick.
     const zonesMatch = req.method === 'POST'

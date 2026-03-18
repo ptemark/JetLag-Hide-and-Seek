@@ -1341,6 +1341,8 @@ describe('dbGetQuestionsForGame — measuring columns', () => {
         measuring_target_lat: 48.8584, measuring_target_lon: 2.2945,
         measuring_hider_distance_km: 340.5, measuring_seeker_distance_km: 490.2,
         measuring_hider_is_closer: false,
+        transit_nearest_station_name: null, transit_nearest_station_lat: null,
+        transit_nearest_station_lon: null, transit_nearest_station_distance_km: null,
         answer_text: null, answer_created_at: null,
       }] }),
     );
@@ -1349,6 +1351,120 @@ describe('dbGetQuestionsForGame — measuring columns', () => {
     expect(questions[0].measuringTargetLat).toBe(48.8584);
     expect(questions[0].measuringHiderDistanceKm).toBe(340.5);
     expect(questions[0].measuringHiderIsCloser).toBe(false);
+    expect(questions[0].answer).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbCreateQuestion — transit columns
+// ---------------------------------------------------------------------------
+
+describe('dbCreateQuestion — transit columns', () => {
+  it('passes transit fields as INSERT parameters and returns them', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedParams = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
+        .mockImplementationOnce((sql, params) => {
+          capturedParams.all = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-trans', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'transit', text: 'On your route?', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+            tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+            tentacle_distance_km: null, tentacle_within_radius: null,
+            measuring_target_lat: null, measuring_target_lon: null,
+            measuring_hider_distance_km: null, measuring_seeker_distance_km: null,
+            measuring_hider_is_closer: null,
+            transit_nearest_station_name:        params[18],
+            transit_nearest_station_lat:         params[19],
+            transit_nearest_station_lon:         params[20],
+            transit_nearest_station_distance_km: params[21],
+          }] });
+        }),
+    };
+
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1',
+      category: 'transit', text: 'On your route?',
+      transitNearestStationName:       'London Bridge',
+      transitNearestStationLat:        51.508,
+      transitNearestStationLon:        -0.086,
+      transitNearestStationDistanceKm: 0.42,
+    });
+
+    expect(result.transitNearestStationName).toBe('London Bridge');
+    expect(result.transitNearestStationLat).toBeCloseTo(51.508);
+    expect(result.transitNearestStationLon).toBeCloseTo(-0.086);
+    expect(result.transitNearestStationDistanceKm).toBeCloseTo(0.42);
+    expect(capturedParams.all[18]).toBe('London Bridge');
+    expect(capturedParams.all[19]).toBeCloseTo(51.508);
+    expect(capturedParams.all[20]).toBeCloseTo(-0.086);
+    expect(capturedParams.all[21]).toBeCloseTo(0.42);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForPlayer — transit columns
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForPlayer — transit columns', () => {
+  it('returns transit fields when present', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-trans', game_id: 'g1', asker_id: 'a1', target_id: 'p1',
+        category: 'transit', text: 'On your route?', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+        tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+        tentacle_distance_km: null, tentacle_within_radius: null,
+        measuring_target_lat: null, measuring_target_lon: null,
+        measuring_hider_distance_km: null, measuring_seeker_distance_km: null,
+        measuring_hider_is_closer: null,
+        transit_nearest_station_name: 'Paddington',
+        transit_nearest_station_lat: 51.516,
+        transit_nearest_station_lon: -0.177,
+        transit_nearest_station_distance_km: 0.25,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForPlayer(pool, 'p1');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].transitNearestStationName).toBe('Paddington');
+    expect(questions[0].transitNearestStationLat).toBeCloseTo(51.516);
+    expect(questions[0].transitNearestStationDistanceKm).toBeCloseTo(0.25);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForGame — transit columns
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForGame — transit columns', () => {
+  it('returns transit fields in game Q&A history', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-trans-g', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+        category: 'transit', text: 'On your route?', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+        tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+        tentacle_distance_km: null, tentacle_within_radius: null,
+        measuring_target_lat: null, measuring_target_lon: null,
+        measuring_hider_distance_km: null, measuring_seeker_distance_km: null,
+        measuring_hider_is_closer: null,
+        transit_nearest_station_name: 'Victoria',
+        transit_nearest_station_lat: 51.495,
+        transit_nearest_station_lon: -0.144,
+        transit_nearest_station_distance_km: 0.61,
+        answer_text: null, answer_created_at: null,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForGame(pool, 'g1');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].transitNearestStationName).toBe('Victoria');
+    expect(questions[0].transitNearestStationDistanceKm).toBeCloseTo(0.61);
     expect(questions[0].answer).toBeNull();
   });
 });

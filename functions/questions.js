@@ -125,6 +125,115 @@ async function fetchMeasuringData({ gameId, seekerId, targetLat, targetLon }, ga
   }
 }
 
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+
+/**
+ * Build an Overpass QL query that returns public-transit stop nodes within
+ * a specified radius (metres) of a lat/lon point.
+ *
+ * @param {number} lat
+ * @param {number} lon
+ * @param {number} radiusM
+ * @returns {string}
+ */
+function buildNearestStationQuery(lat, lon, radiusM = 2000) {
+  const around = `around:${radiusM},${lat},${lon}`;
+  return (
+    `[out:json][timeout:25];` +
+    `(` +
+    `node["public_transport"="stop_position"](${around});` +
+    `node["railway"="station"](${around});` +
+    `node["railway"="halt"](${around});` +
+    `node["amenity"="bus_station"](${around});` +
+    `);` +
+    `out body;`
+  );
+}
+
+/**
+ * Haversine great-circle distance in kilometres.
+ * Used locally to pick the nearest Overpass node without importing from the
+ * server layer (which is a separate deployment unit).
+ *
+ * @param {number} lat1
+ * @param {number} lon1
+ * @param {number} lat2
+ * @param {number} lon2
+ * @returns {number}
+ */
+function haversineDistanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLon = Math.sin(dLon / 2);
+  const a = sinDLat * sinDLat
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * sinDLon * sinDLon;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Fetch the nearest transit station to the hider's current position.
+ * Steps: (1) call the managed server's hider-position endpoint to get lat/lon,
+ * (2) query the OSM Overpass API for transit stops within 2 km,
+ * (3) pick the closest node by haversine distance.
+ *
+ * Returns nulls on any failure (no hider position, Overpass error, no stations found).
+ *
+ * @param {{ gameId: string }} params
+ * @param {string|undefined} gameServerUrl
+ * @param {string|null} adminApiKey
+ * @param {typeof fetch} fetchFn  Used for BOTH the hider-position call and Overpass.
+ * @returns {Promise<{ nearestStationName: string|null, nearestStationLat: number|null, nearestStationLon: number|null, nearestStationDistanceKm: number|null }>}
+ */
+async function fetchTransitData({ gameId }, gameServerUrl, adminApiKey, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+  const nullResult = { nearestStationName: null, nearestStationLat: null, nearestStationLon: null, nearestStationDistanceKm: null };
+  if (!serverUrl || !fetchFn || !key) return nullResult;
+  try {
+    // Step 1: get hider's current position from managed server.
+    const posRes = await fetchFn(
+      `${serverUrl}/internal/games/${gameId}/hider-position`,
+      { headers: { 'Authorization': `Bearer ${key}` } },
+    );
+    if (!posRes.ok) return nullResult;
+    const { lat, lon } = await posRes.json();
+    if (lat == null || lon == null) return nullResult;
+
+    // Step 2: query Overpass for nearby transit stations.
+    const query = buildNearestStationQuery(lat, lon);
+    const overpassRes = await fetchFn(OVERPASS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`,
+    });
+    if (!overpassRes.ok) return nullResult;
+    const data = await overpassRes.json();
+    const nodes = (data?.elements ?? []).filter(el => el.type === 'node');
+    if (nodes.length === 0) return nullResult;
+
+    // Step 3: find nearest node.
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const node of nodes) {
+      const dist = haversineDistanceKm(lat, lon, node.lat, node.lon);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = node;
+      }
+    }
+    return {
+      nearestStationName:       nearest.tags?.name ?? nearest.tags?.['name:en'] ?? 'Unknown Station',
+      nearestStationLat:        nearest.lat,
+      nearestStationLon:        nearest.lon,
+      nearestStationDistanceKm: nearestDist,
+    };
+  } catch {
+    return nullResult;
+  }
+}
+
 // ── In-process stores (no DB pool) ───────────────────────────────────────────
 
 const _questions = new Map();
@@ -217,7 +326,8 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
 
   const { gameId, askerId, targetId, category, text, gameScale,
           tentacleTargetLat, tentacleTargetLon, tentacleRadiusKm,
-          measuringTargetLat, measuringTargetLon } = req.body ?? {};
+          measuringTargetLat, measuringTargetLon,
+        } = req.body ?? {};
 
   if (!gameId   || typeof gameId   !== 'string') return { status: 400, body: { error: 'gameId is required' } };
   if (!askerId  || typeof askerId  !== 'string') return { status: 400, body: { error: 'askerId is required' } };
@@ -245,11 +355,15 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       ? fetchMeasuringData({ gameId, seekerId: askerId, targetLat: measuringTargetLat, targetLon: measuringTargetLon }, gameServerUrl, adminApiKey, fetchFn)
       : Promise.resolve({ hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null });
 
+    const transitFetch = category === 'transit'
+      ? fetchTransitData({ gameId }, gameServerUrl, adminApiKey, fetchFn)
+      : Promise.resolve({ nearestStationName: null, nearestStationLat: null, nearestStationLon: null, nearestStationDistanceKm: null });
+
     return dbGetCurseExpiry(pool, gameId).then(curseExpiry => {
       if (curseExpiry && new Date(curseExpiry) > new Date()) {
         return { status: 409, body: { error: 'curse_active', curseEndsAt: curseExpiry } };
       }
-      return Promise.all([thermometerFetch, tentacleFetch, measuringFetch]).then(([td, tent, meas]) =>
+      return Promise.all([thermometerFetch, tentacleFetch, measuringFetch, transitFetch]).then(([td, tent, meas, trans]) =>
         dbCreateQuestion(pool, {
           gameId, askerId, targetId, category, text, gameScale,
           thermometerCurrentDistanceM:  td.currentDistanceM,
@@ -264,6 +378,10 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
           measuringHiderDistanceKm:  meas.hiderDistanceKm    ?? null,
           measuringSeekerDistanceKm: meas.seekerDistanceKm   ?? null,
           measuringHiderIsCloser:    meas.hiderIsCloser       ?? null,
+          transitNearestStationName:       trans.nearestStationName       ?? null,
+          transitNearestStationLat:        trans.nearestStationLat        ?? null,
+          transitNearestStationLon:        trans.nearestStationLon        ?? null,
+          transitNearestStationDistanceKm: trans.nearestStationDistanceKm ?? null,
         }).then(row => {
           if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
           notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
@@ -295,6 +413,7 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
     tentacleOpts = {},
     notifyFetch = fetchFn,
     measuringOpts = {},
+    transitOpts = {},
   ) => {
     const expiresAt = new Date(Date.now() + computeExpiryMs(gameScale, category)).toISOString();
     const question = {
@@ -319,6 +438,10 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       measuringHiderDistanceKm:  measuringOpts.hiderDistanceKm  ?? null,
       measuringSeekerDistanceKm: measuringOpts.seekerDistanceKm ?? null,
       measuringHiderIsCloser:    measuringOpts.hiderIsCloser    ?? null,
+      transitNearestStationName:       transitOpts.nearestStationName       ?? null,
+      transitNearestStationLat:        transitOpts.nearestStationLat        ?? null,
+      transitNearestStationLon:        transitOpts.nearestStationLon        ?? null,
+      transitNearestStationDistanceKm: transitOpts.nearestStationDistanceKm ?? null,
     };
     _questions.set(question.questionId, question);
     notifyQuestionPending({ gameId, questionId: question.questionId, expiresAt: question.expiresAt }, gameServerUrl, notifyFetch);
@@ -389,6 +512,22 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       seekerDistanceKm: null,
       hiderIsCloser:    null,
     });
+  }
+
+  if (category === 'transit') {
+    const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+    const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+    if (serverUrl && fetchFn && key) {
+      return fetchTransitData({ gameId }, gameServerUrl, adminApiKey, fetchFn)
+        .then(trans => _buildInProcessQuestion(null, null, {}, globalThis.fetch, {}, {
+          nearestStationName:       trans.nearestStationName,
+          nearestStationLat:        trans.nearestStationLat,
+          nearestStationLon:        trans.nearestStationLon,
+          nearestStationDistanceKm: trans.nearestStationDistanceKm,
+        }));
+    }
+    // No server configured — build with null transit fields.
+    return _buildInProcessQuestion(null, null, {}, fetchFn, {}, {});
   }
 
   return _buildInProcessQuestion(null, null);

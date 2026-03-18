@@ -1995,3 +1995,80 @@ describe('GET /internal/games/:gameId/tentacle', () => {
     expect(body.withinRadius).toBeNull(); // no hider in game
   });
 });
+
+// GET /internal/games/:gameId/hider-position
+// ---------------------------------------------------------------------------
+
+describe('GET /internal/games/:gameId/hider-position', () => {
+  let server;
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop();
+      server = null;
+    }
+    vi.useRealTimers();
+  });
+
+  it('returns 401 when no Authorization header and adminApiKey is configured', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/g1/hider-position`);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toMatch(/unauthorized/i);
+  });
+
+  it('returns 404 for an unknown game', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/no-game/hider-position`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/game not found/i);
+  });
+
+  it('returns hider lat/lon when the hider has a position', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('hpos-game', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('hpos-game', 'hider1', 'hider');
+    server.gameStateManager.updatePlayerLocation('hpos-game', 'hider1', 51.5074, -0.1278);
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/hpos-game/hider-position`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.lat).toBeCloseTo(51.5074);
+    expect(body.lon).toBeCloseTo(-0.1278);
+  });
+
+  it('returns { lat: null, lon: null } when hider has not sent a location', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('hpos-noloc', { status: 'hiding' });
+    server.gameStateManager.addPlayerToGame('hpos-noloc', 'hider2', 'hider');
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/hpos-noloc/hider-position`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.lat).toBeNull();
+    expect(body.lon).toBeNull();
+  });
+});

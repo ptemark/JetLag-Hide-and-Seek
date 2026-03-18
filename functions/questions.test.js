@@ -1359,3 +1359,138 @@ describe('submitQuestion — measuring enrichment', () => {
     expect(capturedArgs.params[17]).toBe(true);     // measuring_hider_is_closer
   });
 });
+
+// ── submitQuestion — transit enrichment ──────────────────────────────────────
+
+describe('submitQuestion — transit enrichment', () => {
+  beforeEach(() => _clearStores());
+
+  it('fetches hider-position then Overpass and stores nearest station (in-process)', async () => {
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (String(url).includes('/hider-position')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ lat: 51.5074, lon: -0.1278 }) });
+      }
+      // Overpass response
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({
+        elements: [
+          { type: 'node', id: 1, lat: 51.509, lon: -0.119, tags: { name: 'London Bridge' } },
+          { type: 'node', id: 2, lat: 51.520, lon: -0.150, tags: { name: 'Waterloo' } },
+        ],
+      }) });
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'transit', text: 'Are you on this route?' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.transitNearestStationName).toBe('London Bridge');
+    expect(typeof body.transitNearestStationLat).toBe('number');
+    expect(typeof body.transitNearestStationDistanceKm).toBe('number');
+    // hider-position call uses Bearer auth
+    const posCall = mockFetch.mock.calls.find(([url]) => String(url).includes('/hider-position'));
+    expect(posCall[1].headers['Authorization']).toBe('Bearer test-admin-key');
+  });
+
+  it('stores null transit fields when hider has no position (in-process)', async () => {
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (String(url).includes('/hider-position')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ lat: null, lon: null }) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ elements: [] }) });
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'transit', text: 'On this route?' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.transitNearestStationName).toBeNull();
+    expect(body.transitNearestStationLat).toBeNull();
+    expect(body.transitNearestStationDistanceKm).toBeNull();
+  });
+
+  it('does not fetch transit endpoint for non-transit categories (in-process)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true, json: () => Promise.resolve({}),
+    });
+
+    const { status } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'matching', text: 'Near a park?' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    const transitCalls = mockFetch.mock.calls.filter(([url]) =>
+      typeof url === 'string' && url.includes('/hider-position'),
+    );
+    expect(transitCalls).toHaveLength(0);
+  });
+
+  it('fetches transit endpoint and passes result to dbCreateQuestion (pool path)', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedArgs = {};
+
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })   // no active curse
+        .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
+        .mockImplementationOnce((sql, params) => {
+          capturedArgs.params = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-trans', game_id: 'game-1', asker_id: 'seeker-1', target_id: 'hider-1',
+            category: 'transit', text: 'On your route?', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+            tentacle_target_lat: null, tentacle_target_lon: null,
+            tentacle_radius_km: null, tentacle_distance_km: null, tentacle_within_radius: null,
+            measuring_target_lat: null, measuring_target_lon: null,
+            measuring_hider_distance_km: null, measuring_seeker_distance_km: null,
+            measuring_hider_is_closer: null,
+            transit_nearest_station_name:       params[18],
+            transit_nearest_station_lat:        params[19],
+            transit_nearest_station_lon:        params[20],
+            transit_nearest_station_distance_km: params[21],
+          }] });
+        }),
+    };
+
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (String(url).includes('/hider-position')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ lat: 51.5074, lon: -0.1278 }) });
+      }
+      // Overpass
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({
+        elements: [{ type: 'node', id: 42, lat: 51.508, lon: -0.120, tags: { name: 'Bank' } }],
+      }) });
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'transit', text: 'On your route?' }) },
+      pool,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.transitNearestStationName).toBe('Bank');
+    expect(typeof body.transitNearestStationDistanceKm).toBe('number');
+    // Verify values passed as INSERT params.
+    expect(capturedArgs.params[18]).toBe('Bank');          // transit_nearest_station_name
+    expect(capturedArgs.params[19]).toBeCloseTo(51.508);   // transit_nearest_station_lat
+    expect(capturedArgs.params[20]).toBeCloseTo(-0.120);   // transit_nearest_station_lon
+    expect(typeof capturedArgs.params[21]).toBe('number'); // transit_nearest_station_distance_km
+  });
+});

@@ -328,8 +328,8 @@ function computeExpiryMs(scale, category) {
  * (small → 10 min, medium → 15 min, large → 20 min).
  *
  * @param {import('pg').Pool} pool
- * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null, gameScale?: string, thermometerCurrentDistanceM?: number|null, thermometerPreviousDistanceM?: number|null, tentacleTargetLat?: number|null, tentacleTargetLon?: number|null, tentacleRadiusKm?: number|null, tentacleDistanceKm?: number|null, tentacleWithinRadius?: boolean|null, measuringTargetLat?: number|null, measuringTargetLon?: number|null, measuringHiderDistanceKm?: number|null, measuringSeekerDistanceKm?: number|null, measuringHiderIsCloser?: boolean|null }} options
- * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string, thermometerCurrentDistanceM: number|null, thermometerPreviousDistanceM: number|null, tentacleTargetLat: number|null, tentacleTargetLon: number|null, tentacleRadiusKm: number|null, tentacleDistanceKm: number|null, tentacleWithinRadius: boolean|null, measuringTargetLat: number|null, measuringTargetLon: number|null, measuringHiderDistanceKm: number|null, measuringSeekerDistanceKm: number|null, measuringHiderIsCloser: boolean|null } | { conflict: true }>}
+ * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null, gameScale?: string, thermometerCurrentDistanceM?: number|null, thermometerPreviousDistanceM?: number|null, tentacleTargetLat?: number|null, tentacleTargetLon?: number|null, tentacleRadiusKm?: number|null, tentacleDistanceKm?: number|null, tentacleWithinRadius?: boolean|null, measuringTargetLat?: number|null, measuringTargetLon?: number|null, measuringHiderDistanceKm?: number|null, measuringSeekerDistanceKm?: number|null, measuringHiderIsCloser?: boolean|null, transitNearestStationName?: string|null, transitNearestStationLat?: number|null, transitNearestStationLon?: number|null, transitNearestStationDistanceKm?: number|null }} options
+ * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string, thermometerCurrentDistanceM: number|null, thermometerPreviousDistanceM: number|null, tentacleTargetLat: number|null, tentacleTargetLon: number|null, tentacleRadiusKm: number|null, tentacleDistanceKm: number|null, tentacleWithinRadius: boolean|null, measuringTargetLat: number|null, measuringTargetLon: number|null, measuringHiderDistanceKm: number|null, measuringSeekerDistanceKm: number|null, measuringHiderIsCloser: boolean|null, transitNearestStationName: string|null, transitNearestStationLat: number|null, transitNearestStationLon: number|null, transitNearestStationDistanceKm: number|null } | { conflict: true }>}
  */
 export async function dbCreateQuestion(pool, {
   gameId, askerId, targetId, category, text,
@@ -339,6 +339,8 @@ export async function dbCreateQuestion(pool, {
   tentacleDistanceKm = null, tentacleWithinRadius = null,
   measuringTargetLat = null, measuringTargetLon = null,
   measuringHiderDistanceKm = null, measuringSeekerDistanceKm = null, measuringHiderIsCloser = null,
+  transitNearestStationName = null, transitNearestStationLat = null,
+  transitNearestStationLon = null, transitNearestStationDistanceKm = null,
 }) {
   // Enforce one-pending-question-at-a-time.  When the game uses two teams,
   // scope the check to the asker's team so both teams can ask independently.
@@ -375,21 +377,28 @@ export async function dbCreateQuestion(pool, {
                             tentacle_distance_km, tentacle_within_radius,
                             measuring_target_lat, measuring_target_lon,
                             measuring_hider_distance_km, measuring_seeker_distance_km,
-                            measuring_hider_is_closer)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                            measuring_hider_is_closer,
+                            transit_nearest_station_name, transit_nearest_station_lat,
+                            transit_nearest_station_lon, transit_nearest_station_distance_km)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+             $19, $20, $21, $22)
      RETURNING id, game_id, asker_id, target_id, category, text, status, expires_at, created_at,
                thermometer_current_distance_m, thermometer_previous_distance_m,
                tentacle_target_lat, tentacle_target_lon, tentacle_radius_km,
                tentacle_distance_km, tentacle_within_radius,
                measuring_target_lat, measuring_target_lon,
                measuring_hider_distance_km, measuring_seeker_distance_km,
-               measuring_hider_is_closer`,
+               measuring_hider_is_closer,
+               transit_nearest_station_name, transit_nearest_station_lat,
+               transit_nearest_station_lon, transit_nearest_station_distance_km`,
     [gameId, askerId, targetId, category, text, expiresAt,
      thermometerCurrentDistanceM ?? null, thermometerPreviousDistanceM ?? null,
      tentacleTargetLat ?? null, tentacleTargetLon ?? null, tentacleRadiusKm ?? null,
      tentacleDistanceKm ?? null, tentacleWithinRadius ?? null,
      measuringTargetLat ?? null, measuringTargetLon ?? null,
-     measuringHiderDistanceKm ?? null, measuringSeekerDistanceKm ?? null, measuringHiderIsCloser ?? null],
+     measuringHiderDistanceKm ?? null, measuringSeekerDistanceKm ?? null, measuringHiderIsCloser ?? null,
+     transitNearestStationName ?? null, transitNearestStationLat ?? null,
+     transitNearestStationLon ?? null, transitNearestStationDistanceKm ?? null],
   );
   const row = res.rows[0];
   return {
@@ -414,6 +423,10 @@ export async function dbCreateQuestion(pool, {
     measuringHiderDistanceKm:  row.measuring_hider_distance_km  ?? null,
     measuringSeekerDistanceKm: row.measuring_seeker_distance_km ?? null,
     measuringHiderIsCloser:    row.measuring_hider_is_closer    ?? null,
+    transitNearestStationName:       row.transit_nearest_station_name        ?? null,
+    transitNearestStationLat:        row.transit_nearest_station_lat         ?? null,
+    transitNearestStationLon:        row.transit_nearest_station_lon         ?? null,
+    transitNearestStationDistanceKm: row.transit_nearest_station_distance_km ?? null,
   };
 }
 
@@ -432,7 +445,9 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
             tentacle_distance_km, tentacle_within_radius,
             measuring_target_lat, measuring_target_lon,
             measuring_hider_distance_km, measuring_seeker_distance_km,
-            measuring_hider_is_closer
+            measuring_hider_is_closer,
+            transit_nearest_station_name, transit_nearest_station_lat,
+            transit_nearest_station_lon, transit_nearest_station_distance_km
      FROM questions
      WHERE target_id = $1
      ORDER BY created_at DESC`,
@@ -460,6 +475,10 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
     measuringHiderDistanceKm:  row.measuring_hider_distance_km  ?? null,
     measuringSeekerDistanceKm: row.measuring_seeker_distance_km ?? null,
     measuringHiderIsCloser:    row.measuring_hider_is_closer    ?? null,
+    transitNearestStationName:       row.transit_nearest_station_name        ?? null,
+    transitNearestStationLat:        row.transit_nearest_station_lat         ?? null,
+    transitNearestStationLon:        row.transit_nearest_station_lon         ?? null,
+    transitNearestStationDistanceKm: row.transit_nearest_station_distance_km ?? null,
   }));
 }
 
@@ -481,6 +500,8 @@ export async function dbGetQuestionsForGame(pool, gameId) {
             q.measuring_target_lat, q.measuring_target_lon,
             q.measuring_hider_distance_km, q.measuring_seeker_distance_km,
             q.measuring_hider_is_closer,
+            q.transit_nearest_station_name, q.transit_nearest_station_lat,
+            q.transit_nearest_station_lon, q.transit_nearest_station_distance_km,
             a.text AS answer_text, a.created_at AS answer_created_at
      FROM questions q
      LEFT JOIN answers a ON a.question_id = q.id
@@ -510,6 +531,10 @@ export async function dbGetQuestionsForGame(pool, gameId) {
     measuringHiderDistanceKm:  row.measuring_hider_distance_km  ?? null,
     measuringSeekerDistanceKm: row.measuring_seeker_distance_km ?? null,
     measuringHiderIsCloser:    row.measuring_hider_is_closer    ?? null,
+    transitNearestStationName:       row.transit_nearest_station_name        ?? null,
+    transitNearestStationLat:        row.transit_nearest_station_lat         ?? null,
+    transitNearestStationLon:        row.transit_nearest_station_lon         ?? null,
+    transitNearestStationDistanceKm: row.transit_nearest_station_distance_km ?? null,
     answer:      row.answer_text != null
       ? { text: row.answer_text, createdAt: row.answer_created_at }
       : null,

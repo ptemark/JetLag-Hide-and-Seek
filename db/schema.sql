@@ -99,6 +99,12 @@ ALTER TABLE questions ADD COLUMN IF NOT EXISTS measuring_hider_distance_km FLOAT
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS measuring_seeker_distance_km FLOAT;
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS measuring_hider_is_closer BOOLEAN;
 
+-- Idempotent migration: add transit columns for transit questions.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS transit_nearest_station_name TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS transit_nearest_station_lat FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS transit_nearest_station_lon FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS transit_nearest_station_distance_km FLOAT;
+
 -- -------------------------------------------------------------------------
 -- answers
 -- Hider responses to seeker questions.

@@ -328,8 +328,8 @@ function computeExpiryMs(scale, category) {
  * (small → 10 min, medium → 15 min, large → 20 min).
  *
  * @param {import('pg').Pool} pool
- * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null, gameScale?: string, thermometerCurrentDistanceM?: number|null, thermometerPreviousDistanceM?: number|null, tentacleTargetLat?: number|null, tentacleTargetLon?: number|null, tentacleRadiusKm?: number|null, tentacleDistanceKm?: number|null, tentacleWithinRadius?: boolean|null, measuringTargetLat?: number|null, measuringTargetLon?: number|null, measuringHiderDistanceKm?: number|null, measuringSeekerDistanceKm?: number|null, measuringHiderIsCloser?: boolean|null, transitNearestStationName?: string|null, transitNearestStationLat?: number|null, transitNearestStationLon?: number|null, transitNearestStationDistanceKm?: number|null }} options
- * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string, thermometerCurrentDistanceM: number|null, thermometerPreviousDistanceM: number|null, tentacleTargetLat: number|null, tentacleTargetLon: number|null, tentacleRadiusKm: number|null, tentacleDistanceKm: number|null, tentacleWithinRadius: boolean|null, measuringTargetLat: number|null, measuringTargetLon: number|null, measuringHiderDistanceKm: number|null, measuringSeekerDistanceKm: number|null, measuringHiderIsCloser: boolean|null, transitNearestStationName: string|null, transitNearestStationLat: number|null, transitNearestStationLon: number|null, transitNearestStationDistanceKm: number|null } | { conflict: true }>}
+ * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null, gameScale?: string, thermometerCurrentDistanceM?: number|null, thermometerPreviousDistanceM?: number|null, tentacleTargetLat?: number|null, tentacleTargetLon?: number|null, tentacleRadiusKm?: number|null, tentacleDistanceKm?: number|null, tentacleWithinRadius?: boolean|null, measuringTargetLat?: number|null, measuringTargetLon?: number|null, measuringHiderDistanceKm?: number|null, measuringSeekerDistanceKm?: number|null, measuringHiderIsCloser?: boolean|null, transitNearestStationName?: string|null, transitNearestStationLat?: number|null, transitNearestStationLon?: number|null, transitNearestStationDistanceKm?: number|null, matchingFeatureType?: string|null, matchingHiderFeatureName?: string|null, matchingSeekerFeatureName?: string|null, matchingFeaturesMatch?: boolean|null }} options
+ * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string, thermometerCurrentDistanceM: number|null, thermometerPreviousDistanceM: number|null, tentacleTargetLat: number|null, tentacleTargetLon: number|null, tentacleRadiusKm: number|null, tentacleDistanceKm: number|null, tentacleWithinRadius: boolean|null, measuringTargetLat: number|null, measuringTargetLon: number|null, measuringHiderDistanceKm: number|null, measuringSeekerDistanceKm: number|null, measuringHiderIsCloser: boolean|null, transitNearestStationName: string|null, transitNearestStationLat: number|null, transitNearestStationLon: number|null, transitNearestStationDistanceKm: number|null, matchingFeatureType: string|null, matchingHiderFeatureName: string|null, matchingSeekerFeatureName: string|null, matchingFeaturesMatch: boolean|null } | { conflict: true }>}
  */
 export async function dbCreateQuestion(pool, {
   gameId, askerId, targetId, category, text,
@@ -341,6 +341,8 @@ export async function dbCreateQuestion(pool, {
   measuringHiderDistanceKm = null, measuringSeekerDistanceKm = null, measuringHiderIsCloser = null,
   transitNearestStationName = null, transitNearestStationLat = null,
   transitNearestStationLon = null, transitNearestStationDistanceKm = null,
+  matchingFeatureType = null, matchingHiderFeatureName = null,
+  matchingSeekerFeatureName = null, matchingFeaturesMatch = null,
 }) {
   // Enforce one-pending-question-at-a-time.  When the game uses two teams,
   // scope the check to the asker's team so both teams can ask independently.
@@ -379,9 +381,11 @@ export async function dbCreateQuestion(pool, {
                             measuring_hider_distance_km, measuring_seeker_distance_km,
                             measuring_hider_is_closer,
                             transit_nearest_station_name, transit_nearest_station_lat,
-                            transit_nearest_station_lon, transit_nearest_station_distance_km)
+                            transit_nearest_station_lon, transit_nearest_station_distance_km,
+                            matching_feature_type, matching_hider_feature_name,
+                            matching_seeker_feature_name, matching_features_match)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
-             $19, $20, $21, $22)
+             $19, $20, $21, $22, $23, $24, $25, $26)
      RETURNING id, game_id, asker_id, target_id, category, text, status, expires_at, created_at,
                thermometer_current_distance_m, thermometer_previous_distance_m,
                tentacle_target_lat, tentacle_target_lon, tentacle_radius_km,
@@ -390,7 +394,9 @@ export async function dbCreateQuestion(pool, {
                measuring_hider_distance_km, measuring_seeker_distance_km,
                measuring_hider_is_closer,
                transit_nearest_station_name, transit_nearest_station_lat,
-               transit_nearest_station_lon, transit_nearest_station_distance_km`,
+               transit_nearest_station_lon, transit_nearest_station_distance_km,
+               matching_feature_type, matching_hider_feature_name,
+               matching_seeker_feature_name, matching_features_match`,
     [gameId, askerId, targetId, category, text, expiresAt,
      thermometerCurrentDistanceM ?? null, thermometerPreviousDistanceM ?? null,
      tentacleTargetLat ?? null, tentacleTargetLon ?? null, tentacleRadiusKm ?? null,
@@ -398,7 +404,9 @@ export async function dbCreateQuestion(pool, {
      measuringTargetLat ?? null, measuringTargetLon ?? null,
      measuringHiderDistanceKm ?? null, measuringSeekerDistanceKm ?? null, measuringHiderIsCloser ?? null,
      transitNearestStationName ?? null, transitNearestStationLat ?? null,
-     transitNearestStationLon ?? null, transitNearestStationDistanceKm ?? null],
+     transitNearestStationLon ?? null, transitNearestStationDistanceKm ?? null,
+     matchingFeatureType ?? null, matchingHiderFeatureName ?? null,
+     matchingSeekerFeatureName ?? null, matchingFeaturesMatch ?? null],
   );
   const row = res.rows[0];
   return {
@@ -427,6 +435,10 @@ export async function dbCreateQuestion(pool, {
     transitNearestStationLat:        row.transit_nearest_station_lat         ?? null,
     transitNearestStationLon:        row.transit_nearest_station_lon         ?? null,
     transitNearestStationDistanceKm: row.transit_nearest_station_distance_km ?? null,
+    matchingFeatureType:      row.matching_feature_type       ?? null,
+    matchingHiderFeatureName: row.matching_hider_feature_name ?? null,
+    matchingSeekerFeatureName: row.matching_seeker_feature_name ?? null,
+    matchingFeaturesMatch:    row.matching_features_match     ?? null,
   };
 }
 
@@ -447,7 +459,9 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
             measuring_hider_distance_km, measuring_seeker_distance_km,
             measuring_hider_is_closer,
             transit_nearest_station_name, transit_nearest_station_lat,
-            transit_nearest_station_lon, transit_nearest_station_distance_km
+            transit_nearest_station_lon, transit_nearest_station_distance_km,
+            matching_feature_type, matching_hider_feature_name,
+            matching_seeker_feature_name, matching_features_match
      FROM questions
      WHERE target_id = $1
      ORDER BY created_at DESC`,
@@ -479,6 +493,10 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
     transitNearestStationLat:        row.transit_nearest_station_lat         ?? null,
     transitNearestStationLon:        row.transit_nearest_station_lon         ?? null,
     transitNearestStationDistanceKm: row.transit_nearest_station_distance_km ?? null,
+    matchingFeatureType:       row.matching_feature_type        ?? null,
+    matchingHiderFeatureName:  row.matching_hider_feature_name  ?? null,
+    matchingSeekerFeatureName: row.matching_seeker_feature_name ?? null,
+    matchingFeaturesMatch:     row.matching_features_match      ?? null,
   }));
 }
 
@@ -502,6 +520,8 @@ export async function dbGetQuestionsForGame(pool, gameId) {
             q.measuring_hider_is_closer,
             q.transit_nearest_station_name, q.transit_nearest_station_lat,
             q.transit_nearest_station_lon, q.transit_nearest_station_distance_km,
+            q.matching_feature_type, q.matching_hider_feature_name,
+            q.matching_seeker_feature_name, q.matching_features_match,
             a.text AS answer_text, a.created_at AS answer_created_at
      FROM questions q
      LEFT JOIN answers a ON a.question_id = q.id
@@ -535,6 +555,10 @@ export async function dbGetQuestionsForGame(pool, gameId) {
     transitNearestStationLat:        row.transit_nearest_station_lat         ?? null,
     transitNearestStationLon:        row.transit_nearest_station_lon         ?? null,
     transitNearestStationDistanceKm: row.transit_nearest_station_distance_km ?? null,
+    matchingFeatureType:       row.matching_feature_type        ?? null,
+    matchingHiderFeatureName:  row.matching_hider_feature_name  ?? null,
+    matchingSeekerFeatureName: row.matching_seeker_feature_name ?? null,
+    matchingFeaturesMatch:     row.matching_features_match      ?? null,
     answer:      row.answer_text != null
       ? { text: row.answer_text, createdAt: row.answer_created_at }
       : null,

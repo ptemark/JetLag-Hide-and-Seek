@@ -105,6 +105,12 @@ ALTER TABLE questions ADD COLUMN IF NOT EXISTS transit_nearest_station_lat FLOAT
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS transit_nearest_station_lon FLOAT;
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS transit_nearest_station_distance_km FLOAT;
 
+-- Idempotent migration: add matching columns for matching questions.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS matching_feature_type TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS matching_hider_feature_name TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS matching_seeker_feature_name TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS matching_features_match BOOLEAN;
+
 -- -------------------------------------------------------------------------
 -- answers
 -- Hider responses to seeker questions.

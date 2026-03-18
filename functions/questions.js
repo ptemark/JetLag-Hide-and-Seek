@@ -234,6 +234,121 @@ async function fetchTransitData({ gameId }, gameServerUrl, adminApiKey, fetchFn)
   }
 }
 
+/** Valid feature types for matching questions. */
+export const VALID_FEATURE_TYPES = ['airport', 'train_station', 'bus_station', 'ferry_terminal', 'university', 'hospital'];
+
+/**
+ * Overpass QL node clause per feature type.
+ * Each value is inserted into `node[...](around:<radius>,<lat>,<lon>)`.
+ */
+const FEATURE_TYPE_QUERIES = {
+  airport:        '"aeroway"="aerodrome"',
+  train_station:  '"railway"="station"',
+  bus_station:    '"amenity"="bus_station"',
+  ferry_terminal: '"amenity"="ferry_terminal"',
+  university:     '"amenity"="university"',
+  hospital:       '"amenity"="hospital"',
+};
+
+/** Search radius in metres per feature type. */
+const FEATURE_RADIUS_M = {
+  airport:        50_000,
+  train_station:   5_000,
+  bus_station:     5_000,
+  ferry_terminal:  5_000,
+  university:      5_000,
+  hospital:        5_000,
+};
+
+/**
+ * Fetch the nearest OSM feature of a given type to a lat/lon via Overpass.
+ * Returns `{ id: number, name: string }` or `null` on any failure / no results.
+ *
+ * @param {number} lat
+ * @param {number} lon
+ * @param {string} featureType  One of VALID_FEATURE_TYPES.
+ * @param {typeof fetch} fetchFn
+ * @returns {Promise<{ id: number, name: string }|null>}
+ */
+async function fetchNearestFeature(lat, lon, featureType, fetchFn) {
+  const clause = FEATURE_TYPE_QUERIES[featureType];
+  if (!clause) return null;
+  const radiusM = FEATURE_RADIUS_M[featureType] ?? 5_000;
+  const around  = `around:${radiusM},${lat},${lon}`;
+  const query   = `[out:json][timeout:25];node[${clause}](${around});out body;`;
+  try {
+    const overpassRes = await fetchFn(OVERPASS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `data=${encodeURIComponent(query)}`,
+    });
+    if (!overpassRes.ok) return null;
+    const data = await overpassRes.json();
+    const nodes = (data?.elements ?? []).filter(el => el.type === 'node');
+    if (nodes.length === 0) return null;
+    // Pick nearest node by haversine distance.
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const node of nodes) {
+      const dist = haversineDistanceKm(lat, lon, node.lat, node.lon);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = node;
+      }
+    }
+    return {
+      id:   nearest.id,
+      name: nearest.tags?.name ?? nearest.tags?.['name:en'] ?? featureType,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch matching data: get both players' positions, find nearest feature of
+ * the requested type for each, and compare by OSM node ID.
+ *
+ * Returns nulls on any failure (missing server config, positions unavailable,
+ * Overpass error).  Failures are silent — the question is still created.
+ *
+ * @param {{ gameId: string, seekerId: string, featureType: string }} params
+ * @param {string|undefined} gameServerUrl
+ * @param {string|null} adminApiKey
+ * @param {typeof fetch} fetchFn  Used for both the positions call and Overpass.
+ * @returns {Promise<{ matchingHiderFeatureName: string|null, matchingSeekerFeatureName: string|null, matchingFeaturesMatch: boolean|null }>}
+ */
+async function fetchMatchingData({ gameId, seekerId, featureType }, gameServerUrl, adminApiKey, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+  const nullResult = { matchingHiderFeatureName: null, matchingSeekerFeatureName: null, matchingFeaturesMatch: null };
+  if (!serverUrl || !fetchFn || !key) return nullResult;
+  if (!VALID_FEATURE_TYPES.includes(featureType)) return nullResult;
+  try {
+    const posRes = await fetchFn(
+      `${serverUrl}/internal/games/${gameId}/matching?seekerId=${encodeURIComponent(seekerId)}`,
+      { headers: { 'Authorization': `Bearer ${key}` } },
+    );
+    if (!posRes.ok) return nullResult;
+    const { hiderLat, hiderLon, seekerLat, seekerLon } = await posRes.json();
+    if (hiderLat == null || hiderLon == null || seekerLat == null || seekerLon == null) {
+      return nullResult;
+    }
+    const [hiderFeature, seekerFeature] = await Promise.all([
+      fetchNearestFeature(hiderLat, hiderLon, featureType, fetchFn),
+      fetchNearestFeature(seekerLat, seekerLon, featureType, fetchFn),
+    ]);
+    const matchingHiderFeatureName  = hiderFeature?.name  ?? null;
+    const matchingSeekerFeatureName = seekerFeature?.name ?? null;
+    const matchingFeaturesMatch = (hiderFeature != null && seekerFeature != null)
+      ? hiderFeature.id === seekerFeature.id
+      : null;
+    return { matchingHiderFeatureName, matchingSeekerFeatureName, matchingFeaturesMatch };
+  } catch {
+    return nullResult;
+  }
+}
+
 // ── In-process stores (no DB pool) ───────────────────────────────────────────
 
 const _questions = new Map();
@@ -327,6 +442,7 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
   const { gameId, askerId, targetId, category, text, gameScale,
           tentacleTargetLat, tentacleTargetLon, tentacleRadiusKm,
           measuringTargetLat, measuringTargetLon,
+          matchingFeatureType,
         } = req.body ?? {};
 
   if (!gameId   || typeof gameId   !== 'string') return { status: 400, body: { error: 'gameId is required' } };
@@ -359,11 +475,15 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       ? fetchTransitData({ gameId }, gameServerUrl, adminApiKey, fetchFn)
       : Promise.resolve({ nearestStationName: null, nearestStationLat: null, nearestStationLon: null, nearestStationDistanceKm: null });
 
+    const matchingFetch = (category === 'matching' && matchingFeatureType != null)
+      ? fetchMatchingData({ gameId, seekerId: askerId, featureType: matchingFeatureType }, gameServerUrl, adminApiKey, fetchFn)
+      : Promise.resolve({ matchingHiderFeatureName: null, matchingSeekerFeatureName: null, matchingFeaturesMatch: null });
+
     return dbGetCurseExpiry(pool, gameId).then(curseExpiry => {
       if (curseExpiry && new Date(curseExpiry) > new Date()) {
         return { status: 409, body: { error: 'curse_active', curseEndsAt: curseExpiry } };
       }
-      return Promise.all([thermometerFetch, tentacleFetch, measuringFetch, transitFetch]).then(([td, tent, meas, trans]) =>
+      return Promise.all([thermometerFetch, tentacleFetch, measuringFetch, transitFetch, matchingFetch]).then(([td, tent, meas, trans, match]) =>
         dbCreateQuestion(pool, {
           gameId, askerId, targetId, category, text, gameScale,
           thermometerCurrentDistanceM:  td.currentDistanceM,
@@ -382,6 +502,10 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
           transitNearestStationLat:        trans.nearestStationLat        ?? null,
           transitNearestStationLon:        trans.nearestStationLon        ?? null,
           transitNearestStationDistanceKm: trans.nearestStationDistanceKm ?? null,
+          matchingFeatureType:       matchingFeatureType ?? null,
+          matchingHiderFeatureName:  match.matchingHiderFeatureName  ?? null,
+          matchingSeekerFeatureName: match.matchingSeekerFeatureName ?? null,
+          matchingFeaturesMatch:     match.matchingFeaturesMatch     ?? null,
         }).then(row => {
           if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
           notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
@@ -414,6 +538,7 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
     notifyFetch = fetchFn,
     measuringOpts = {},
     transitOpts = {},
+    matchingOpts = {},
   ) => {
     const expiresAt = new Date(Date.now() + computeExpiryMs(gameScale, category)).toISOString();
     const question = {
@@ -442,6 +567,10 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       transitNearestStationLat:        transitOpts.nearestStationLat        ?? null,
       transitNearestStationLon:        transitOpts.nearestStationLon        ?? null,
       transitNearestStationDistanceKm: transitOpts.nearestStationDistanceKm ?? null,
+      matchingFeatureType:       matchingOpts.featureType        ?? null,
+      matchingHiderFeatureName:  matchingOpts.hiderFeatureName   ?? null,
+      matchingSeekerFeatureName: matchingOpts.seekerFeatureName  ?? null,
+      matchingFeaturesMatch:     matchingOpts.featuresMatch      ?? null,
     };
     _questions.set(question.questionId, question);
     notifyQuestionPending({ gameId, questionId: question.questionId, expiresAt: question.expiresAt }, gameServerUrl, notifyFetch);
@@ -528,6 +657,29 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
     }
     // No server configured — build with null transit fields.
     return _buildInProcessQuestion(null, null, {}, fetchFn, {}, {});
+  }
+
+  if (category === 'matching' && matchingFeatureType != null) {
+    const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+    const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+    if (serverUrl && fetchFn && key) {
+      return fetchMatchingData(
+        { gameId, seekerId: askerId, featureType: matchingFeatureType },
+        gameServerUrl, adminApiKey, fetchFn,
+      ).then(match => _buildInProcessQuestion(null, null, {}, globalThis.fetch, {}, {}, {
+        featureType:       matchingFeatureType,
+        hiderFeatureName:  match.matchingHiderFeatureName,
+        seekerFeatureName: match.matchingSeekerFeatureName,
+        featuresMatch:     match.matchingFeaturesMatch,
+      }));
+    }
+    // No server configured — build with stored featureType but null computed fields.
+    return _buildInProcessQuestion(null, null, {}, fetchFn, {}, {}, {
+      featureType:       matchingFeatureType,
+      hiderFeatureName:  null,
+      seekerFeatureName: null,
+      featuresMatch:     null,
+    });
   }
 
   return _buildInProcessQuestion(null, null);

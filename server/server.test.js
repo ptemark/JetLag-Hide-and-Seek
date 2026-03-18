@@ -2072,3 +2072,88 @@ describe('GET /internal/games/:gameId/hider-position', () => {
     expect(body.lon).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /internal/games/:gameId/matching
+// ---------------------------------------------------------------------------
+
+describe('GET /internal/games/:gameId/matching', () => {
+  let server;
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop();
+      server = null;
+    }
+    vi.useRealTimers();
+  });
+
+  it('returns 401 when no Authorization header and adminApiKey is configured', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/g1/matching?seekerId=s1`);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toMatch(/unauthorized/i);
+  });
+
+  it('returns 404 for an unknown game', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/no-game/matching?seekerId=s1`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/game not found/i);
+  });
+
+  it('returns hider and seeker lat/lon when both players have positions', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('match-game', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('match-game', 'hider1', 'hider');
+    server.gameStateManager.addPlayerToGame('match-game', 'seeker1', 'seeker');
+    server.gameStateManager.updatePlayerLocation('match-game', 'hider1', 51.5074, -0.1278);
+    server.gameStateManager.updatePlayerLocation('match-game', 'seeker1', 51.5200, -0.1000);
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/match-game/matching?seekerId=seeker1`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.hiderLat).toBeCloseTo(51.5074);
+    expect(body.hiderLon).toBeCloseTo(-0.1278);
+    expect(body.seekerLat).toBeCloseTo(51.5200);
+    expect(body.seekerLon).toBeCloseTo(-0.1000);
+  });
+
+  it('returns null positions when players have no location', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('match-noloc', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('match-noloc', 'hider2', 'hider');
+    server.gameStateManager.addPlayerToGame('match-noloc', 'seeker2', 'seeker');
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/match-noloc/matching?seekerId=seeker2`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.hiderLat).toBeNull();
+    expect(body.hiderLon).toBeNull();
+    expect(body.seekerLat).toBeNull();
+    expect(body.seekerLon).toBeNull();
+  });
+});

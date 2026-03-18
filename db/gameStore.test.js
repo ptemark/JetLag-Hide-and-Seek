@@ -819,6 +819,41 @@ describe('dbCreateQuestion', () => {
     // Only two queries: pending check + INSERT.  No extra SELECT on games.
     expect(pool.query).toHaveBeenCalledTimes(2);
   });
+
+  it('accepts matching columns and returns them in the result', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })  // pending check
+        .mockResolvedValueOnce({ rows: [{
+          id: 'q-matching', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+          category: 'matching', text: 'Same hospital?', status: 'pending',
+          expires_at: expiresAt, created_at: new Date(),
+          matching_feature_type: 'hospital',
+          matching_hider_feature_name: 'Royal Free',
+          matching_seeker_feature_name: 'UCH',
+          matching_features_match: false,
+        }] }),
+    };
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'Same hospital?',
+      matchingFeatureType: 'hospital',
+      matchingHiderFeatureName: 'Royal Free',
+      matchingSeekerFeatureName: 'UCH',
+      matchingFeaturesMatch: false,
+    });
+    expect(result.matchingFeatureType).toBe('hospital');
+    expect(result.matchingHiderFeatureName).toBe('Royal Free');
+    expect(result.matchingSeekerFeatureName).toBe('UCH');
+    expect(result.matchingFeaturesMatch).toBe(false);
+    // Verify INSERT SQL includes matching columns.
+    const insertCall = pool.query.mock.calls[1];
+    expect(insertCall[0]).toContain('matching_feature_type');
+    expect(insertCall[1][22]).toBe('hospital');      // matchingFeatureType ($23)
+    expect(insertCall[1][23]).toBe('Royal Free');    // matchingHiderFeatureName ($24)
+    expect(insertCall[1][24]).toBe('UCH');           // matchingSeekerFeatureName ($25)
+    expect(insertCall[1][25]).toBe(false);           // matchingFeaturesMatch ($26)
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -845,6 +880,26 @@ describe('dbGetQuestionsForPlayer', () => {
     const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
     const questions = await dbGetQuestionsForPlayer(pool, 'nobody');
     expect(questions).toEqual([]);
+  });
+
+  it('returns matching columns when present', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-m', game_id: 'g1', asker_id: 'a1', target_id: 'p1',
+        category: 'matching', text: 'Same hospital?', status: 'pending',
+        expires_at: expiresAt, created_at: new Date(),
+        matching_feature_type: 'hospital',
+        matching_hider_feature_name: 'City Hospital',
+        matching_seeker_feature_name: 'Royal Hospital',
+        matching_features_match: false,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForPlayer(pool, 'p1');
+    expect(questions[0].matchingFeatureType).toBe('hospital');
+    expect(questions[0].matchingHiderFeatureName).toBe('City Hospital');
+    expect(questions[0].matchingSeekerFeatureName).toBe('Royal Hospital');
+    expect(questions[0].matchingFeaturesMatch).toBe(false);
   });
 });
 
@@ -1465,6 +1520,42 @@ describe('dbGetQuestionsForGame — transit columns', () => {
     expect(questions).toHaveLength(1);
     expect(questions[0].transitNearestStationName).toBe('Victoria');
     expect(questions[0].transitNearestStationDistanceKm).toBeCloseTo(0.61);
+    expect(questions[0].answer).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForGame — matching columns
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForGame — matching columns', () => {
+  it('returns matching fields in game Q&A history', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-match-g', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+        category: 'matching', text: 'Same hospital?', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+        tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+        tentacle_distance_km: null, tentacle_within_radius: null,
+        measuring_target_lat: null, measuring_target_lon: null,
+        measuring_hider_distance_km: null, measuring_seeker_distance_km: null,
+        measuring_hider_is_closer: null,
+        transit_nearest_station_name: null, transit_nearest_station_lat: null,
+        transit_nearest_station_lon: null, transit_nearest_station_distance_km: null,
+        matching_feature_type: 'hospital',
+        matching_hider_feature_name: 'Bart\'s',
+        matching_seeker_feature_name: 'Bart\'s',
+        matching_features_match: true,
+        answer_text: null, answer_created_at: null,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForGame(pool, 'g1');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].matchingFeatureType).toBe('hospital');
+    expect(questions[0].matchingHiderFeatureName).toBe('Bart\'s');
+    expect(questions[0].matchingSeekerFeatureName).toBe('Bart\'s');
+    expect(questions[0].matchingFeaturesMatch).toBe(true);
     expect(questions[0].answer).toBeNull();
   });
 });

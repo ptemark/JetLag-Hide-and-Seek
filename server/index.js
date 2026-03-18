@@ -255,6 +255,41 @@ export function createServer({
       return;
     }
 
+    // GET /internal/games/:gameId/matching?seekerId= — return hider and seeker
+    // lat/lon so the serverless questions handler can compare nearest landmarks.
+    // Protected by ADMIN_API_KEY Bearer token when adminApiKey is configured.
+    const matchingPositionMatch = req.method === 'GET'
+      && urlPath.match(/^\/internal\/games\/(?<gameId>[^/]+)\/matching$/);
+    if (matchingPositionMatch) {
+      const authHeader = req.headers['authorization'] ?? '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (adminApiKey && token !== adminApiKey) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+      const { gameId } = matchingPositionMatch.groups;
+      const gameState = gameStateManager.getGameState(gameId);
+      if (!gameState) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'game not found' }));
+        return;
+      }
+      const reqUrl = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      const seekerId = reqUrl.searchParams.get('seekerId');
+      const players = Object.entries(gameState.players ?? {});
+      const hiderEntry  = players.find(([, p]) => p.role === 'hider');
+      const seekerEntry = seekerId ? players.find(([id]) => id === seekerId) : null;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        hiderLat:  hiderEntry?.[1].lat  ?? null,
+        hiderLon:  hiderEntry?.[1].lon  ?? null,
+        seekerLat: seekerEntry?.[1].lat ?? null,
+        seekerLon: seekerEntry?.[1].lon ?? null,
+      }));
+      return;
+    }
+
     // POST /internal/games/:gameId/zones — register hiding zones for a game so
     // the capture detector can evaluate seeker proximity each tick.
     const zonesMatch = req.method === 'POST'

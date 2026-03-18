@@ -1494,3 +1494,205 @@ describe('submitQuestion — transit enrichment', () => {
     expect(typeof capturedArgs.params[21]).toBe('number'); // transit_nearest_station_distance_km
   });
 });
+
+// ── submitQuestion — matching enrichment ──────────────────────────────────────
+
+describe('submitQuestion — matching enrichment', () => {
+  beforeEach(() => _clearStores());
+
+  it('fetches matching positions then Overpass twice, stores feature names and match status (in-process, same node)', async () => {
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (String(url).includes('/matching')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          hiderLat: 51.5074, hiderLon: -0.1278,
+          seekerLat: 51.5200, seekerLon: -0.1000,
+        }) });
+      }
+      // Both Overpass calls return same node id → features match.
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({
+        elements: [{ type: 'node', id: 99, lat: 51.508, lon: -0.120, tags: { name: 'Heathrow' } }],
+      }) });
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'matching', text: 'Same airport?', matchingFeatureType: 'airport' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.matchingFeatureType).toBe('airport');
+    expect(body.matchingHiderFeatureName).toBe('Heathrow');
+    expect(body.matchingSeekerFeatureName).toBe('Heathrow');
+    expect(body.matchingFeaturesMatch).toBe(true);
+    // positions call uses Bearer auth
+    const posCall = mockFetch.mock.calls.find(([url]) => String(url).includes('/matching'));
+    expect(posCall[1].headers['Authorization']).toBe('Bearer test-admin-key');
+  });
+
+  it('stores featuresMatch=false when hider and seeker nearest features differ (in-process)', async () => {
+    let overpassCallCount = 0;
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (String(url).includes('/matching')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          hiderLat: 51.5074, hiderLon: -0.1278,
+          seekerLat: 51.5200, seekerLon: -0.1000,
+        }) });
+      }
+      // Alternate node IDs on successive Overpass calls.
+      overpassCallCount += 1;
+      const nodeId = overpassCallCount === 1 ? 10 : 20;
+      const name   = overpassCallCount === 1 ? 'St Thomas Hospital' : 'Kings College Hospital';
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({
+        elements: [{ type: 'node', id: nodeId, lat: 51.5, lon: -0.1, tags: { name } }],
+      }) });
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'matching', text: 'Same hospital?', matchingFeatureType: 'hospital' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.matchingFeaturesMatch).toBe(false);
+    expect(body.matchingHiderFeatureName).toBe('St Thomas Hospital');
+    expect(body.matchingSeekerFeatureName).toBe('Kings College Hospital');
+  });
+
+  it('does not fetch matching endpoint for non-matching categories (in-process)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true, json: () => Promise.resolve({}),
+    });
+
+    const { status } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'transit', text: 'On this route?' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    const matchingCalls = mockFetch.mock.calls.filter(([url]) =>
+      typeof url === 'string' && url.includes('/matching'),
+    );
+    expect(matchingCalls).toHaveLength(0);
+  });
+
+  it('returns null matching fields when positions are unavailable (in-process)', async () => {
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (String(url).includes('/matching')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          hiderLat: null, hiderLon: null, seekerLat: null, seekerLon: null,
+        }) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ elements: [] }) });
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'matching', text: 'Same hospital?', matchingFeatureType: 'hospital' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.matchingHiderFeatureName).toBeNull();
+    expect(body.matchingSeekerFeatureName).toBeNull();
+    expect(body.matchingFeaturesMatch).toBeNull();
+  });
+
+  it('returns null matching fields when Overpass fails (in-process)', async () => {
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (String(url).includes('/matching')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          hiderLat: 51.5, hiderLon: -0.1,
+          seekerLat: 51.6, seekerLon: -0.2,
+        }) });
+      }
+      return Promise.resolve({ ok: false, status: 500 });
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'matching', text: 'Same hospital?', matchingFeatureType: 'hospital' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.matchingHiderFeatureName).toBeNull();
+    expect(body.matchingSeekerFeatureName).toBeNull();
+    expect(body.matchingFeaturesMatch).toBeNull();
+  });
+
+  it('fetches matching endpoint and passes result to dbCreateQuestion (pool path)', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedArgs = {};
+
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })   // no active curse
+        .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
+        .mockImplementationOnce((sql, params) => {
+          capturedArgs.params = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-match', game_id: 'game-1', asker_id: 'seeker-1', target_id: 'hider-1',
+            category: 'matching', text: 'Same hospital?', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+            tentacle_target_lat: null, tentacle_target_lon: null,
+            tentacle_radius_km: null, tentacle_distance_km: null, tentacle_within_radius: null,
+            measuring_target_lat: null, measuring_target_lon: null,
+            measuring_hider_distance_km: null, measuring_seeker_distance_km: null,
+            measuring_hider_is_closer: null,
+            transit_nearest_station_name: null, transit_nearest_station_lat: null,
+            transit_nearest_station_lon: null, transit_nearest_station_distance_km: null,
+            matching_feature_type:       params[22],
+            matching_hider_feature_name:  params[23],
+            matching_seeker_feature_name: params[24],
+            matching_features_match:      params[25],
+          }] });
+        }),
+    };
+
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (String(url).includes('/matching')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          hiderLat: 51.5, hiderLon: -0.1,
+          seekerLat: 51.5, seekerLon: -0.1,
+        }) });
+      }
+      // Both Overpass calls return same node — features match.
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({
+        elements: [{ type: 'node', id: 77, lat: 51.5, lon: -0.1, tags: { name: 'Medway Hospital' } }],
+      }) });
+    });
+
+    const { status, body } = await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'matching', text: 'Same hospital?', matchingFeatureType: 'hospital' }) },
+      pool,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.matchingFeatureType).toBe('hospital');
+    expect(body.matchingHiderFeatureName).toBe('Medway Hospital');
+    expect(body.matchingSeekerFeatureName).toBe('Medway Hospital');
+    expect(body.matchingFeaturesMatch).toBe(true);
+    // Verify INSERT params.
+    expect(capturedArgs.params[22]).toBe('hospital');        // matching_feature_type
+    expect(capturedArgs.params[23]).toBe('Medway Hospital'); // matching_hider_feature_name
+    expect(capturedArgs.params[24]).toBe('Medway Hospital'); // matching_seeker_feature_name
+    expect(capturedArgs.params[25]).toBe(true);              // matching_features_match
+  });
+});

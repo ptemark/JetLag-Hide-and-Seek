@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { submitQuestion, listQuestions } from '../api.js';
+import { submitQuestion, listQuestions, fetchQuestionPhoto } from '../api.js';
 
 const CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
@@ -43,6 +43,8 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
   const [history, setHistory] = useState([]);       // server-side Q&A history
   const [historyError, setHistoryError] = useState(null);
   const [error, setError] = useState(null);
+  const [photoCache, setPhotoCache] = useState({}); // questionId → 'loading' | string | null
+  const fetchedPhotosRef = useRef(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [, setTick] = useState(0); // 1-second tick to refresh curse countdown
 
@@ -75,6 +77,19 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
       })
       .catch((err) => setHistoryError(err.message));
   }, [game.gameId, qaRefresh]);
+
+  // Fetch photos for answered photo questions that appear in the server history.
+  useEffect(() => {
+    history.forEach((q) => {
+      if (q.category === 'photo' && q.answer && !fetchedPhotosRef.current.has(q.questionId)) {
+        fetchedPhotosRef.current.add(q.questionId);
+        setPhotoCache((prev) => ({ ...prev, [q.questionId]: 'loading' }));
+        fetchQuestionPhoto(q.questionId)
+          .then((data) => setPhotoCache((prev) => ({ ...prev, [q.questionId]: data?.photoData ?? null })))
+          .catch(() => setPhotoCache((prev) => ({ ...prev, [q.questionId]: null })));
+      }
+    });
+  }, [history]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -256,6 +271,16 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
                 {q.answer && (
                   <span aria-label="answer"> → {q.answer.text}</span>
                 )}
+                {q.category === 'photo' && q.answer && (() => {
+                  const cached = photoCache[q.questionId];
+                  if (typeof cached === 'string' && cached !== '') {
+                    return <img data-testid="question-photo-img" src={cached} alt="Hider photo" style={{ maxWidth: '200px', display: 'block' }} />;
+                  }
+                  if (cached === null) {
+                    return <span data-testid="no-photo">No photo attached</span>;
+                  }
+                  return <span>Loading photo…</span>;
+                })()}
               </li>
             ))}
           </ul>

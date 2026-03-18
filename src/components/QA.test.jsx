@@ -736,3 +736,61 @@ describe('QuestionPanel tentacle', () => {
     );
   });
 });
+
+// ── QuestionPanel photo display ───────────────────────────────────────────────
+
+describe('QuestionPanel photo display', () => {
+  const PHOTO_Q_ANSWERED = {
+    questionId: 'q-ph1',
+    gameId: 'g1',
+    askerId: 'p1',
+    targetId: 'p2',
+    category: 'photo',
+    text: 'Show me your surroundings.',
+    status: 'answered',
+    answer: { text: 'See attached.', createdAt: '2026-01-01T00:02:00Z' },
+  };
+
+  it('fetches and renders hider photo for answered photo questions in history', async () => {
+    api.listQuestions.mockResolvedValue({ questions: [PHOTO_Q_ANSWERED] });
+    api.fetchQuestionPhoto.mockResolvedValue({ photoData: 'data:image/png;base64,ABC' });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('question-photo-img')).toBeInTheDocument()
+    );
+    expect(screen.getByTestId('question-photo-img')).toHaveAttribute('src', 'data:image/png;base64,ABC');
+    expect(api.fetchQuestionPhoto).toHaveBeenCalledWith('q-ph1');
+  });
+
+  it('does not render photo img and does not call fetchQuestionPhoto for unanswered photo questions', async () => {
+    const pendingPhotoQ = { ...PHOTO_Q_ANSWERED, status: 'pending', answer: undefined };
+    api.listQuestions.mockResolvedValue({ questions: [pendingPhotoQ] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => screen.getByText(/Show me your surroundings/));
+    expect(screen.queryByTestId('question-photo-img')).not.toBeInTheDocument();
+    expect(api.fetchQuestionPhoto).not.toHaveBeenCalled();
+  });
+
+  it('does not render photo img for non-photo questions with answers', async () => {
+    const answeredMatchingQ = {
+      ...QUESTION,
+      status: 'answered',
+      answer: { text: 'Yes.', createdAt: '2026-01-01T00:02:00Z' },
+    };
+    api.listQuestions.mockResolvedValue({ questions: [answeredMatchingQ] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => screen.getByText(/Are you near a park/));
+    expect(screen.queryByTestId('question-photo-img')).not.toBeInTheDocument();
+    expect(api.fetchQuestionPhoto).not.toHaveBeenCalled();
+  });
+
+  it('renders "No photo attached" span when fetchQuestionPhoto rejects', async () => {
+    api.listQuestions.mockResolvedValue({ questions: [PHOTO_Q_ANSWERED] });
+    api.fetchQuestionPhoto.mockRejectedValue(new Error('not found'));
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('no-photo')).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId('question-photo-img')).not.toBeInTheDocument();
+  });
+});

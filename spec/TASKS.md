@@ -7,7 +7,11 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 89 complete. Matching question frontend UI: matchingHint() renders same/different/unknown hint in AnswerPanel for matching category; QuestionPanel shows feature type select for matching category; matchingFeatureType passed in submitQuestion API call; 6 new tests; 1389 tests pass._
+_Task 90 complete. Photo display in question history: QuestionPanel fetches and displays hider photos for answered photo questions; fetchedPhotosRef prevents duplicate fetches; 'Loading photo…' while in-flight, img on success, 'No photo attached' on error/absence; 4 new tests; 1393 tests pass._
+
+### Phase 34 — Photo Display
+
+- [x] **90** — Photo display in question history: Task 51 added `POST /questions/:questionId/photo` for hiders to upload photos and `GET /questions/:questionId/photo` to retrieve them, and `fetchQuestionPhoto` exists in `src/api.js`, but `QuestionPanel` never fetches or displays these photos — seekers have no way to see the hider's photo answer in the question history. Changes needed: (1) `src/components/QuestionPanel.jsx` — import `fetchQuestionPhoto`; add `photoCache` state (map of questionId → `'loading' | string | null`); add a `fetchedPhotosRef` ref (Set) to avoid duplicate fetches; add a `useEffect` watching `history` that, for every photo question with an answer not yet in the ref, marks the cache entry as `'loading'`, adds the id to the ref, then calls `fetchQuestionPhoto` — on success stores `data.photoData` (or `null` if absent), on failure stores `null`; in the history list, for `category === 'photo'` questions that have an answer, render below the answer text: if `photoCache[q.questionId] === 'loading'` → `<span>Loading photo…</span>`; if the cached value is a non-empty string → `<img data-testid="question-photo-img" src={cached} alt="Hider photo" />`; otherwise → `<span data-testid="no-photo">No photo attached</span>`. (2) `src/components/QA.test.jsx` — 4 tests: (a) photo question with answer fetches photo and renders `<img data-testid="question-photo-img">`; (b) photo question without answer does not render img and does not call fetchQuestionPhoto; (c) non-photo question with answer does not render img; (d) fetchQuestionPhoto rejection renders `<span data-testid="no-photo">`.
 
 ### Phase 33 — Matching Question Mechanics
 
@@ -57,6 +61,7 @@ _Task 89 complete. Matching question frontend UI: matchingHint() renders same/di
 
 | # | Date | Task | Files | Notes |
 |---|------|------|-------|-------|
+| 90 | 2026-03-18 | Photo display in question history | src/components/QuestionPanel.jsx, src/components/QA.test.jsx | fetchQuestionPhoto called for answered photo questions in history; fetchedPhotosRef prevents duplicate fetches; photoCache state drives img/loading/no-photo rendering; 4 new tests; 1393 tests pass |
 | 89 | 2026-03-18 | Matching question frontend UI | src/components/AnswerPanel.jsx, src/components/QuestionPanel.jsx, src/components/QA.test.jsx | matchingHint() derives same/different/unknown from stored fields; hint shown below question text for matching category; QuestionPanel shows feature type select when category=matching; matchingFeatureType passed in submitQuestion call; 6 new tests; 1389 tests pass |
 | 88 | 2026-03-18 | Matching question server-side nearest-feature comparison | db/schema.sql, db/gameStore.js, server/index.js, functions/questions.js + tests | fetchNearestFeature() queries Overpass per feature type; fetchMatchingData() compares hider/seeker nearest features by OSM node ID; GET /internal/games/:gameId/matching endpoint with Bearer auth; 4 matching columns on questions table (idempotent); in-process and DB paths; 13 new tests; 1383 tests pass |
 | 87 | 2026-03-18 | Transit question frontend UI | src/components/AnswerPanel.jsx, src/components/QA.test.jsx | transitHint() derives nearest-station/unknown from stored fields; hint shown below question text for transit category; 3 new tests; 1370 tests pass |

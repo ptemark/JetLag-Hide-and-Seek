@@ -1190,3 +1190,172 @@ describe('submitQuestion — tentacle enrichment', () => {
     expect(capturedArgs.params[12]).toBe(false);     // tentacle_within_radius
   });
 });
+
+// ── submitQuestion — measuring enrichment ─────────────────────────────────────
+
+describe('submitQuestion — measuring enrichment', () => {
+  beforeEach(() => _clearStores());
+
+  it('fetches measuring endpoint and stores result (in-process)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ hiderDistanceKm: 340.5, seekerDistanceKm: 490.2, hiderIsCloser: true }),
+    });
+
+    const { status, body } = await submitQuestion(
+      {
+        method: 'POST',
+        body: makeQuestion({
+          category: 'measuring',
+          text: 'Am I closer to Paris than you?',
+          measuringTargetLat: 48.8584,
+          measuringTargetLon: 2.2945,
+        }),
+      },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.measuringHiderIsCloser).toBe(true);
+    expect(body.measuringHiderDistanceKm).toBe(340.5);
+    expect(body.measuringSeekerDistanceKm).toBe(490.2);
+    expect(body.measuringTargetLat).toBe(48.8584);
+    expect(body.measuringTargetLon).toBe(2.2945);
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toContain('/internal/games/game-1/measuring');
+    expect(url).toContain('targetLat=48.8584');
+    expect(url).toContain('seekerId=seeker-1');
+    expect(opts.headers['Authorization']).toBe('Bearer test-admin-key');
+  });
+
+  it('stores null computed fields when measuring fetch fails (in-process)', async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error('network error'));
+
+    const { status, body } = await submitQuestion(
+      {
+        method: 'POST',
+        body: makeQuestion({
+          category: 'measuring',
+          text: 'Am I closer to Paris?',
+          measuringTargetLat: 48.8584,
+          measuringTargetLon: 2.2945,
+        }),
+      },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.measuringHiderIsCloser).toBeNull();
+    expect(body.measuringHiderDistanceKm).toBeNull();
+    // Coordinates should still be stored.
+    expect(body.measuringTargetLat).toBe(48.8584);
+    expect(body.measuringTargetLon).toBe(2.2945);
+  });
+
+  it('does not fetch measuring endpoint for non-measuring categories (in-process)', async () => {
+    const mockFetch = vi.fn();
+
+    await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'matching', text: 'Near a river?' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    const measuringCalls = mockFetch.mock.calls.filter(([url]) =>
+      typeof url === 'string' && url.includes('/measuring'),
+    );
+    expect(measuringCalls).toHaveLength(0);
+  });
+
+  it('stores null computed fields when no gameServerUrl configured (in-process)', async () => {
+    const { status, body } = await submitQuestion(
+      {
+        method: 'POST',
+        body: makeQuestion({
+          category: 'measuring',
+          text: 'Am I closer to Paris?',
+          measuringTargetLat: 48.8584,
+          measuringTargetLon: 2.2945,
+        }),
+      },
+      null,
+      undefined,  // no gameServerUrl
+      undefined,  // no fetch
+      null,       // no adminApiKey
+    );
+
+    expect(status).toBe(201);
+    expect(body.measuringHiderIsCloser).toBeNull();
+    expect(body.measuringHiderDistanceKm).toBeNull();
+    // Coords still persisted.
+    expect(body.measuringTargetLat).toBe(48.8584);
+    expect(body.measuringTargetLon).toBe(2.2945);
+  });
+
+  it('fetches measuring endpoint and passes result to dbCreateQuestion (pool path)', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedArgs = {};
+
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })   // no active curse
+        .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
+        .mockImplementationOnce((sql, params) => {
+          capturedArgs.params = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-meas', game_id: 'game-1', asker_id: 'seeker-1', target_id: 'hider-1',
+            category: 'measuring', text: 'Am I closer?', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null,
+            thermometer_previous_distance_m: null,
+            tentacle_target_lat: null, tentacle_target_lon: null,
+            tentacle_radius_km: null, tentacle_distance_km: null, tentacle_within_radius: null,
+            measuring_target_lat:       params[13],
+            measuring_target_lon:       params[14],
+            measuring_hider_distance_km:  params[15],
+            measuring_seeker_distance_km: params[16],
+            measuring_hider_is_closer:    params[17],
+          }] });
+        }),
+    };
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ hiderDistanceKm: 340.5, seekerDistanceKm: 490.2, hiderIsCloser: true }),
+    });
+
+    const { status, body } = await submitQuestion(
+      {
+        method: 'POST',
+        body: makeQuestion({
+          category: 'measuring',
+          text: 'Am I closer?',
+          measuringTargetLat: 48.8584,
+          measuringTargetLon: 2.2945,
+        }),
+      },
+      pool,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.measuringHiderIsCloser).toBe(true);
+    expect(body.measuringHiderDistanceKm).toBe(340.5);
+    expect(body.measuringSeekerDistanceKm).toBe(490.2);
+    // Verify coords and computed values passed as INSERT params.
+    expect(capturedArgs.params[13]).toBe(48.8584);  // measuring_target_lat
+    expect(capturedArgs.params[14]).toBe(2.2945);   // measuring_target_lon
+    expect(capturedArgs.params[15]).toBe(340.5);    // measuring_hider_distance_km
+    expect(capturedArgs.params[16]).toBe(490.2);    // measuring_seeker_distance_km
+    expect(capturedArgs.params[17]).toBe(true);     // measuring_hider_is_closer
+  });
+});

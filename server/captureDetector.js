@@ -40,6 +40,37 @@ export function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Compare the hider's distance to a target landmark against the seeker's
+ * distance to the same landmark.  Used for measuring questions (RULES.md
+ * §Asking Questions category 2: "Am I closer to X than you?").
+ *
+ * Returns nulls when hider position, seeker position, or target coordinates
+ * are missing.
+ *
+ * @param {number|null} hiderLat   Hider's current latitude.
+ * @param {number|null} hiderLon   Hider's current longitude.
+ * @param {number|null} seekerLat  Seeker's current latitude.
+ * @param {number|null} seekerLon  Seeker's current longitude.
+ * @param {number|null} targetLat  Target landmark latitude.
+ * @param {number|null} targetLon  Target landmark longitude.
+ * @returns {{
+ *   hiderDistanceKm:  number  | null,
+ *   seekerDistanceKm: number  | null,
+ *   hiderIsCloser:    boolean | null,
+ * }}
+ */
+export function calculateMeasuring(hiderLat, hiderLon, seekerLat, seekerLon, targetLat, targetLon) {
+  if (hiderLat == null  || hiderLon == null  ||
+      seekerLat == null || seekerLon == null  ||
+      targetLat == null || targetLon == null) {
+    return { hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null };
+  }
+  const hiderDistanceKm  = haversineDistance(hiderLat,  hiderLon,  targetLat, targetLon) / 1000;
+  const seekerDistanceKm = haversineDistance(seekerLat, seekerLon, targetLat, targetLon) / 1000;
+  return { hiderDistanceKm, seekerDistanceKm, hiderIsCloser: hiderDistanceKm < seekerDistanceKm };
+}
+
+/**
  * Determine whether the hider is within a specified radius of a target point.
  * Used for tentacle questions: the seeker picks a target location and radius;
  * the server checks the hider's current position.

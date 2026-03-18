@@ -11,7 +11,7 @@ import { Logger, LogCategory, LogLevel } from './logger.js';
 import { MetricsCollector, MetricKey, RateTracker } from './monitoring.js';
 import { nullAlertManager, AlertType } from './alerting.js';
 import { nullAutoScaler } from './autoScaler.js';
-import { checkCapture, calculateThermometer, calculateTentacle } from './captureDetector.js';
+import { checkCapture, calculateThermometer, calculateTentacle, calculateMeasuring } from './captureDetector.js';
 
 /** Default spot radius in metres (RULES.md §End Game GPS practical range). */
 const DEFAULT_SPOT_RADIUS_M = 30;
@@ -177,6 +177,48 @@ export function createServer({
         targetLat != null ? parseFloat(targetLat) : null,
         targetLon != null ? parseFloat(targetLon) : null,
         radiusKm  != null ? parseFloat(radiusKm)  : null,
+      );
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+      return;
+    }
+
+    // GET /internal/games/:gameId/measuring?seekerId=&targetLat=&targetLon= — compare
+    // hider distance vs seeker distance to a target landmark for measuring questions.
+    // Protected by ADMIN_API_KEY Bearer token when adminApiKey is configured.
+    const measuringMatch = req.method === 'GET'
+      && urlPath.match(/^\/internal\/games\/(?<gameId>[^/]+)\/measuring$/);
+    if (measuringMatch) {
+      const authHeader = req.headers['authorization'] ?? '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (adminApiKey && token !== adminApiKey) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+      const { gameId } = measuringMatch.groups;
+      const gameState = gameStateManager.getGameState(gameId);
+      if (!gameState) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'game not found' }));
+        return;
+      }
+      const reqUrl = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      const seekerId  = reqUrl.searchParams.get('seekerId');
+      const targetLat = reqUrl.searchParams.get('targetLat');
+      const targetLon = reqUrl.searchParams.get('targetLon');
+      const players = Object.entries(gameState.players ?? {});
+      const hiderEntry  = players.find(([, p]) => p.role === 'hider'  && p.lat != null && p.lon != null);
+      const seekerEntry = seekerId ? players.find(([id]) => id === seekerId) : null;
+      const hiderLat  = hiderEntry?.[1].lat   ?? null;
+      const hiderLon  = hiderEntry?.[1].lon   ?? null;
+      const seekerLat = seekerEntry?.[1].lat  ?? null;
+      const seekerLon = seekerEntry?.[1].lon  ?? null;
+      const result = calculateMeasuring(
+        hiderLat, hiderLon,
+        seekerLat, seekerLon,
+        targetLat != null ? parseFloat(targetLat) : null,
+        targetLon != null ? parseFloat(targetLon) : null,
       );
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));

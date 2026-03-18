@@ -87,6 +87,44 @@ async function fetchTentacleData({ gameId, targetLat, targetLon, radiusKm }, gam
   }
 }
 
+/**
+ * Fetch measuring distance data from the managed server.
+ * Returns `{ hiderDistanceKm, seekerDistanceKm, hiderIsCloser }` with nulls on any failure.
+ * Failures are silent — the question is still created with null values.
+ *
+ * @param {{ gameId: string, seekerId: string, targetLat: number, targetLon: number }} params
+ * @param {string|undefined} gameServerUrl
+ * @param {string|null} adminApiKey
+ * @param {typeof fetch} fetchFn
+ * @returns {Promise<{ hiderDistanceKm: number|null, seekerDistanceKm: number|null, hiderIsCloser: boolean|null }>}
+ */
+async function fetchMeasuringData({ gameId, seekerId, targetLat, targetLon }, gameServerUrl, adminApiKey, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+  if (!serverUrl || !fetchFn || !key) {
+    return { hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null };
+  }
+  try {
+    const params = new URLSearchParams({
+      seekerId: String(seekerId),
+      targetLat: String(targetLat),
+      targetLon: String(targetLon),
+    });
+    const res = await fetchFn(
+      `${serverUrl}/internal/games/${gameId}/measuring?${params}`,
+      { headers: { 'Authorization': `Bearer ${key}` } },
+    );
+    const data = await res.json();
+    return {
+      hiderDistanceKm:  data.hiderDistanceKm  ?? null,
+      seekerDistanceKm: data.seekerDistanceKm ?? null,
+      hiderIsCloser:    data.hiderIsCloser    ?? null,
+    };
+  } catch {
+    return { hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null };
+  }
+}
+
 // ── In-process stores (no DB pool) ───────────────────────────────────────────
 
 const _questions = new Map();
@@ -178,7 +216,8 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
   }
 
   const { gameId, askerId, targetId, category, text, gameScale,
-          tentacleTargetLat, tentacleTargetLon, tentacleRadiusKm } = req.body ?? {};
+          tentacleTargetLat, tentacleTargetLon, tentacleRadiusKm,
+          measuringTargetLat, measuringTargetLon } = req.body ?? {};
 
   if (!gameId   || typeof gameId   !== 'string') return { status: 400, body: { error: 'gameId is required' } };
   if (!askerId  || typeof askerId  !== 'string') return { status: 400, body: { error: 'askerId is required' } };
@@ -201,11 +240,16 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       ? fetchTentacleData({ gameId, targetLat: tentacleTargetLat, targetLon: tentacleTargetLon, radiusKm: tentacleRadiusKm }, gameServerUrl, adminApiKey, fetchFn)
       : Promise.resolve({ withinRadius: null, distanceKm: null });
 
+    const measuringFetch = (category === 'measuring'
+        && measuringTargetLat != null && measuringTargetLon != null)
+      ? fetchMeasuringData({ gameId, seekerId: askerId, targetLat: measuringTargetLat, targetLon: measuringTargetLon }, gameServerUrl, adminApiKey, fetchFn)
+      : Promise.resolve({ hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null });
+
     return dbGetCurseExpiry(pool, gameId).then(curseExpiry => {
       if (curseExpiry && new Date(curseExpiry) > new Date()) {
         return { status: 409, body: { error: 'curse_active', curseEndsAt: curseExpiry } };
       }
-      return Promise.all([thermometerFetch, tentacleFetch]).then(([td, tent]) =>
+      return Promise.all([thermometerFetch, tentacleFetch, measuringFetch]).then(([td, tent, meas]) =>
         dbCreateQuestion(pool, {
           gameId, askerId, targetId, category, text, gameScale,
           thermometerCurrentDistanceM:  td.currentDistanceM,
@@ -215,6 +259,11 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
           tentacleRadiusKm:     tentacleRadiusKm   ?? null,
           tentacleDistanceKm:   tent.distanceKm    ?? null,
           tentacleWithinRadius: tent.withinRadius   ?? null,
+          measuringTargetLat:       measuringTargetLat       ?? null,
+          measuringTargetLon:       measuringTargetLon       ?? null,
+          measuringHiderDistanceKm:  meas.hiderDistanceKm    ?? null,
+          measuringSeekerDistanceKm: meas.seekerDistanceKm   ?? null,
+          measuringHiderIsCloser:    meas.hiderIsCloser       ?? null,
         }).then(row => {
           if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
           notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
@@ -245,6 +294,7 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
     thermometerCurrentDistanceM, thermometerPreviousDistanceM,
     tentacleOpts = {},
     notifyFetch = fetchFn,
+    measuringOpts = {},
   ) => {
     const expiresAt = new Date(Date.now() + computeExpiryMs(gameScale, category)).toISOString();
     const question = {
@@ -264,6 +314,11 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       tentacleRadiusKm:     tentacleOpts.radiusKm     ?? null,
       tentacleDistanceKm:   tentacleOpts.distanceKm   ?? null,
       tentacleWithinRadius: tentacleOpts.withinRadius  ?? null,
+      measuringTargetLat:       measuringOpts.targetLat        ?? null,
+      measuringTargetLon:       measuringOpts.targetLon        ?? null,
+      measuringHiderDistanceKm:  measuringOpts.hiderDistanceKm  ?? null,
+      measuringSeekerDistanceKm: measuringOpts.seekerDistanceKm ?? null,
+      measuringHiderIsCloser:    measuringOpts.hiderIsCloser    ?? null,
     };
     _questions.set(question.questionId, question);
     notifyQuestionPending({ gameId, questionId: question.questionId, expiresAt: question.expiresAt }, gameServerUrl, notifyFetch);
@@ -307,6 +362,32 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       radiusKm:     tentacleRadiusKm,
       distanceKm:   null,
       withinRadius: null,
+    });
+  }
+
+  if (category === 'measuring'
+      && measuringTargetLat != null && measuringTargetLon != null) {
+    const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+    const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+    if (serverUrl && fetchFn && key) {
+      return fetchMeasuringData(
+        { gameId, seekerId: askerId, targetLat: measuringTargetLat, targetLon: measuringTargetLon },
+        gameServerUrl, adminApiKey, fetchFn,
+      ).then(meas => _buildInProcessQuestion(null, null, {}, globalThis.fetch, {
+        targetLat:        measuringTargetLat,
+        targetLon:        measuringTargetLon,
+        hiderDistanceKm:  meas.hiderDistanceKm,
+        seekerDistanceKm: meas.seekerDistanceKm,
+        hiderIsCloser:    meas.hiderIsCloser,
+      }));
+    }
+    // No server configured — build with stored coords but null computed fields.
+    return _buildInProcessQuestion(null, null, {}, fetchFn, {
+      targetLat:        measuringTargetLat,
+      targetLon:        measuringTargetLon,
+      hiderDistanceKm:  null,
+      seekerDistanceKm: null,
+      hiderIsCloser:    null,
     });
   }
 

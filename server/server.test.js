@@ -1712,6 +1712,162 @@ describe('GET /internal/games/:gameId/thermometer', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /internal/games/:gameId/measuring
+// ---------------------------------------------------------------------------
+
+describe('GET /internal/games/:gameId/measuring', () => {
+  let server;
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop();
+      server = null;
+    }
+    vi.useRealTimers();
+  });
+
+  it('returns 401 when no Authorization header and adminApiKey is configured', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/g1/measuring?seekerId=s1&targetLat=51.5&targetLon=0`);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toMatch(/unauthorized/i);
+  });
+
+  it('returns 401 when wrong token is supplied', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/g1/measuring?seekerId=s1&targetLat=51.5&targetLon=0`,
+      { headers: { 'Authorization': 'Bearer wrong-key' } },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for an unknown game', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/no-game/measuring?seekerId=s1&targetLat=51.5&targetLon=0`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/game not found/i);
+  });
+
+  it('returns hiderIsCloser true when hider is closer to the target than the seeker', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('meas-hider-game', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('meas-hider-game', 'hider1', 'hider');
+    server.gameStateManager.addPlayerToGame('meas-hider-game', 'seeker1', 'seeker');
+    // Hider in London, seeker in Birmingham, target in Paris.
+    server.gameStateManager.updatePlayerLocation('meas-hider-game', 'hider1',  51.5074, -0.1278);
+    server.gameStateManager.updatePlayerLocation('meas-hider-game', 'seeker1', 52.4862, -1.8904);
+
+    const params = new URLSearchParams({ seekerId: 'seeker1', targetLat: '48.8584', targetLon: '2.2945' });
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/meas-hider-game/measuring?${params}`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.hiderIsCloser).toBe(true);
+    expect(typeof body.hiderDistanceKm).toBe('number');
+    expect(typeof body.seekerDistanceKm).toBe('number');
+    expect(body.hiderDistanceKm).toBeLessThan(body.seekerDistanceKm);
+  });
+
+  it('returns hiderIsCloser false when seeker is closer to the target', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('meas-seeker-game', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('meas-seeker-game', 'hider1', 'hider');
+    server.gameStateManager.addPlayerToGame('meas-seeker-game', 'seeker1', 'seeker');
+    // Hider in Birmingham (far from Paris), seeker in London (closer to Paris).
+    server.gameStateManager.updatePlayerLocation('meas-seeker-game', 'hider1',  52.4862, -1.8904);
+    server.gameStateManager.updatePlayerLocation('meas-seeker-game', 'seeker1', 51.5074, -0.1278);
+
+    const params = new URLSearchParams({ seekerId: 'seeker1', targetLat: '48.8584', targetLon: '2.2945' });
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/meas-seeker-game/measuring?${params}`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.hiderIsCloser).toBe(false);
+  });
+
+  it('returns nulls when hider has no location', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('meas-noloc', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('meas-noloc', 'seeker1', 'seeker');
+    server.gameStateManager.updatePlayerLocation('meas-noloc', 'seeker1', 51.5, 0);
+    // No hider location update.
+
+    const params = new URLSearchParams({ seekerId: 'seeker1', targetLat: '51.5', targetLon: '0' });
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/meas-noloc/measuring?${params}`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.hiderIsCloser).toBeNull();
+    expect(body.hiderDistanceKm).toBeNull();
+  });
+
+  it('returns nulls when seekerId is missing', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('meas-noseeker', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('meas-noseeker', 'hider1', 'hider');
+    server.gameStateManager.updatePlayerLocation('meas-noseeker', 'hider1', 51.5, 0);
+
+    // No seekerId in params.
+    const params = new URLSearchParams({ targetLat: '51.5', targetLon: '0' });
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/meas-noseeker/measuring?${params}`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.hiderIsCloser).toBeNull();
+    expect(body.seekerDistanceKm).toBeNull();
+  });
+
+  it('is accessible without token when no adminApiKey is configured', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('open-meas-game', { status: 'seeking' });
+
+    const params = new URLSearchParams({ seekerId: 's1', targetLat: '51.5', targetLon: '0' });
+    const res = await fetch(`http://localhost:${port}/internal/games/open-meas-game/measuring?${params}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.hiderIsCloser).toBeNull(); // no hider in game
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /internal/games/:gameId/tentacle
 // ---------------------------------------------------------------------------
 

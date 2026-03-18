@@ -1186,3 +1186,169 @@ describe('dbGetQuestionsForGame — tentacle columns', () => {
     expect(questions[0].answer).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// dbCreateQuestion — measuring columns
+// ---------------------------------------------------------------------------
+
+describe('dbCreateQuestion — measuring columns', () => {
+  it('passes measuring fields as INSERT parameters and returns them', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedParams = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
+        .mockImplementationOnce((sql, params) => {
+          capturedParams.all = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-meas', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'measuring', text: 'Am I closer?', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null,
+            thermometer_previous_distance_m: null,
+            tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+            tentacle_distance_km: null, tentacle_within_radius: null,
+            measuring_target_lat:       params[13],
+            measuring_target_lon:       params[14],
+            measuring_hider_distance_km:  params[15],
+            measuring_seeker_distance_km: params[16],
+            measuring_hider_is_closer:    params[17],
+          }] });
+        }),
+    };
+
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1',
+      category: 'measuring', text: 'Am I closer?',
+      measuringTargetLat:       48.8584,
+      measuringTargetLon:       2.2945,
+      measuringHiderDistanceKm:  340.5,
+      measuringSeekerDistanceKm: 490.2,
+      measuringHiderIsCloser:    true,
+    });
+
+    expect(result.measuringTargetLat).toBe(48.8584);
+    expect(result.measuringTargetLon).toBe(2.2945);
+    expect(result.measuringHiderDistanceKm).toBe(340.5);
+    expect(result.measuringSeekerDistanceKm).toBe(490.2);
+    expect(result.measuringHiderIsCloser).toBe(true);
+    expect(capturedParams.all[13]).toBe(48.8584);
+    expect(capturedParams.all[14]).toBe(2.2945);
+    expect(capturedParams.all[15]).toBe(340.5);
+    expect(capturedParams.all[16]).toBe(490.2);
+    expect(capturedParams.all[17]).toBe(true);
+  });
+
+  it('stores null measuring fields when not provided', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedParams = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockImplementationOnce((sql, params) => {
+          capturedParams.all = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-m2', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'matching', text: 'test', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+            tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+            tentacle_distance_km: null, tentacle_within_radius: null,
+            measuring_target_lat: null, measuring_target_lon: null,
+            measuring_hider_distance_km: null, measuring_seeker_distance_km: null,
+            measuring_hider_is_closer: null,
+          }] });
+        }),
+    };
+
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'test',
+    });
+
+    expect(result.measuringTargetLat).toBeNull();
+    expect(result.measuringTargetLon).toBeNull();
+    expect(result.measuringHiderDistanceKm).toBeNull();
+    expect(result.measuringSeekerDistanceKm).toBeNull();
+    expect(result.measuringHiderIsCloser).toBeNull();
+    expect(capturedParams.all[13]).toBeNull();
+    expect(capturedParams.all[17]).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForPlayer — measuring columns
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForPlayer — measuring columns', () => {
+  it('returns measuring fields when present', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-meas', game_id: 'g1', asker_id: 'a1', target_id: 'p1',
+        category: 'measuring', text: 'Am I closer?', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+        tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+        tentacle_distance_km: null, tentacle_within_radius: null,
+        measuring_target_lat: 48.8584, measuring_target_lon: 2.2945,
+        measuring_hider_distance_km: 340.5, measuring_seeker_distance_km: 490.2,
+        measuring_hider_is_closer: true,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForPlayer(pool, 'p1');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].measuringTargetLat).toBe(48.8584);
+    expect(questions[0].measuringTargetLon).toBe(2.2945);
+    expect(questions[0].measuringHiderDistanceKm).toBe(340.5);
+    expect(questions[0].measuringSeekerDistanceKm).toBe(490.2);
+    expect(questions[0].measuringHiderIsCloser).toBe(true);
+  });
+
+  it('returns null measuring fields when columns are null', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-m2', game_id: 'g1', asker_id: 'a1', target_id: 'p1',
+        category: 'matching', text: 'test', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+        tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+        tentacle_distance_km: null, tentacle_within_radius: null,
+        measuring_target_lat: null, measuring_target_lon: null,
+        measuring_hider_distance_km: null, measuring_seeker_distance_km: null,
+        measuring_hider_is_closer: null,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForPlayer(pool, 'p1');
+    expect(questions[0].measuringTargetLat).toBeNull();
+    expect(questions[0].measuringHiderDistanceKm).toBeNull();
+    expect(questions[0].measuringHiderIsCloser).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForGame — measuring columns
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForGame — measuring columns', () => {
+  it('returns measuring fields in game Q&A history', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-meas-g', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+        category: 'measuring', text: 'Am I closer?', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+        tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+        tentacle_distance_km: null, tentacle_within_radius: null,
+        measuring_target_lat: 48.8584, measuring_target_lon: 2.2945,
+        measuring_hider_distance_km: 340.5, measuring_seeker_distance_km: 490.2,
+        measuring_hider_is_closer: false,
+        answer_text: null, answer_created_at: null,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForGame(pool, 'g1');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].measuringTargetLat).toBe(48.8584);
+    expect(questions[0].measuringHiderDistanceKm).toBe(340.5);
+    expect(questions[0].measuringHiderIsCloser).toBe(false);
+    expect(questions[0].answer).toBeNull();
+  });
+});

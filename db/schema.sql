@@ -92,6 +92,13 @@ ALTER TABLE questions ADD COLUMN IF NOT EXISTS tentacle_radius_km FLOAT;
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS tentacle_distance_km FLOAT;
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS tentacle_within_radius BOOLEAN;
 
+-- Idempotent migration: add measuring columns for measuring questions.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS measuring_target_lat FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS measuring_target_lon FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS measuring_hider_distance_km FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS measuring_seeker_distance_km FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS measuring_hider_is_closer BOOLEAN;
+
 -- -------------------------------------------------------------------------
 -- answers
 -- Hider responses to seeker questions.

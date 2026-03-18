@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { haversineDistance, checkCapture, checkSpot, calculateThermometer, calculateTentacle } from './captureDetector.js';
+import { haversineDistance, checkCapture, checkSpot, calculateThermometer, calculateTentacle, calculateMeasuring } from './captureDetector.js';
 
 // ---------------------------------------------------------------------------
 // haversineDistance
@@ -584,5 +584,81 @@ describe('calculateTentacle', () => {
     const result = calculateTentacle(hiderLat, hiderLon, targetLat, targetLon, 5);
     const expected = haversineDistance(hiderLat, hiderLon, targetLat, targetLon) / 1000;
     expect(result.distanceKm).toBeCloseTo(expected, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calculateMeasuring
+// ---------------------------------------------------------------------------
+
+describe('calculateMeasuring', () => {
+  // London ~51.5074, -0.1278; Birmingham ~52.4862, -1.8904 (~163 km apart).
+  // Target: Eiffel Tower ~48.8584, 2.2945
+  const hiderLat  = 51.5074;
+  const hiderLon  = -0.1278;
+  const seekerLat = 52.4862;
+  const seekerLon = -1.8904;
+  const targetLat = 48.8584;
+  const targetLon = 2.2945;
+
+  it('returns hiderIsCloser true when hider is closer to the target', () => {
+    // London is closer to Paris than Birmingham is.
+    const result = calculateMeasuring(hiderLat, hiderLon, seekerLat, seekerLon, targetLat, targetLon);
+    expect(result.hiderIsCloser).toBe(true);
+    expect(result.hiderDistanceKm).toBeLessThan(result.seekerDistanceKm);
+    expect(typeof result.hiderDistanceKm).toBe('number');
+    expect(typeof result.seekerDistanceKm).toBe('number');
+  });
+
+  it('returns hiderIsCloser false when seeker is closer to the target', () => {
+    // Swap hider and seeker so Birmingham (seeker) becomes closer to Paris.
+    const result = calculateMeasuring(seekerLat, seekerLon, hiderLat, hiderLon, targetLat, targetLon);
+    expect(result.hiderIsCloser).toBe(false);
+    expect(result.hiderDistanceKm).toBeGreaterThan(result.seekerDistanceKm);
+  });
+
+  it('returns hiderIsCloser false when distances are equal (not strictly less than)', () => {
+    // Both at the same point — equal distance, hiderIsCloser should be false (not <).
+    const result = calculateMeasuring(51.5, 0, 51.5, 0, targetLat, targetLon);
+    expect(result.hiderIsCloser).toBe(false);
+    expect(result.hiderDistanceKm).toBeCloseTo(result.seekerDistanceKm, 6);
+  });
+
+  it('returns nulls when hiderLat is null', () => {
+    expect(calculateMeasuring(null, hiderLon, seekerLat, seekerLon, targetLat, targetLon))
+      .toEqual({ hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null });
+  });
+
+  it('returns nulls when hiderLon is null', () => {
+    expect(calculateMeasuring(hiderLat, null, seekerLat, seekerLon, targetLat, targetLon))
+      .toEqual({ hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null });
+  });
+
+  it('returns nulls when seekerLat is null', () => {
+    expect(calculateMeasuring(hiderLat, hiderLon, null, seekerLon, targetLat, targetLon))
+      .toEqual({ hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null });
+  });
+
+  it('returns nulls when seekerLon is null', () => {
+    expect(calculateMeasuring(hiderLat, hiderLon, seekerLat, null, targetLat, targetLon))
+      .toEqual({ hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null });
+  });
+
+  it('returns nulls when targetLat is null', () => {
+    expect(calculateMeasuring(hiderLat, hiderLon, seekerLat, seekerLon, null, targetLon))
+      .toEqual({ hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null });
+  });
+
+  it('returns nulls when targetLon is null', () => {
+    expect(calculateMeasuring(hiderLat, hiderLon, seekerLat, seekerLon, targetLat, null))
+      .toEqual({ hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null });
+  });
+
+  it('distances are consistent with haversineDistance / 1000', () => {
+    const result = calculateMeasuring(hiderLat, hiderLon, seekerLat, seekerLon, targetLat, targetLon);
+    const expectedHider  = haversineDistance(hiderLat,  hiderLon,  targetLat, targetLon) / 1000;
+    const expectedSeeker = haversineDistance(seekerLat, seekerLon, targetLat, targetLon) / 1000;
+    expect(result.hiderDistanceKm).toBeCloseTo(expectedHider, 6);
+    expect(result.seekerDistanceKm).toBeCloseTo(expectedSeeker, 6);
   });
 });

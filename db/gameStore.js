@@ -328,8 +328,8 @@ function computeExpiryMs(scale, category) {
  * (small → 10 min, medium → 15 min, large → 20 min).
  *
  * @param {import('pg').Pool} pool
- * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null, gameScale?: string, thermometerCurrentDistanceM?: number|null, thermometerPreviousDistanceM?: number|null, tentacleTargetLat?: number|null, tentacleTargetLon?: number|null, tentacleRadiusKm?: number|null, tentacleDistanceKm?: number|null, tentacleWithinRadius?: boolean|null }} options
- * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string, thermometerCurrentDistanceM: number|null, thermometerPreviousDistanceM: number|null, tentacleTargetLat: number|null, tentacleTargetLon: number|null, tentacleRadiusKm: number|null, tentacleDistanceKm: number|null, tentacleWithinRadius: boolean|null } | { conflict: true }>}
+ * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null, gameScale?: string, thermometerCurrentDistanceM?: number|null, thermometerPreviousDistanceM?: number|null, tentacleTargetLat?: number|null, tentacleTargetLon?: number|null, tentacleRadiusKm?: number|null, tentacleDistanceKm?: number|null, tentacleWithinRadius?: boolean|null, measuringTargetLat?: number|null, measuringTargetLon?: number|null, measuringHiderDistanceKm?: number|null, measuringSeekerDistanceKm?: number|null, measuringHiderIsCloser?: boolean|null }} options
+ * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string, thermometerCurrentDistanceM: number|null, thermometerPreviousDistanceM: number|null, tentacleTargetLat: number|null, tentacleTargetLon: number|null, tentacleRadiusKm: number|null, tentacleDistanceKm: number|null, tentacleWithinRadius: boolean|null, measuringTargetLat: number|null, measuringTargetLon: number|null, measuringHiderDistanceKm: number|null, measuringSeekerDistanceKm: number|null, measuringHiderIsCloser: boolean|null } | { conflict: true }>}
  */
 export async function dbCreateQuestion(pool, {
   gameId, askerId, targetId, category, text,
@@ -337,6 +337,8 @@ export async function dbCreateQuestion(pool, {
   thermometerCurrentDistanceM = null, thermometerPreviousDistanceM = null,
   tentacleTargetLat = null, tentacleTargetLon = null, tentacleRadiusKm = null,
   tentacleDistanceKm = null, tentacleWithinRadius = null,
+  measuringTargetLat = null, measuringTargetLon = null,
+  measuringHiderDistanceKm = null, measuringSeekerDistanceKm = null, measuringHiderIsCloser = null,
 }) {
   // Enforce one-pending-question-at-a-time.  When the game uses two teams,
   // scope the check to the asker's team so both teams can ask independently.
@@ -370,16 +372,24 @@ export async function dbCreateQuestion(pool, {
     `INSERT INTO questions (game_id, asker_id, target_id, category, text, expires_at,
                             thermometer_current_distance_m, thermometer_previous_distance_m,
                             tentacle_target_lat, tentacle_target_lon, tentacle_radius_km,
-                            tentacle_distance_km, tentacle_within_radius)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                            tentacle_distance_km, tentacle_within_radius,
+                            measuring_target_lat, measuring_target_lon,
+                            measuring_hider_distance_km, measuring_seeker_distance_km,
+                            measuring_hider_is_closer)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING id, game_id, asker_id, target_id, category, text, status, expires_at, created_at,
                thermometer_current_distance_m, thermometer_previous_distance_m,
                tentacle_target_lat, tentacle_target_lon, tentacle_radius_km,
-               tentacle_distance_km, tentacle_within_radius`,
+               tentacle_distance_km, tentacle_within_radius,
+               measuring_target_lat, measuring_target_lon,
+               measuring_hider_distance_km, measuring_seeker_distance_km,
+               measuring_hider_is_closer`,
     [gameId, askerId, targetId, category, text, expiresAt,
      thermometerCurrentDistanceM ?? null, thermometerPreviousDistanceM ?? null,
      tentacleTargetLat ?? null, tentacleTargetLon ?? null, tentacleRadiusKm ?? null,
-     tentacleDistanceKm ?? null, tentacleWithinRadius ?? null],
+     tentacleDistanceKm ?? null, tentacleWithinRadius ?? null,
+     measuringTargetLat ?? null, measuringTargetLon ?? null,
+     measuringHiderDistanceKm ?? null, measuringSeekerDistanceKm ?? null, measuringHiderIsCloser ?? null],
   );
   const row = res.rows[0];
   return {
@@ -399,6 +409,11 @@ export async function dbCreateQuestion(pool, {
     tentacleRadiusKm:     row.tentacle_radius_km     ?? null,
     tentacleDistanceKm:   row.tentacle_distance_km   ?? null,
     tentacleWithinRadius: row.tentacle_within_radius ?? null,
+    measuringTargetLat:       row.measuring_target_lat        ?? null,
+    measuringTargetLon:       row.measuring_target_lon        ?? null,
+    measuringHiderDistanceKm:  row.measuring_hider_distance_km  ?? null,
+    measuringSeekerDistanceKm: row.measuring_seeker_distance_km ?? null,
+    measuringHiderIsCloser:    row.measuring_hider_is_closer    ?? null,
   };
 }
 
@@ -414,7 +429,10 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
     `SELECT id, game_id, asker_id, target_id, category, text, status, expires_at, created_at,
             thermometer_current_distance_m, thermometer_previous_distance_m,
             tentacle_target_lat, tentacle_target_lon, tentacle_radius_km,
-            tentacle_distance_km, tentacle_within_radius
+            tentacle_distance_km, tentacle_within_radius,
+            measuring_target_lat, measuring_target_lon,
+            measuring_hider_distance_km, measuring_seeker_distance_km,
+            measuring_hider_is_closer
      FROM questions
      WHERE target_id = $1
      ORDER BY created_at DESC`,
@@ -437,6 +455,11 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
     tentacleRadiusKm:     row.tentacle_radius_km     ?? null,
     tentacleDistanceKm:   row.tentacle_distance_km   ?? null,
     tentacleWithinRadius: row.tentacle_within_radius ?? null,
+    measuringTargetLat:       row.measuring_target_lat        ?? null,
+    measuringTargetLon:       row.measuring_target_lon        ?? null,
+    measuringHiderDistanceKm:  row.measuring_hider_distance_km  ?? null,
+    measuringSeekerDistanceKm: row.measuring_seeker_distance_km ?? null,
+    measuringHiderIsCloser:    row.measuring_hider_is_closer    ?? null,
   }));
 }
 
@@ -455,6 +478,9 @@ export async function dbGetQuestionsForGame(pool, gameId) {
             q.thermometer_current_distance_m, q.thermometer_previous_distance_m,
             q.tentacle_target_lat, q.tentacle_target_lon, q.tentacle_radius_km,
             q.tentacle_distance_km, q.tentacle_within_radius,
+            q.measuring_target_lat, q.measuring_target_lon,
+            q.measuring_hider_distance_km, q.measuring_seeker_distance_km,
+            q.measuring_hider_is_closer,
             a.text AS answer_text, a.created_at AS answer_created_at
      FROM questions q
      LEFT JOIN answers a ON a.question_id = q.id
@@ -479,6 +505,11 @@ export async function dbGetQuestionsForGame(pool, gameId) {
     tentacleRadiusKm:     row.tentacle_radius_km     ?? null,
     tentacleDistanceKm:   row.tentacle_distance_km   ?? null,
     tentacleWithinRadius: row.tentacle_within_radius ?? null,
+    measuringTargetLat:       row.measuring_target_lat        ?? null,
+    measuringTargetLon:       row.measuring_target_lon        ?? null,
+    measuringHiderDistanceKm:  row.measuring_hider_distance_km  ?? null,
+    measuringSeekerDistanceKm: row.measuring_seeker_distance_km ?? null,
+    measuringHiderIsCloser:    row.measuring_hider_is_closer    ?? null,
     answer:      row.answer_text != null
       ? { text: row.answer_text, createdAt: row.answer_created_at }
       : null,

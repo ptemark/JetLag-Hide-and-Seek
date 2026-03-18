@@ -557,6 +557,34 @@ describe('AnswerPanel', () => {
     await waitFor(() => screen.getByLabelText(/your answer/i));
     expect(screen.queryByTestId('measuring-hint')).not.toBeInTheDocument();
   });
+
+  // ── Transit hints ─────────────────────────────────────────────────────────
+
+  it('shows "nearest station is [name]" transit hint with distance when station data is present', async () => {
+    const q = { ...QUESTION, category: 'transit', transitNearestStationName: 'Central Station', transitNearestStationDistanceKm: 0.75 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('transit-hint')).toHaveTextContent(/nearest station is Central Station/i)
+    );
+    expect(screen.getByTestId('transit-hint')).toHaveTextContent('0.75 km away');
+  });
+
+  it('shows "unknown" transit hint when station name is null', async () => {
+    const q = { ...QUESTION, category: 'transit', transitNearestStationName: null, transitNearestStationDistanceKm: null };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('transit-hint')).toHaveTextContent(/unknown/i)
+    );
+  });
+
+  it('does not render a transit hint for non-transit questions', async () => {
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [QUESTION] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.queryByTestId('transit-hint')).not.toBeInTheDocument();
+  });
 });
 
 // ── QuestionPanel measuring inputs ────────────────────────────────────────────

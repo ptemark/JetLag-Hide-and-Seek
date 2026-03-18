@@ -27,6 +27,19 @@ function measuringHint(hiderIsCloser, hiderDistanceKm, seekerDistanceKm) {
 }
 
 /**
+ * Derive the transit hint label from nearest station data.
+ * @param {string|null} nearestStationName - name of the nearest transit station
+ * @param {number|null} nearestStationDistanceKm - distance to nearest station in km
+ * @returns {string} human-readable hint
+ */
+function transitHint(nearestStationName, nearestStationDistanceKm) {
+  if (nearestStationName != null) {
+    return `Transit hint: nearest station is ${nearestStationName} — ${nearestStationDistanceKm.toFixed(2)} km away`;
+  }
+  return 'Transit hint: unknown — position unavailable';
+}
+
+/**
  * Derive the thermometer result label from two distance readings.
  * @param {number|null} current - distance in metres at question time
  * @param {number|null} previous - distance in metres one location update earlier
@@ -139,6 +152,11 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
           {q.category === 'tentacle' && (
             <p data-testid="tentacle-hint">
               {tentacleHint(q.tentacleWithinRadius, q.tentacleDistanceKm)}
+            </p>
+          )}
+          {q.category === 'transit' && (
+            <p data-testid="transit-hint">
+              {transitHint(q.transitNearestStationName, q.transitNearestStationDistanceKm)}
             </p>
           )}
           <form

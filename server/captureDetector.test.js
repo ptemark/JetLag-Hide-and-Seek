@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { haversineDistance, checkCapture, checkSpot, calculateThermometer } from './captureDetector.js';
+import { haversineDistance, checkCapture, checkSpot, calculateThermometer, calculateTentacle } from './captureDetector.js';
 
 // ---------------------------------------------------------------------------
 // haversineDistance
@@ -520,5 +520,69 @@ describe('calculateThermometer', () => {
     const result = calculateThermometer(state, 's1', 0, 0);
     expect(result.result).toBe('same');
     expect(result.currentDistanceM).toBe(result.previousDistanceM);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calculateTentacle
+// ---------------------------------------------------------------------------
+
+describe('calculateTentacle', () => {
+  // London: 51.5074° N, 0.1278° W
+  // Oxford Circus: 51.5152, -0.1415  (~1.3 km from London)
+  const hiderLat = 51.5074;
+  const hiderLon = -0.1278;
+  const targetLat = 51.5152;
+  const targetLon = -0.1415;
+
+  it('returns withinRadius true when hider is inside the radius', () => {
+    const result = calculateTentacle(hiderLat, hiderLon, targetLat, targetLon, 2);
+    expect(result.withinRadius).toBe(true);
+    expect(typeof result.distanceKm).toBe('number');
+    expect(result.distanceKm).toBeGreaterThan(0);
+    expect(result.distanceKm).toBeLessThan(2);
+  });
+
+  it('returns withinRadius false when hider is outside the radius', () => {
+    const result = calculateTentacle(hiderLat, hiderLon, targetLat, targetLon, 0.5);
+    expect(result.withinRadius).toBe(false);
+    expect(result.distanceKm).toBeGreaterThan(0.5);
+  });
+
+  it('returns withinRadius true when hider is exactly on the target (distance 0, radius 0)', () => {
+    const result = calculateTentacle(hiderLat, hiderLon, hiderLat, hiderLon, 0);
+    expect(result.withinRadius).toBe(true);
+    expect(result.distanceKm).toBe(0);
+  });
+
+  it('returns nulls when hiderLat is null', () => {
+    expect(calculateTentacle(null, hiderLon, targetLat, targetLon, 2))
+      .toEqual({ withinRadius: null, distanceKm: null });
+  });
+
+  it('returns nulls when hiderLon is null', () => {
+    expect(calculateTentacle(hiderLat, null, targetLat, targetLon, 2))
+      .toEqual({ withinRadius: null, distanceKm: null });
+  });
+
+  it('returns nulls when targetLat is null', () => {
+    expect(calculateTentacle(hiderLat, hiderLon, null, targetLon, 2))
+      .toEqual({ withinRadius: null, distanceKm: null });
+  });
+
+  it('returns nulls when targetLon is null', () => {
+    expect(calculateTentacle(hiderLat, hiderLon, targetLat, null, 2))
+      .toEqual({ withinRadius: null, distanceKm: null });
+  });
+
+  it('returns nulls when radiusKm is null', () => {
+    expect(calculateTentacle(hiderLat, hiderLon, targetLat, targetLon, null))
+      .toEqual({ withinRadius: null, distanceKm: null });
+  });
+
+  it('distanceKm is consistent with haversineDistance / 1000', () => {
+    const result = calculateTentacle(hiderLat, hiderLon, targetLat, targetLon, 5);
+    const expected = haversineDistance(hiderLat, hiderLon, targetLat, targetLon) / 1000;
+    expect(result.distanceKm).toBeCloseTo(expected, 6);
   });
 });

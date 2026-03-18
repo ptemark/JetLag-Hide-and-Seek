@@ -11,7 +11,7 @@ import { Logger, LogCategory, LogLevel } from './logger.js';
 import { MetricsCollector, MetricKey, RateTracker } from './monitoring.js';
 import { nullAlertManager, AlertType } from './alerting.js';
 import { nullAutoScaler } from './autoScaler.js';
-import { checkCapture, calculateThermometer } from './captureDetector.js';
+import { checkCapture, calculateThermometer, calculateTentacle } from './captureDetector.js';
 
 /** Default spot radius in metres (RULES.md §End Game GPS practical range). */
 const DEFAULT_SPOT_RADIUS_M = 30;
@@ -139,6 +139,45 @@ export function createServer({
       const hiderLat = hiderEntry?.[1].lat ?? null;
       const hiderLon = hiderEntry?.[1].lon ?? null;
       const result = calculateThermometer(gameState, seekerId, hiderLat, hiderLon);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+      return;
+    }
+
+    // GET /internal/games/:gameId/tentacle?targetLat=&targetLon=&radiusKm= — check
+    // whether the hider is within radiusKm of the specified target coordinates.
+    // Protected by ADMIN_API_KEY Bearer token when adminApiKey is configured.
+    const tentacleMatch = req.method === 'GET'
+      && urlPath.match(/^\/internal\/games\/(?<gameId>[^/]+)\/tentacle$/);
+    if (tentacleMatch) {
+      const authHeader = req.headers['authorization'] ?? '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      if (adminApiKey && token !== adminApiKey) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        return;
+      }
+      const { gameId } = tentacleMatch.groups;
+      const gameState = gameStateManager.getGameState(gameId);
+      if (!gameState) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'game not found' }));
+        return;
+      }
+      const reqUrl = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      const targetLat = reqUrl.searchParams.get('targetLat');
+      const targetLon = reqUrl.searchParams.get('targetLon');
+      const radiusKm  = reqUrl.searchParams.get('radiusKm');
+      const players = Object.entries(gameState.players ?? {});
+      const hiderEntry = players.find(([, p]) => p.role === 'hider' && p.lat != null && p.lon != null);
+      const hiderLat = hiderEntry?.[1].lat ?? null;
+      const hiderLon = hiderEntry?.[1].lon ?? null;
+      const result = calculateTentacle(
+        hiderLat, hiderLon,
+        targetLat != null ? parseFloat(targetLat) : null,
+        targetLon != null ? parseFloat(targetLon) : null,
+        radiusKm  != null ? parseFloat(radiusKm)  : null,
+      );
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));
       return;

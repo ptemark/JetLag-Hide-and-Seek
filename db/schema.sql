@@ -85,6 +85,13 @@ CREATE TABLE IF NOT EXISTS questions (
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS thermometer_current_distance_m FLOAT;
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS thermometer_previous_distance_m FLOAT;
 
+-- Idempotent migration: add tentacle columns for tentacle questions.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS tentacle_target_lat FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS tentacle_target_lon FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS tentacle_radius_km FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS tentacle_distance_km FLOAT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS tentacle_within_radius BOOLEAN;
+
 -- -------------------------------------------------------------------------
 -- answers
 -- Hider responses to seeker questions.

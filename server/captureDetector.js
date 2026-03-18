@@ -40,6 +40,34 @@ export function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Determine whether the hider is within a specified radius of a target point.
+ * Used for tentacle questions: the seeker picks a target location and radius;
+ * the server checks the hider's current position.
+ *
+ * Returns `{ withinRadius: null, distanceKm: null }` when hider position or
+ * any target parameter is missing.
+ *
+ * @param {number|null} hiderLat  Hider's current latitude.
+ * @param {number|null} hiderLon  Hider's current longitude.
+ * @param {number|null} targetLat  Target latitude chosen by the seeker.
+ * @param {number|null} targetLon  Target longitude chosen by the seeker.
+ * @param {number|null} radiusKm  Radius in kilometres.
+ * @returns {{
+ *   withinRadius: boolean | null,
+ *   distanceKm:   number  | null,
+ * }}
+ */
+export function calculateTentacle(hiderLat, hiderLon, targetLat, targetLon, radiusKm) {
+  if (hiderLat == null || hiderLon == null ||
+      targetLat == null || targetLon == null || radiusKm == null) {
+    return { withinRadius: null, distanceKm: null };
+  }
+  const distanceM  = haversineDistance(hiderLat, hiderLon, targetLat, targetLon);
+  const distanceKm = distanceM / 1000;
+  return { withinRadius: distanceKm <= radiusKm, distanceKm };
+}
+
+/**
  * Determine whether a seeker is getting warmer or colder relative to the hider
  * by comparing their current distance to their previous distance.
  *

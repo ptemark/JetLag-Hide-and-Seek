@@ -1710,3 +1710,132 @@ describe('GET /internal/games/:gameId/thermometer', () => {
     expect(body.result).toBe('unknown'); // seeker not in game → unknown
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /internal/games/:gameId/tentacle
+// ---------------------------------------------------------------------------
+
+describe('GET /internal/games/:gameId/tentacle', () => {
+  let server;
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop();
+      server = null;
+    }
+    vi.useRealTimers();
+  });
+
+  it('returns 401 when no Authorization header and adminApiKey is configured', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/g1/tentacle?targetLat=51.5&targetLon=0&radiusKm=2`);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toMatch(/unauthorized/i);
+  });
+
+  it('returns 401 when wrong Bearer token', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/g1/tentacle?targetLat=51.5&targetLon=0&radiusKm=2`,
+      { headers: { 'Authorization': 'Bearer wrong-key' } },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 when game not found', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/no-game/tentacle?targetLat=51.5&targetLon=0&radiusKm=2`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toMatch(/game not found/i);
+  });
+
+  it('returns withinRadius true when hider is inside the specified radius', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    // Set up hider at London (51.5074, -0.1278); target at same point, radius 1 km → within.
+    server.gameStateManager.createGame('tent-game', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('tent-game', 'hider1', 'hider');
+    server.gameStateManager.updatePlayerLocation('tent-game', 'hider1', 51.5074, -0.1278);
+
+    const params = new URLSearchParams({ targetLat: '51.5074', targetLon: '-0.1278', radiusKm: '1' });
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/tent-game/tentacle?${params}`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.withinRadius).toBe(true);
+    expect(typeof body.distanceKm).toBe('number');
+  });
+
+  it('returns withinRadius false when hider is outside the specified radius', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    // Hider in London; target ~150 km away in Birmingham; radius 1 km → outside.
+    server.gameStateManager.createGame('tent-out-game', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('tent-out-game', 'hider1', 'hider');
+    server.gameStateManager.updatePlayerLocation('tent-out-game', 'hider1', 51.5074, -0.1278);
+
+    const params = new URLSearchParams({ targetLat: '52.4862', targetLon: '-1.8904', radiusKm: '1' });
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/tent-out-game/tentacle?${params}`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.withinRadius).toBe(false);
+    expect(body.distanceKm).toBeGreaterThan(1);
+  });
+
+  it('returns nulls when hider has no location', async () => {
+    server = createServer({ tickInterval: 5000, adminApiKey: 'secret-key' });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('tent-noloc', { status: 'seeking' });
+    server.gameStateManager.addPlayerToGame('tent-noloc', 'hider1', 'hider');
+    // No location update → hider has no lat/lon.
+
+    const params = new URLSearchParams({ targetLat: '51.5', targetLon: '0', radiusKm: '2' });
+    const res = await fetch(
+      `http://localhost:${port}/internal/games/tent-noloc/tentacle?${params}`,
+      { headers: { 'Authorization': 'Bearer secret-key' } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.withinRadius).toBeNull();
+    expect(body.distanceKm).toBeNull();
+  });
+
+  it('is accessible without auth when adminApiKey is not configured', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    server.gameStateManager.createGame('open-tent-game', { status: 'seeking' });
+
+    const params = new URLSearchParams({ targetLat: '51.5', targetLon: '0', radiusKm: '2' });
+    const res = await fetch(`http://localhost:${port}/internal/games/open-tent-game/tentacle?${params}`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.withinRadius).toBeNull(); // no hider in game
+  });
+});

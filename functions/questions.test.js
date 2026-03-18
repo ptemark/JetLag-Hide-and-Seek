@@ -1020,3 +1020,173 @@ describe('submitQuestion — thermometer enrichment', () => {
     expect(capturedArgs.params[7]).toBe(400);
   });
 });
+
+// ── submitQuestion — tentacle enrichment ─────────────────────────────────────
+
+describe('submitQuestion — tentacle enrichment', () => {
+  beforeEach(() => _clearStores());
+
+  it('fetches tentacle endpoint and stores withinRadius + distanceKm for tentacle questions (in-process)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ withinRadius: true, distanceKm: 0.8 }),
+    });
+
+    const { status, body } = await submitQuestion(
+      {
+        method: 'POST',
+        body: makeQuestion({
+          category: 'tentacle',
+          text: 'Are you within 2 km of the station?',
+          tentacleTargetLat: 51.5074,
+          tentacleTargetLon: -0.1278,
+          tentacleRadiusKm:  2,
+        }),
+      },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.tentacleWithinRadius).toBe(true);
+    expect(body.tentacleDistanceKm).toBe(0.8);
+    expect(body.tentacleTargetLat).toBe(51.5074);
+    expect(body.tentacleTargetLon).toBe(-0.1278);
+    expect(body.tentacleRadiusKm).toBe(2);
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toContain('/internal/games/game-1/tentacle');
+    expect(url).toContain('targetLat=51.5074');
+    expect(url).toContain('radiusKm=2');
+    expect(opts.headers['Authorization']).toBe('Bearer test-admin-key');
+  });
+
+  it('stores null computed fields when tentacle fetch fails (in-process)', async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error('network error'));
+
+    const { status, body } = await submitQuestion(
+      {
+        method: 'POST',
+        body: makeQuestion({
+          category: 'tentacle',
+          text: 'Within range?',
+          tentacleTargetLat: 51.5,
+          tentacleTargetLon: 0,
+          tentacleRadiusKm:  1,
+        }),
+      },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.tentacleWithinRadius).toBeNull();
+    expect(body.tentacleDistanceKm).toBeNull();
+    // Coordinates should still be stored.
+    expect(body.tentacleTargetLat).toBe(51.5);
+    expect(body.tentacleRadiusKm).toBe(1);
+  });
+
+  it('does not fetch tentacle endpoint for non-tentacle categories (in-process)', async () => {
+    const mockFetch = vi.fn();
+
+    await submitQuestion(
+      { method: 'POST', body: makeQuestion({ category: 'matching', text: 'Near a river?' }) },
+      null,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    const tentacleCalls = mockFetch.mock.calls.filter(([url]) =>
+      typeof url === 'string' && url.includes('/tentacle'),
+    );
+    expect(tentacleCalls).toHaveLength(0);
+  });
+
+  it('stores null computed fields when no gameServerUrl configured (in-process)', async () => {
+    const { status, body } = await submitQuestion(
+      {
+        method: 'POST',
+        body: makeQuestion({
+          category: 'tentacle',
+          text: 'Within range?',
+          tentacleTargetLat: 51.5,
+          tentacleTargetLon: 0,
+          tentacleRadiusKm:  1,
+        }),
+      },
+      null,
+      undefined,  // no gameServerUrl
+      undefined,  // no fetch
+      null,       // no adminApiKey
+    );
+
+    expect(status).toBe(201);
+    expect(body.tentacleWithinRadius).toBeNull();
+    expect(body.tentacleDistanceKm).toBeNull();
+    // Coords still persisted.
+    expect(body.tentacleTargetLat).toBe(51.5);
+    expect(body.tentacleRadiusKm).toBe(1);
+  });
+
+  it('fetches tentacle endpoint and passes result to dbCreateQuestion (pool path)', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedArgs = {};
+
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })   // no active curse
+        .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
+        .mockImplementationOnce((sql, params) => {
+          capturedArgs.params = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-tent', game_id: 'game-1', asker_id: 'seeker-1', target_id: 'hider-1',
+            category: 'tentacle', text: 'Within range?', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null,
+            thermometer_previous_distance_m: null,
+            tentacle_target_lat:    params[8],
+            tentacle_target_lon:    params[9],
+            tentacle_radius_km:     params[10],
+            tentacle_distance_km:   params[11],
+            tentacle_within_radius: params[12],
+          }] });
+        }),
+    };
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ withinRadius: false, distanceKm: 3.2 }),
+    });
+
+    const { status, body } = await submitQuestion(
+      {
+        method: 'POST',
+        body: makeQuestion({
+          category: 'tentacle',
+          text: 'Within range?',
+          tentacleTargetLat: 51.5074,
+          tentacleTargetLon: -0.1278,
+          tentacleRadiusKm:  2,
+        }),
+      },
+      pool,
+      'http://game-server',
+      mockFetch,
+      'test-admin-key',
+    );
+
+    expect(status).toBe(201);
+    expect(body.tentacleWithinRadius).toBe(false);
+    expect(body.tentacleDistanceKm).toBe(3.2);
+    // Verify coords and computed values passed as INSERT params.
+    expect(capturedArgs.params[8]).toBe(51.5074);   // tentacle_target_lat
+    expect(capturedArgs.params[9]).toBe(-0.1278);   // tentacle_target_lon
+    expect(capturedArgs.params[10]).toBe(2);         // tentacle_radius_km
+    expect(capturedArgs.params[11]).toBe(3.2);       // tentacle_distance_km
+    expect(capturedArgs.params[12]).toBe(false);     // tentacle_within_radius
+  });
+});

@@ -11,6 +11,7 @@ import {
   dbGetGameScores,
   dbCreateQuestion,
   dbGetQuestionsForPlayer,
+  dbGetQuestionsForGame,
   dbExpireStaleQuestions,
   dbSetCurse,
   dbGetCurseExpiry,
@@ -1024,10 +1025,164 @@ describe('dbGetQuestionsForPlayer — thermometer columns', () => {
         expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
         thermometer_current_distance_m: null,
         thermometer_previous_distance_m: null,
+        tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+        tentacle_distance_km: null, tentacle_within_radius: null,
       }] }),
     );
     const questions = await dbGetQuestionsForPlayer(pool, 'p1');
     expect(questions[0].thermometerCurrentDistanceM).toBeNull();
     expect(questions[0].thermometerPreviousDistanceM).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbCreateQuestion — tentacle columns
+// ---------------------------------------------------------------------------
+
+describe('dbCreateQuestion — tentacle columns', () => {
+  it('passes tentacle fields as INSERT parameters and returns them', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedParams = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
+        .mockImplementationOnce((sql, params) => {
+          capturedParams.all = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-tent', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'tentacle', text: 'Within range?', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null,
+            thermometer_previous_distance_m: null,
+            tentacle_target_lat:    params[8],
+            tentacle_target_lon:    params[9],
+            tentacle_radius_km:     params[10],
+            tentacle_distance_km:   params[11],
+            tentacle_within_radius: params[12],
+          }] });
+        }),
+    };
+
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1',
+      category: 'tentacle', text: 'Within range?',
+      tentacleTargetLat:    51.5074,
+      tentacleTargetLon:    -0.1278,
+      tentacleRadiusKm:     2,
+      tentacleDistanceKm:   0.8,
+      tentacleWithinRadius: true,
+    });
+
+    expect(result.tentacleTargetLat).toBe(51.5074);
+    expect(result.tentacleTargetLon).toBe(-0.1278);
+    expect(result.tentacleRadiusKm).toBe(2);
+    expect(result.tentacleDistanceKm).toBe(0.8);
+    expect(result.tentacleWithinRadius).toBe(true);
+    expect(capturedParams.all[8]).toBe(51.5074);
+    expect(capturedParams.all[9]).toBe(-0.1278);
+    expect(capturedParams.all[10]).toBe(2);
+    expect(capturedParams.all[11]).toBe(0.8);
+    expect(capturedParams.all[12]).toBe(true);
+  });
+
+  it('stores null tentacle fields when not provided', async () => {
+    const expiresAt = new Date(Date.now() + 300_000);
+    const capturedParams = {};
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockImplementationOnce((sql, params) => {
+          capturedParams.all = params;
+          return Promise.resolve({ rows: [{
+            id: 'q-m2', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+            category: 'matching', text: 'test', status: 'pending',
+            expires_at: expiresAt, created_at: new Date(),
+            thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+            tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+            tentacle_distance_km: null, tentacle_within_radius: null,
+          }] });
+        }),
+    };
+
+    const result = await dbCreateQuestion(pool, {
+      gameId: 'g1', askerId: 'a1', targetId: 't1', category: 'matching', text: 'test',
+    });
+
+    expect(result.tentacleTargetLat).toBeNull();
+    expect(result.tentacleTargetLon).toBeNull();
+    expect(result.tentacleRadiusKm).toBeNull();
+    expect(result.tentacleDistanceKm).toBeNull();
+    expect(result.tentacleWithinRadius).toBeNull();
+    expect(capturedParams.all[8]).toBeNull();
+    expect(capturedParams.all[12]).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForPlayer — tentacle columns
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForPlayer — tentacle columns', () => {
+  it('returns tentacle fields when present', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-tent', game_id: 'g1', asker_id: 'a1', target_id: 'p1',
+        category: 'tentacle', text: 'Within range?', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+        tentacle_target_lat: 51.5074, tentacle_target_lon: -0.1278,
+        tentacle_radius_km: 2, tentacle_distance_km: 0.8, tentacle_within_radius: true,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForPlayer(pool, 'p1');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].tentacleTargetLat).toBe(51.5074);
+    expect(questions[0].tentacleTargetLon).toBe(-0.1278);
+    expect(questions[0].tentacleRadiusKm).toBe(2);
+    expect(questions[0].tentacleDistanceKm).toBe(0.8);
+    expect(questions[0].tentacleWithinRadius).toBe(true);
+  });
+
+  it('returns null tentacle fields when columns are null', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-match', game_id: 'g1', asker_id: 'a1', target_id: 'p1',
+        category: 'matching', text: 'test', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+        tentacle_target_lat: null, tentacle_target_lon: null, tentacle_radius_km: null,
+        tentacle_distance_km: null, tentacle_within_radius: null,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForPlayer(pool, 'p1');
+    expect(questions[0].tentacleTargetLat).toBeNull();
+    expect(questions[0].tentacleDistanceKm).toBeNull();
+    expect(questions[0].tentacleWithinRadius).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetQuestionsForGame — tentacle columns
+// ---------------------------------------------------------------------------
+
+describe('dbGetQuestionsForGame — tentacle columns', () => {
+  it('returns tentacle fields in game Q&A history', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{
+        id: 'q-tent-g', game_id: 'g1', asker_id: 'a1', target_id: 't1',
+        category: 'tentacle', text: 'Within range?', status: 'pending',
+        expires_at: new Date(Date.now() + 300_000), created_at: new Date(),
+        thermometer_current_distance_m: null, thermometer_previous_distance_m: null,
+        tentacle_target_lat: 51.5, tentacle_target_lon: -0.1,
+        tentacle_radius_km: 3, tentacle_distance_km: 1.5, tentacle_within_radius: false,
+        answer_text: null, answer_created_at: null,
+      }] }),
+    );
+    const questions = await dbGetQuestionsForGame(pool, 'g1');
+    expect(questions).toHaveLength(1);
+    expect(questions[0].tentacleTargetLat).toBe(51.5);
+    expect(questions[0].tentacleDistanceKm).toBe(1.5);
+    expect(questions[0].tentacleWithinRadius).toBe(false);
+    expect(questions[0].answer).toBeNull();
   });
 });

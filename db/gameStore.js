@@ -328,13 +328,15 @@ function computeExpiryMs(scale, category) {
  * (small → 10 min, medium → 15 min, large → 20 min).
  *
  * @param {import('pg').Pool} pool
- * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null, gameScale?: string, thermometerCurrentDistanceM?: number|null, thermometerPreviousDistanceM?: number|null }} options
- * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string, thermometerCurrentDistanceM: number|null, thermometerPreviousDistanceM: number|null } | { conflict: true }>}
+ * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string, askerTeam?: string|null, gameScale?: string, thermometerCurrentDistanceM?: number|null, thermometerPreviousDistanceM?: number|null, tentacleTargetLat?: number|null, tentacleTargetLon?: number|null, tentacleRadiusKm?: number|null, tentacleDistanceKm?: number|null, tentacleWithinRadius?: boolean|null }} options
+ * @returns {Promise<{ questionId: string, gameId: string, askerId: string, targetId: string, category: string, text: string, status: string, expiresAt: string, createdAt: string, thermometerCurrentDistanceM: number|null, thermometerPreviousDistanceM: number|null, tentacleTargetLat: number|null, tentacleTargetLon: number|null, tentacleRadiusKm: number|null, tentacleDistanceKm: number|null, tentacleWithinRadius: boolean|null } | { conflict: true }>}
  */
 export async function dbCreateQuestion(pool, {
   gameId, askerId, targetId, category, text,
   askerTeam = null, gameScale,
   thermometerCurrentDistanceM = null, thermometerPreviousDistanceM = null,
+  tentacleTargetLat = null, tentacleTargetLon = null, tentacleRadiusKm = null,
+  tentacleDistanceKm = null, tentacleWithinRadius = null,
 }) {
   // Enforce one-pending-question-at-a-time.  When the game uses two teams,
   // scope the check to the asker's team so both teams can ask independently.
@@ -366,12 +368,18 @@ export async function dbCreateQuestion(pool, {
   const expiresAt = new Date(Date.now() + computeExpiryMs(scale, category));
   const res = await pool.query(
     `INSERT INTO questions (game_id, asker_id, target_id, category, text, expires_at,
-                            thermometer_current_distance_m, thermometer_previous_distance_m)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                            thermometer_current_distance_m, thermometer_previous_distance_m,
+                            tentacle_target_lat, tentacle_target_lon, tentacle_radius_km,
+                            tentacle_distance_km, tentacle_within_radius)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING id, game_id, asker_id, target_id, category, text, status, expires_at, created_at,
-               thermometer_current_distance_m, thermometer_previous_distance_m`,
+               thermometer_current_distance_m, thermometer_previous_distance_m,
+               tentacle_target_lat, tentacle_target_lon, tentacle_radius_km,
+               tentacle_distance_km, tentacle_within_radius`,
     [gameId, askerId, targetId, category, text, expiresAt,
-     thermometerCurrentDistanceM ?? null, thermometerPreviousDistanceM ?? null],
+     thermometerCurrentDistanceM ?? null, thermometerPreviousDistanceM ?? null,
+     tentacleTargetLat ?? null, tentacleTargetLon ?? null, tentacleRadiusKm ?? null,
+     tentacleDistanceKm ?? null, tentacleWithinRadius ?? null],
   );
   const row = res.rows[0];
   return {
@@ -386,6 +394,11 @@ export async function dbCreateQuestion(pool, {
     createdAt: row.created_at,
     thermometerCurrentDistanceM: row.thermometer_current_distance_m ?? null,
     thermometerPreviousDistanceM: row.thermometer_previous_distance_m ?? null,
+    tentacleTargetLat:    row.tentacle_target_lat    ?? null,
+    tentacleTargetLon:    row.tentacle_target_lon    ?? null,
+    tentacleRadiusKm:     row.tentacle_radius_km     ?? null,
+    tentacleDistanceKm:   row.tentacle_distance_km   ?? null,
+    tentacleWithinRadius: row.tentacle_within_radius ?? null,
   };
 }
 
@@ -399,7 +412,9 @@ export async function dbCreateQuestion(pool, {
 export async function dbGetQuestionsForPlayer(pool, playerId) {
   const res = await pool.query(
     `SELECT id, game_id, asker_id, target_id, category, text, status, expires_at, created_at,
-            thermometer_current_distance_m, thermometer_previous_distance_m
+            thermometer_current_distance_m, thermometer_previous_distance_m,
+            tentacle_target_lat, tentacle_target_lon, tentacle_radius_km,
+            tentacle_distance_km, tentacle_within_radius
      FROM questions
      WHERE target_id = $1
      ORDER BY created_at DESC`,
@@ -417,6 +432,11 @@ export async function dbGetQuestionsForPlayer(pool, playerId) {
     createdAt: row.created_at,
     thermometerCurrentDistanceM: row.thermometer_current_distance_m ?? null,
     thermometerPreviousDistanceM: row.thermometer_previous_distance_m ?? null,
+    tentacleTargetLat:    row.tentacle_target_lat    ?? null,
+    tentacleTargetLon:    row.tentacle_target_lon    ?? null,
+    tentacleRadiusKm:     row.tentacle_radius_km     ?? null,
+    tentacleDistanceKm:   row.tentacle_distance_km   ?? null,
+    tentacleWithinRadius: row.tentacle_within_radius ?? null,
   }));
 }
 
@@ -433,6 +453,8 @@ export async function dbGetQuestionsForGame(pool, gameId) {
     `SELECT q.id, q.game_id, q.asker_id, q.target_id, q.category, q.text,
             q.status, q.expires_at, q.created_at,
             q.thermometer_current_distance_m, q.thermometer_previous_distance_m,
+            q.tentacle_target_lat, q.tentacle_target_lon, q.tentacle_radius_km,
+            q.tentacle_distance_km, q.tentacle_within_radius,
             a.text AS answer_text, a.created_at AS answer_created_at
      FROM questions q
      LEFT JOIN answers a ON a.question_id = q.id
@@ -452,6 +474,11 @@ export async function dbGetQuestionsForGame(pool, gameId) {
     createdAt:   row.created_at,
     thermometerCurrentDistanceM:  row.thermometer_current_distance_m ?? null,
     thermometerPreviousDistanceM: row.thermometer_previous_distance_m ?? null,
+    tentacleTargetLat:    row.tentacle_target_lat    ?? null,
+    tentacleTargetLon:    row.tentacle_target_lon    ?? null,
+    tentacleRadiusKm:     row.tentacle_radius_km     ?? null,
+    tentacleDistanceKm:   row.tentacle_distance_km   ?? null,
+    tentacleWithinRadius: row.tentacle_within_radius ?? null,
     answer:      row.answer_text != null
       ? { text: row.answer_text, createdAt: row.answer_created_at }
       : null,

@@ -50,6 +50,43 @@ function computeExpiryMs(scale, category) {
 
 const VALID_CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
+/**
+ * Fetch tentacle proximity data from the managed server.
+ * Returns `{ withinRadius, distanceKm }` with nulls on any failure.
+ * Failures are silent — the question is still created with null values.
+ *
+ * @param {{ gameId: string, targetLat: number, targetLon: number, radiusKm: number }} params
+ * @param {string|undefined} gameServerUrl
+ * @param {string|null} adminApiKey
+ * @param {typeof fetch} fetchFn
+ * @returns {Promise<{ withinRadius: boolean|null, distanceKm: number|null }>}
+ */
+async function fetchTentacleData({ gameId, targetLat, targetLon, radiusKm }, gameServerUrl, adminApiKey, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+  if (!serverUrl || !fetchFn || !key) {
+    return { withinRadius: null, distanceKm: null };
+  }
+  try {
+    const params = new URLSearchParams({
+      targetLat: String(targetLat),
+      targetLon: String(targetLon),
+      radiusKm:  String(radiusKm),
+    });
+    const res = await fetchFn(
+      `${serverUrl}/internal/games/${gameId}/tentacle?${params}`,
+      { headers: { 'Authorization': `Bearer ${key}` } },
+    );
+    const data = await res.json();
+    return {
+      withinRadius: data.withinRadius ?? null,
+      distanceKm:   data.distanceKm  ?? null,
+    };
+  } catch {
+    return { withinRadius: null, distanceKm: null };
+  }
+}
+
 // ── In-process stores (no DB pool) ───────────────────────────────────────────
 
 const _questions = new Map();
@@ -140,7 +177,8 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
 
-  const { gameId, askerId, targetId, category, text, gameScale } = req.body ?? {};
+  const { gameId, askerId, targetId, category, text, gameScale,
+          tentacleTargetLat, tentacleTargetLon, tentacleRadiusKm } = req.body ?? {};
 
   if (!gameId   || typeof gameId   !== 'string') return { status: 400, body: { error: 'gameId is required' } };
   if (!askerId  || typeof askerId  !== 'string') return { status: 400, body: { error: 'askerId is required' } };
@@ -158,15 +196,25 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       ? fetchThermometerData({ gameId, seekerId: askerId }, gameServerUrl, adminApiKey, fetchFn)
       : Promise.resolve({ currentDistanceM: null, previousDistanceM: null });
 
+    const tentacleFetch = (category === 'tentacle'
+        && tentacleTargetLat != null && tentacleTargetLon != null && tentacleRadiusKm != null)
+      ? fetchTentacleData({ gameId, targetLat: tentacleTargetLat, targetLon: tentacleTargetLon, radiusKm: tentacleRadiusKm }, gameServerUrl, adminApiKey, fetchFn)
+      : Promise.resolve({ withinRadius: null, distanceKm: null });
+
     return dbGetCurseExpiry(pool, gameId).then(curseExpiry => {
       if (curseExpiry && new Date(curseExpiry) > new Date()) {
         return { status: 409, body: { error: 'curse_active', curseEndsAt: curseExpiry } };
       }
-      return thermometerFetch.then(td =>
+      return Promise.all([thermometerFetch, tentacleFetch]).then(([td, tent]) =>
         dbCreateQuestion(pool, {
           gameId, askerId, targetId, category, text, gameScale,
           thermometerCurrentDistanceM:  td.currentDistanceM,
           thermometerPreviousDistanceM: td.previousDistanceM,
+          tentacleTargetLat:    tentacleTargetLat  ?? null,
+          tentacleTargetLon:    tentacleTargetLon  ?? null,
+          tentacleRadiusKm:     tentacleRadiusKm   ?? null,
+          tentacleDistanceKm:   tent.distanceKm    ?? null,
+          tentacleWithinRadius: tent.withinRadius   ?? null,
         }).then(row => {
           if (row.conflict) return { status: 409, body: { error: 'A pending question already exists for this game' } };
           notifyQuestionPending({ gameId, questionId: row.questionId, expiresAt: row.expiresAt }, gameServerUrl, fetchFn);
@@ -191,9 +239,13 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
   }
 
   // notifyFetch is the fetch function used for question_pending notification.
-  // For thermometer questions, the injected fetchFn is reserved for the thermometer
-  // endpoint; the notify uses globalThis.fetch so the two are not conflated in tests.
-  const _buildInProcessQuestion = (thermometerCurrentDistanceM, thermometerPreviousDistanceM, notifyFetch = fetchFn) => {
+  // For thermometer/tentacle questions, the injected fetchFn is reserved for the
+  // data endpoint; the notify uses globalThis.fetch so the two are not conflated in tests.
+  const _buildInProcessQuestion = (
+    thermometerCurrentDistanceM, thermometerPreviousDistanceM,
+    tentacleOpts = {},
+    notifyFetch = fetchFn,
+  ) => {
     const expiresAt = new Date(Date.now() + computeExpiryMs(gameScale, category)).toISOString();
     const question = {
       questionId: randomUUID(),
@@ -207,6 +259,11 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       createdAt: new Date().toISOString(),
       thermometerCurrentDistanceM,
       thermometerPreviousDistanceM,
+      tentacleTargetLat:    tentacleOpts.targetLat    ?? null,
+      tentacleTargetLon:    tentacleOpts.targetLon    ?? null,
+      tentacleRadiusKm:     tentacleOpts.radiusKm     ?? null,
+      tentacleDistanceKm:   tentacleOpts.distanceKm   ?? null,
+      tentacleWithinRadius: tentacleOpts.withinRadius  ?? null,
     };
     _questions.set(question.questionId, question);
     notifyQuestionPending({ gameId, questionId: question.questionId, expiresAt: question.expiresAt }, gameServerUrl, notifyFetch);
@@ -221,10 +278,36 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       // Use globalThis.fetch for the notify so the caller's fetchFn is dedicated
       // to the thermometer endpoint (one call per submit, easier to test).
       return fetchThermometerData({ gameId, seekerId: askerId }, gameServerUrl, adminApiKey, fetchFn)
-        .then(td => _buildInProcessQuestion(td.currentDistanceM, td.previousDistanceM, globalThis.fetch));
+        .then(td => _buildInProcessQuestion(td.currentDistanceM, td.previousDistanceM, {}, globalThis.fetch));
     }
     // No server configured — build synchronously with null distances.
     return _buildInProcessQuestion(null, null);
+  }
+
+  if (category === 'tentacle'
+      && tentacleTargetLat != null && tentacleTargetLon != null && tentacleRadiusKm != null) {
+    const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+    const key = adminApiKey ?? process.env.ADMIN_API_KEY ?? null;
+    if (serverUrl && fetchFn && key) {
+      return fetchTentacleData(
+        { gameId, targetLat: tentacleTargetLat, targetLon: tentacleTargetLon, radiusKm: tentacleRadiusKm },
+        gameServerUrl, adminApiKey, fetchFn,
+      ).then(tent => _buildInProcessQuestion(null, null, {
+        targetLat:    tentacleTargetLat,
+        targetLon:    tentacleTargetLon,
+        radiusKm:     tentacleRadiusKm,
+        distanceKm:   tent.distanceKm,
+        withinRadius: tent.withinRadius,
+      }, globalThis.fetch));
+    }
+    // No server configured — build with stored coords but null computed fields.
+    return _buildInProcessQuestion(null, null, {
+      targetLat:    tentacleTargetLat,
+      targetLon:    tentacleTargetLon,
+      radiusKm:     tentacleRadiusKm,
+      distanceKm:   null,
+      withinRadius: null,
+    });
   }
 
   return _buildInProcessQuestion(null, null);

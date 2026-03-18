@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 // Prevent AnswerPanel/QuestionPanel/CardPanel from making real fetch calls in these tests.
@@ -51,6 +51,7 @@ const { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockPolyl
 vi.mock('leaflet', () => ({ default: mockL }));
 vi.mock('leaflet/dist/leaflet.css', () => ({}));
 
+import * as api from '../api.js';
 import GameMap from './GameMap.jsx';
 
 // ── Mock WebSocket ─────────────────────────────────────────────────────────────
@@ -1029,5 +1030,37 @@ describe('GameMap', () => {
       });
     });
     expect(screen.queryByTestId('end-game-banner-hider')).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Card draw WS notification — Task 92
+  // ---------------------------------------------------------------------------
+
+  it('card_drawn with matching playerId triggers fetchCards refresh', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    // Wait for initial card fetch on mount.
+    await waitFor(() => expect(api.fetchCards).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'card_drawn', gameId: 'g1', playerId: 'p1', cardId: 'c99', cardType: 'time_bonus' }),
+      });
+    });
+    // CardPanel should re-fetch cards after the card_drawn event.
+    await waitFor(() => expect(api.fetchCards).toHaveBeenCalledTimes(2));
+  });
+
+  it('card_drawn with non-matching playerId does not trigger extra fetchCards call', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await waitFor(() => expect(api.fetchCards).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'card_drawn', gameId: 'g1', playerId: 'other-player', cardId: 'c88', cardType: 'curse' }),
+      });
+    });
+    // No additional fetch should happen — the card belongs to a different player.
+    await new Promise(r => setTimeout(r, 50));
+    expect(api.fetchCards).toHaveBeenCalledTimes(1);
   });
 });

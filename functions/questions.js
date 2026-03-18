@@ -778,16 +778,36 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
   let answer;
   let gameId = null;
 
+  // Resolve the server URL early so both card-draw and question-answered notifies can use it.
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+
   if (pool) {
     const row = await dbSubmitAnswer(pool, { questionId, responderId, text: text.trim() });
     if (!row) return { status: 404, body: { error: 'question not found' } };
     answer = row;
 
     // Draw a card for the answering player (fire-and-forget; hand-full is silently ignored).
+    // When the draw succeeds, notify the managed server so the hider's CardPanel can refresh.
     if (row.gameId) {
       gameId = row.gameId;
       const { type, effect } = randomCardDescriptor();
-      dbDrawCard(pool, { gameId: row.gameId, playerId: responderId, type, effect }).catch(() => { /* silent */ });
+      dbDrawCard(pool, { gameId: row.gameId, playerId: responderId, type, effect })
+        .then((drawnCard) => {
+          if (drawnCard && serverUrl && fetchFn) {
+            fetchFn(`${serverUrl}/internal/notify`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'card_drawn',
+                gameId: drawnCard.gameId,
+                playerId: responderId,
+                cardId: drawnCard.cardId,
+                cardType: drawnCard.type,
+              }),
+            }).catch(() => { /* intentionally silent */ });
+          }
+        })
+        .catch(() => { /* silent */ });
     }
   } else {
     if (!_questions.has(questionId)) {
@@ -806,13 +826,26 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
     _questions.set(questionId, { ...question, status: 'answered' });
 
     // Draw a card for the answering player in the in-process store.
+    // When the draw succeeds, notify the managed server so the hider's CardPanel can refresh.
     if (gameId) {
-      drawCardInProcess({ gameId, playerId: responderId });
+      const drawnCard = drawCardInProcess({ gameId, playerId: responderId });
+      if (drawnCard && serverUrl && fetchFn) {
+        fetchFn(`${serverUrl}/internal/notify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'card_drawn',
+            gameId,
+            playerId: responderId,
+            cardId: drawnCard.cardId,
+            cardType: drawnCard.type,
+          }),
+        }).catch(() => { /* intentionally silent */ });
+      }
     }
   }
 
   // Fire-and-forget: notify managed server to broadcast to seekers.
-  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
   if (serverUrl && fetchFn) {
     fetchFn(`${serverUrl}/internal/notify`, {
       method: 'POST',

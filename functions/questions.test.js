@@ -512,7 +512,7 @@ describe('submitAnswer', () => {
     expect(status).toBe(405);
   });
 
-  it('fires notify to game server when GAME_SERVER_URL is set', async () => {
+  it('fires question_answered notify to game server when GAME_SERVER_URL is set', async () => {
     const question = createQuestion();
     const mockFetch = vi.fn().mockResolvedValue({});
     await submitAnswer(
@@ -523,11 +523,53 @@ describe('submitAnswer', () => {
     );
     // fetch is fire-and-forget; allow microtasks to flush
     await new Promise(r => setTimeout(r, 0));
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, opts] = mockFetch.mock.calls[0];
+    const calls = mockFetch.mock.calls;
+    const qaNotify = calls.find(([, opts]) => JSON.parse(opts.body).type === 'question_answered');
+    expect(qaNotify).toBeTruthy();
+    const [url, opts] = qaNotify;
     expect(url).toBe('http://gameserver:3000/internal/notify');
-    expect(JSON.parse(opts.body).type).toBe('question_answered');
     expect(JSON.parse(opts.body).questionId).toBe(question.questionId);
+  });
+
+  it('fires card_drawn notify after drawing a card on answer submit', async () => {
+    const question = createQuestion();
+    const mockFetch = vi.fn().mockResolvedValue({});
+    await submitAnswer(
+      { method: 'POST', params: { questionId: question.questionId }, body: { responderId: 'hider-1', text: 'Yes.' } },
+      null,
+      'http://gameserver:3000',
+      mockFetch,
+    );
+    await new Promise(r => setTimeout(r, 0));
+    const calls = mockFetch.mock.calls;
+    const cardNotify = calls.find(([, opts]) => JSON.parse(opts.body).type === 'card_drawn');
+    expect(cardNotify).toBeTruthy();
+    const parsed = JSON.parse(cardNotify[1].body);
+    expect(parsed.gameId).toBe('game-1');
+    expect(parsed.playerId).toBe('hider-1');
+    expect(parsed.cardId).toBeTruthy();
+    expect(parsed.cardType).toMatch(/^(time_bonus|powerup|curse)$/);
+  });
+
+  it('does not fire card_drawn notify when hider hand is full', async () => {
+    // Fill the hand to HAND_LIMIT (6) before submitting the answer.
+    const { drawCardInProcess } = await import('./cards.js');
+    for (let i = 0; i < 6; i++) drawCardInProcess({ gameId: 'game-1', playerId: 'hider-full' });
+
+    const question = submitQuestion({ method: 'POST', body: makeQuestion({ askerId: 'seeker-1', targetId: 'hider-full' }) }).body;
+    const mockFetch = vi.fn().mockResolvedValue({});
+    await submitAnswer(
+      { method: 'POST', params: { questionId: question.questionId }, body: { responderId: 'hider-full', text: 'Yes.' } },
+      null,
+      'http://gameserver:3000',
+      mockFetch,
+    );
+    await new Promise(r => setTimeout(r, 0));
+    const calls = mockFetch.mock.calls;
+    const cardNotify = calls.find(([, opts]) => JSON.parse(opts.body).type === 'card_drawn');
+    expect(cardNotify).toBeFalsy();
+    // question_answered notify still fires
+    expect(calls.some(([, opts]) => JSON.parse(opts.body).type === 'question_answered')).toBe(true);
   });
 
   it('does not fire notify when game server URL is absent', async () => {

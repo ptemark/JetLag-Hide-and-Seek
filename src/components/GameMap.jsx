@@ -101,6 +101,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [outOfZone, setOutOfZone] = useState(false);      // hider is outside their hiding zone (hider view)
   const [hiderOutOfZone, setHiderOutOfZone] = useState(false); // hider left zone (seeker view)
   const [movementLocked, setMovementLocked] = useState(false); // server blocked hider movement (End Game)
+  const [cardRefresh, setCardRefresh] = useState(0);          // increments on card_drawn WS event for this player
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -347,6 +348,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setHiderOutOfZone(true);
       } else if (msg.type === 'movement_locked' && msg.code === 'END_GAME_ACTIVE') {
         setMovementLocked(true);
+      } else if (msg.type === 'card_drawn' && msg.playerId === player.playerId) {
+        setCardRefresh((n) => n + 1);
       } else if (msg.type === 'error') {
         setJoinError(msg.message ?? 'An error occurred');
       }
@@ -598,7 +601,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         <CardPanel
           player={player}
           game={game}
-          refreshTrigger={qaRefresh}
+          refreshTrigger={cardRefresh}
           onTimeBonusPlayed={(mins) => { bonusSecondsRef.current += mins * 60; }}
         />
       )}

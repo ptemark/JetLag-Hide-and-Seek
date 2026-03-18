@@ -14,6 +14,19 @@ function tentacleHint(withinRadius, distanceKm) {
 }
 
 /**
+ * Derive the measuring result label from hider/seeker distance comparison.
+ * @param {boolean|null} hiderIsCloser - whether hider is closer to the target
+ * @param {number|null} hiderDistanceKm - hider's distance to target in km
+ * @param {number|null} seekerDistanceKm - seeker's distance to target in km
+ * @returns {string} human-readable hint
+ */
+function measuringHint(hiderIsCloser, hiderDistanceKm, seekerDistanceKm) {
+  if (hiderIsCloser === true)  return `Measuring hint: hider is closer — hider ${hiderDistanceKm.toFixed(2)} km, seeker ${seekerDistanceKm.toFixed(2)} km`;
+  if (hiderIsCloser === false) return `Measuring hint: seeker is closer — hider ${hiderDistanceKm.toFixed(2)} km, seeker ${seekerDistanceKm.toFixed(2)} km`;
+  return 'Measuring hint: unknown — position unavailable';
+}
+
+/**
  * Derive the thermometer result label from two distance readings.
  * @param {number|null} current - distance in metres at question time
  * @param {number|null} previous - distance in metres one location update earlier
@@ -113,6 +126,11 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
           <p>
             <strong>[{q.category}]</strong> {q.text}
           </p>
+          {q.category === 'measuring' && (
+            <p data-testid="measuring-hint">
+              {measuringHint(q.measuringHiderIsCloser, q.measuringHiderDistanceKm, q.measuringSeekerDistanceKm)}
+            </p>
+          )}
           {q.category === 'thermometer' && (
             <p data-testid="thermometer-hint">
               {thermometerHint(q.thermometerCurrentDistanceM, q.thermometerPreviousDistanceM)}

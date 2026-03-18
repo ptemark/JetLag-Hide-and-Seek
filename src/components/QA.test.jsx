@@ -517,6 +517,81 @@ describe('AnswerPanel', () => {
     await waitFor(() => screen.getByLabelText(/your answer/i));
     expect(screen.queryByTestId('tentacle-hint')).not.toBeInTheDocument();
   });
+
+  // ── Measuring hints ───────────────────────────────────────────────────────
+
+  it('shows "hider is closer" measuring hint when hiderIsCloser is true', async () => {
+    const q = { ...QUESTION, category: 'measuring', measuringHiderIsCloser: true, measuringHiderDistanceKm: 1.23, measuringSeekerDistanceKm: 4.56 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('measuring-hint')).toHaveTextContent(/hider is closer/i)
+    );
+    expect(screen.getByTestId('measuring-hint')).toHaveTextContent('1.23 km');
+    expect(screen.getByTestId('measuring-hint')).toHaveTextContent('4.56 km');
+  });
+
+  it('shows "seeker is closer" measuring hint when hiderIsCloser is false', async () => {
+    const q = { ...QUESTION, category: 'measuring', measuringHiderIsCloser: false, measuringHiderDistanceKm: 5.00, measuringSeekerDistanceKm: 2.00 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('measuring-hint')).toHaveTextContent(/seeker is closer/i)
+    );
+    expect(screen.getByTestId('measuring-hint')).toHaveTextContent('5.00 km');
+    expect(screen.getByTestId('measuring-hint')).toHaveTextContent('2.00 km');
+  });
+
+  it('shows "unknown" measuring hint when hiderIsCloser is null', async () => {
+    const q = { ...QUESTION, category: 'measuring', measuringHiderIsCloser: null, measuringHiderDistanceKm: null, measuringSeekerDistanceKm: null };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('measuring-hint')).toHaveTextContent(/unknown/i)
+    );
+  });
+
+  it('does not render a measuring hint for non-measuring questions', async () => {
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [QUESTION] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.queryByTestId('measuring-hint')).not.toBeInTheDocument();
+  });
+});
+
+// ── QuestionPanel measuring inputs ────────────────────────────────────────────
+
+describe('QuestionPanel measuring', () => {
+  it('shows target lat/lon inputs when category is measuring', async () => {
+    const user = userEvent.setup();
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await user.selectOptions(screen.getByLabelText(/category/i), 'measuring');
+    expect(screen.getByLabelText(/target latitude/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/target longitude/i)).toBeInTheDocument();
+  });
+
+  it('includes measuring params in submitQuestion call when category is measuring', async () => {
+    const user = userEvent.setup();
+    api.submitQuestion.mockResolvedValue({ ...QUESTION, category: 'measuring', questionId: 'q-m1' });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+
+    await user.type(screen.getByLabelText(/hider id/i), 'p2');
+    await user.selectOptions(screen.getByLabelText(/category/i), 'measuring');
+    await user.type(screen.getByRole('textbox', { name: /question/i }), 'Are you closer to the tower?');
+    await user.type(screen.getByLabelText(/target latitude/i), '51.5');
+    await user.type(screen.getByLabelText(/target longitude/i), '-0.1');
+    await user.click(screen.getByRole('button', { name: /submit question/i }));
+
+    await waitFor(() =>
+      expect(api.submitQuestion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category:           'measuring',
+          measuringTargetLat: 51.5,
+          measuringTargetLon: -0.1,
+        })
+      )
+    );
+  });
 });
 
 // ── QuestionPanel tentacle inputs ─────────────────────────────────────────────

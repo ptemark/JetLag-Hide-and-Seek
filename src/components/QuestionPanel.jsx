@@ -34,6 +34,8 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
   const [tentacleTargetLat, setTentacleTargetLat] = useState('');
   const [tentacleTargetLon, setTentacleTargetLon] = useState('');
   const [tentacleRadiusKm, setTentacleRadiusKm] = useState('');
+  const [measuringTargetLat, setMeasuringTargetLat] = useState('');
+  const [measuringTargetLon, setMeasuringTargetLon] = useState('');
   const [submitted, setSubmitted] = useState([]);  // optimistic local submissions
   const [history, setHistory] = useState([]);       // server-side Q&A history
   const [historyError, setHistoryError] = useState(null);
@@ -83,6 +85,10 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
         tentacleTargetLon: Number(tentacleTargetLon),
         tentacleRadiusKm:  Number(tentacleRadiusKm),
       } : {};
+      const measuringParams = category === 'measuring' ? {
+        measuringTargetLat: Number(measuringTargetLat),
+        measuringTargetLon: Number(measuringTargetLon),
+      } : {};
       const question = await submitQuestion({
         gameId:   game.gameId,
         askerId:  player.playerId,
@@ -90,6 +96,7 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
         category,
         text:     text.trim(),
         ...tentacleParams,
+        ...measuringParams,
       });
       setSubmitted((prev) => [question, ...prev]);
       setText('');
@@ -179,6 +186,31 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
                 value={tentacleRadiusKm}
                 onChange={(e) => setTentacleRadiusKm(e.target.value)}
                 aria-label="Radius (km)"
+              />
+            </label>
+          </>
+        )}
+
+        {category === 'measuring' && (
+          <>
+            <label>
+              Target latitude
+              <input
+                type="number"
+                step="0.000001"
+                value={measuringTargetLat}
+                onChange={(e) => setMeasuringTargetLat(e.target.value)}
+                aria-label="Target latitude"
+              />
+            </label>
+            <label>
+              Target longitude
+              <input
+                type="number"
+                step="0.000001"
+                value={measuringTargetLon}
+                onChange={(e) => setMeasuringTargetLon(e.target.value)}
+                aria-label="Target longitude"
               />
             </label>
           </>

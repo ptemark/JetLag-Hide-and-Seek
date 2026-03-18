@@ -3,6 +3,8 @@ import { submitQuestion, listQuestions } from '../api.js';
 
 const CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
+const MATCHING_FEATURE_TYPES = ['airport', 'train_station', 'bus_station', 'ferry_terminal', 'university', 'hospital'];
+
 /** One-line hint shown below the category selector to guide the seeker. */
 const CATEGORY_HINTS = {
   matching:    'Is your nearest [landmark] the same as mine?',
@@ -36,6 +38,7 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
   const [tentacleRadiusKm, setTentacleRadiusKm] = useState('');
   const [measuringTargetLat, setMeasuringTargetLat] = useState('');
   const [measuringTargetLon, setMeasuringTargetLon] = useState('');
+  const [matchingFeatureType, setMatchingFeatureType] = useState(MATCHING_FEATURE_TYPES[0]);
   const [submitted, setSubmitted] = useState([]);  // optimistic local submissions
   const [history, setHistory] = useState([]);       // server-side Q&A history
   const [historyError, setHistoryError] = useState(null);
@@ -89,6 +92,9 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
         measuringTargetLat: Number(measuringTargetLat),
         measuringTargetLon: Number(measuringTargetLon),
       } : {};
+      const matchingParams = category === 'matching' ? {
+        matchingFeatureType,
+      } : {};
       const question = await submitQuestion({
         gameId:   game.gameId,
         askerId:  player.playerId,
@@ -97,6 +103,7 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
         text:     text.trim(),
         ...tentacleParams,
         ...measuringParams,
+        ...matchingParams,
       });
       setSubmitted((prev) => [question, ...prev]);
       setText('');
@@ -214,6 +221,21 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
               />
             </label>
           </>
+        )}
+
+        {category === 'matching' && (
+          <label>
+            Feature type
+            <select
+              value={matchingFeatureType}
+              onChange={(e) => setMatchingFeatureType(e.target.value)}
+              aria-label="Feature type"
+            >
+              {MATCHING_FEATURE_TYPES.map((ft) => (
+                <option key={ft} value={ft}>{ft}</option>
+              ))}
+            </select>
+          </label>
         )}
 
         <button type="submit" disabled={submitting || isCurseActive}>

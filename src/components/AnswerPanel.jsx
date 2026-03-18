@@ -27,6 +27,20 @@ function measuringHint(hiderIsCloser, hiderDistanceKm, seekerDistanceKm) {
 }
 
 /**
+ * Derive the matching result label from feature comparison data.
+ * @param {boolean|null} featuresMatch - whether hider and seeker share the nearest feature
+ * @param {string|null} featureType - the feature type queried
+ * @param {string|null} hiderFeatureName - name of the hider's nearest feature
+ * @param {string|null} seekerFeatureName - name of the seeker's nearest feature
+ * @returns {string} human-readable hint
+ */
+function matchingHint(featuresMatch, featureType, hiderFeatureName, seekerFeatureName) {
+  if (featuresMatch === true)  return `Matching hint: same ${featureType} — both nearest to ${hiderFeatureName}`;
+  if (featuresMatch === false) return `Matching hint: different ${featureType} — hider: ${hiderFeatureName}, seeker: ${seekerFeatureName}`;
+  return 'Matching hint: unknown — position unavailable';
+}
+
+/**
  * Derive the transit hint label from nearest station data.
  * @param {string|null} nearestStationName - name of the nearest transit station
  * @param {number|null} nearestStationDistanceKm - distance to nearest station in km
@@ -139,6 +153,11 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
           <p>
             <strong>[{q.category}]</strong> {q.text}
           </p>
+          {q.category === 'matching' && (
+            <p data-testid="matching-hint">
+              {matchingHint(q.matchingFeaturesMatch, q.matchingFeatureType, q.matchingHiderFeatureName, q.matchingSeekerFeatureName)}
+            </p>
+          )}
           {q.category === 'measuring' && (
             <p data-testid="measuring-hint">
               {measuringHint(q.measuringHiderIsCloser, q.measuringHiderDistanceKm, q.measuringSeekerDistanceKm)}

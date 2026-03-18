@@ -271,7 +271,7 @@ describe('AnswerPanel', () => {
     api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [QUESTION] });
     render(<AnswerPanel player={HIDER} game={GAME} />);
     await waitFor(() => {
-      expect(screen.getByText(/matching/i)).toBeInTheDocument();
+      expect(screen.getByText(/\[matching\]/i)).toBeInTheDocument();
       expect(screen.getByText(/Are you near a park\?/)).toBeInTheDocument();
     });
   });
@@ -584,6 +584,83 @@ describe('AnswerPanel', () => {
     render(<AnswerPanel player={HIDER} game={GAME} />);
     await waitFor(() => screen.getByLabelText(/your answer/i));
     expect(screen.queryByTestId('transit-hint')).not.toBeInTheDocument();
+  });
+
+  // ── Matching hints ────────────────────────────────────────────────────────
+
+  it('shows "same [featureType]" matching hint with hider name when featuresMatch is true', async () => {
+    const q = { ...QUESTION, category: 'matching', matchingFeaturesMatch: true, matchingFeatureType: 'airport', matchingHiderFeatureName: 'Heathrow', matchingSeekerFeatureName: 'Heathrow' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('matching-hint')).toHaveTextContent(/same airport/i)
+    );
+    expect(screen.getByTestId('matching-hint')).toHaveTextContent('Heathrow');
+  });
+
+  it('shows "different [featureType]" matching hint with both names when featuresMatch is false', async () => {
+    const q = { ...QUESTION, category: 'matching', matchingFeaturesMatch: false, matchingFeatureType: 'hospital', matchingHiderFeatureName: 'City Hospital', matchingSeekerFeatureName: 'County Clinic' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('matching-hint')).toHaveTextContent(/different hospital/i)
+    );
+    expect(screen.getByTestId('matching-hint')).toHaveTextContent('City Hospital');
+    expect(screen.getByTestId('matching-hint')).toHaveTextContent('County Clinic');
+  });
+
+  it('shows "unknown" matching hint when featuresMatch is null', async () => {
+    const q = { ...QUESTION, category: 'matching', matchingFeaturesMatch: null, matchingFeatureType: null, matchingHiderFeatureName: null, matchingSeekerFeatureName: null };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('matching-hint')).toHaveTextContent(/unknown/i)
+    );
+  });
+
+  it('does not render a matching hint for non-matching questions', async () => {
+    const q = { ...QUESTION, category: 'thermometer' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.queryByTestId('matching-hint')).not.toBeInTheDocument();
+  });
+});
+
+// ── QuestionPanel matching inputs ─────────────────────────────────────────────
+
+describe('QuestionPanel matching', () => {
+  it('shows feature type select when category is matching', async () => {
+    const user = userEvent.setup();
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    // matching is the default category, so the select should already be visible
+    expect(screen.getByLabelText(/feature type/i)).toBeInTheDocument();
+    // Switching away and back confirms the conditional rendering
+    await user.selectOptions(screen.getByLabelText(/category/i), 'thermometer');
+    expect(screen.queryByLabelText(/feature type/i)).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText(/category/i), 'matching');
+    expect(screen.getByLabelText(/feature type/i)).toBeInTheDocument();
+  });
+
+  it('includes matchingFeatureType in submitQuestion call when category is matching', async () => {
+    const user = userEvent.setup();
+    api.submitQuestion.mockResolvedValue({ ...QUESTION, category: 'matching', questionId: 'q-m2' });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+
+    await user.type(screen.getByLabelText(/hider id/i), 'p2');
+    // category is already 'matching' by default
+    await user.type(screen.getByRole('textbox', { name: /question/i }), 'Same university?');
+    await user.selectOptions(screen.getByLabelText(/feature type/i), 'university');
+    await user.click(screen.getByRole('button', { name: /submit question/i }));
+
+    await waitFor(() =>
+      expect(api.submitQuestion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category:            'matching',
+          matchingFeatureType: 'university',
+        })
+      )
+    );
   });
 });
 

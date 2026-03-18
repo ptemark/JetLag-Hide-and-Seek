@@ -2,6 +2,21 @@ import { useState, useEffect } from 'react';
 import { listQuestions, submitAnswer, uploadQuestionPhoto } from '../api.js';
 
 /**
+ * Derive the thermometer result label from two distance readings.
+ * @param {number|null} current - distance in metres at question time
+ * @param {number|null} previous - distance in metres one location update earlier
+ * @returns {string} human-readable hint
+ */
+function thermometerHint(current, previous) {
+  if (current == null || previous == null) {
+    return 'Thermometer hint: unknown — position unavailable';
+  }
+  if (current < previous) return 'Thermometer hint: warmer — you moved closer';
+  if (current > previous) return 'Thermometer hint: colder — you moved further away';
+  return 'Thermometer hint: same — no distance change';
+}
+
+/**
  * AnswerPanel — hider UI for viewing and answering pending questions.
  *
  * Props:
@@ -86,6 +101,11 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
           <p>
             <strong>[{q.category}]</strong> {q.text}
           </p>
+          {q.category === 'thermometer' && (
+            <p data-testid="thermometer-hint">
+              {thermometerHint(q.thermometerCurrentDistanceM, q.thermometerPreviousDistanceM)}
+            </p>
+          )}
           <form
             onSubmit={(e) => handleAnswer(e, q.questionId, q.category)}
             aria-label={`Answer form for ${q.questionId}`}

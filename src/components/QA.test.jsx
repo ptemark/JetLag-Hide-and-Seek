@@ -434,4 +434,49 @@ describe('AnswerPanel', () => {
     await waitFor(() => expect(api.submitAnswer).toHaveBeenCalled());
     expect(api.uploadQuestionPhoto).not.toHaveBeenCalled();
   });
+
+  // ── Thermometer hints ──────────────────────────────────────────────────────
+
+  it('shows "warmer" thermometer hint when current distance < previous distance', async () => {
+    const q = { ...QUESTION, category: 'thermometer', thermometerCurrentDistanceM: 200, thermometerPreviousDistanceM: 400 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('thermometer-hint')).toHaveTextContent(/warmer/i)
+    );
+  });
+
+  it('shows "colder" thermometer hint when current distance > previous distance', async () => {
+    const q = { ...QUESTION, category: 'thermometer', thermometerCurrentDistanceM: 600, thermometerPreviousDistanceM: 300 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('thermometer-hint')).toHaveTextContent(/colder/i)
+    );
+  });
+
+  it('shows "same" thermometer hint when current distance equals previous distance', async () => {
+    const q = { ...QUESTION, category: 'thermometer', thermometerCurrentDistanceM: 350, thermometerPreviousDistanceM: 350 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('thermometer-hint')).toHaveTextContent(/same/i)
+    );
+  });
+
+  it('shows "unknown" thermometer hint when distances are null', async () => {
+    const q = { ...QUESTION, category: 'thermometer', thermometerCurrentDistanceM: null, thermometerPreviousDistanceM: null };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('thermometer-hint')).toHaveTextContent(/unknown/i)
+    );
+  });
+
+  it('does not render a thermometer hint for non-thermometer questions', async () => {
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [QUESTION] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.queryByTestId('thermometer-hint')).not.toBeInTheDocument();
+  });
 });

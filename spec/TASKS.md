@@ -7,7 +7,11 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 80 complete. Thermometer server-side position tracking: previousLocation saved in gameState; calculateThermometer in captureDetector; GET /internal/games/:gameId/thermometer endpoint; questions.js fetches distances and stores in DB; schema adds thermometer columns; 1285 tests pass._
+_Task 81 complete. Thermometer hint display in AnswerPanel: warmer/colder/same/unknown hint derived from thermometerCurrentDistanceM and thermometerPreviousDistanceM; 1290 tests pass._
+
+### Phase 29 — Thermometer UX
+
+- [x] **81** — Thermometer hint display in AnswerPanel: Task 80 stores `thermometerCurrentDistanceM` and `thermometerPreviousDistanceM` in the DB and returns them via `GET /questions?playerId=`, but `src/components/AnswerPanel.jsx` ignores these fields. The hider cannot know whether they moved warmer/colder/same relative to the seeker when the question was asked. Changes needed: (1) `src/components/AnswerPanel.jsx` — for questions with `category === 'thermometer'`, derive the result from the two distance fields: `current < previous` → `'warmer'`; `current > previous` → `'colder'`; `current === previous` → `'same'`; either `null` → `'unknown'`. Display a hint element (e.g. `<p data-testid="thermometer-hint">Thermometer hint: warmer — you moved closer</p>`) below the question text; use role-appropriate descriptions ("warmer — you moved closer", "colder — you moved further away", "same — no distance change", "unknown — position unavailable"). Do not show the hint for non-thermometer categories. (2) `src/components/QA.test.jsx` — 5 tests: (a) thermometer question with `currentDistanceM < previousDistanceM` renders "warmer" hint; (b) `current > previous` renders "colder" hint; (c) `current === previous` renders "same" hint; (d) both null renders "unknown" hint; (e) non-thermometer question does not render a thermometer hint element.
 
 ### Phase 28 — Seeker Proximity UX
 
@@ -29,6 +33,7 @@ _Task 80 complete. Thermometer server-side position tracking: previousLocation s
 
 | # | Date | Task | Files | Notes |
 |---|------|------|-------|-------|
+| 81 | 2026-03-18 | Thermometer hint display in AnswerPanel | src/components/AnswerPanel.jsx, src/components/QA.test.jsx | thermometerHint() derives warmer/colder/same/unknown from stored distance fields; hint shown below question text for thermometer category; 5 new tests; 1290 tests pass |
 | 80 | 2026-03-18 | Thermometer server-side position tracking | server/gameState.js, server/captureDetector.js, server/index.js, functions/questions.js, db/schema.sql, db/gameStore.js + tests | previousLocation in gameState; calculateThermometer (warmer/colder/same/unknown); /internal/games/:gameId/thermometer endpoint; questions.js fetches and stores distances; schema adds two nullable FLOAT columns; 1285 tests pass |
 | 79 | 2026-03-13 | Spot rejection distance feedback | src/components/GameMap.jsx, src/components/GameMap.test.jsx | spotDistance state; rejection msg shows "You are Xm away; need to be within Ym"; fallback for null distance; stale distance cleared on re-attempt; 1256 tests pass |
 | 78 | 2026-03-13 | Hider movement-locked notification + End Game state fix | server/wsHandler.js, src/components/GameMap.jsx, server/wsHandler.test.js, src/components/GameMap.test.jsx | movement_locked sent to hider on End Game block; endGameActive reset on phase → finished/hiding; movementLocked banner; 1254 tests pass |

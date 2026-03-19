@@ -918,11 +918,12 @@ describe('POST /internal/games/:gameId/start', () => {
     }
   });
 
-  /** Seed a game with one hider and one seeker in the in-memory game state. */
+  /** Seed a game with one hider, one seeker, and one zone in the in-memory game state. */
   function seedPlayers(srv, gameId) {
     srv.gameStateManager.createGame(gameId);
     srv.gameStateManager.addPlayerToGame(gameId, 'hider-1', 'hider');
     srv.gameStateManager.addPlayerToGame(gameId, 'seeker-1', 'seeker');
+    srv.gameStateManager.setGameZones(gameId, [{ stationId: 'st1', lat: 51.5, lon: -0.1, radiusM: 500 }]);
   }
 
   it('responds 204 and starts the game in HIDING phase', async () => {
@@ -1145,6 +1146,43 @@ describe('POST /internal/games/:gameId/start', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe('insufficient_players');
+  });
+
+  // Task 101 — hider zone requirement before game start
+  it('returns 400 no_hider_zone when no zones registered for game', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+    server.gameStateManager.createGame('no-zone-game');
+    server.gameStateManager.addPlayerToGame('no-zone-game', 'h1', 'hider');
+    server.gameStateManager.addPlayerToGame('no-zone-game', 's1', 'seeker');
+    // No zones registered.
+
+    const res = await fetch(`http://localhost:${port}/internal/games/no-zone-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('no_hider_zone');
+  });
+
+  it('returns 204 when players and zones are registered', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+    server.gameStateManager.createGame('full-game');
+    server.gameStateManager.addPlayerToGame('full-game', 'h1', 'hider');
+    server.gameStateManager.addPlayerToGame('full-game', 's1', 'seeker');
+    server.gameStateManager.setGameZones('full-game', [{ stationId: 'st1', lat: 51.5, lon: -0.1, radiusM: 500 }]);
+
+    const res = await fetch(`http://localhost:${port}/internal/games/full-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    expect(res.status).toBe(204);
   });
 });
 

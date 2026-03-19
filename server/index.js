@@ -361,6 +361,16 @@ export function createServer({
           return;
         }
 
+        // Validate the hider has registered a hiding zone.
+        if (gameStateManager.getGameZones(gameId).length === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'no_hider_zone',
+            message: 'Hider has not selected a hiding zone',
+          }));
+          return;
+        }
+
         const scaleDurationMs = SCALE_DURATIONS[scale] ?? null;
         const opts = {};
         if (hidingDurationMs != null) {

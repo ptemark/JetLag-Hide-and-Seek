@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbCleanupStaleGames } from '../db/gameStore.js';
+import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbGetGameZone, dbCleanupStaleGames } from '../db/gameStore.js';
 import { checkAdminAuth } from './auth.js';
 
 export const VALID_SIZES = Object.freeze(['small', 'medium', 'large']);
@@ -197,8 +197,9 @@ export async function handleStartGame(req, pool = null, gameServerUrl, fetchFn =
     }
   }
 
-  // When a DB pool is available, validate minimum player requirements before
-  // notifying the managed server. Without a pool the server performs its own check.
+  // When a DB pool is available, validate minimum player requirements and hider
+  // zone before notifying the managed server. Without a pool the server performs
+  // its own checks.
   if (pool) {
     const { hiderCount, seekerCount } = await dbGetGamePlayerCounts(pool, gameId);
     if (hiderCount < 1) {
@@ -206,6 +207,10 @@ export async function handleStartGame(req, pool = null, gameServerUrl, fetchFn =
     }
     if (seekerCount < 1) {
       return { status: 400, body: { error: 'insufficient_players', message: 'Game requires at least one seeker' } };
+    }
+    const zone = await dbGetGameZone(pool, gameId);
+    if (!zone) {
+      return { status: 400, body: { error: 'no_hider_zone', message: 'Hider has not selected a hiding zone' } };
     }
   }
 

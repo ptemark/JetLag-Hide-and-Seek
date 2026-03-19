@@ -277,12 +277,11 @@ describe('handleStartGame', () => {
     expect(res.body.message).toMatch(/seeker/i);
   });
 
-  it('returns 204 and fires notify when pool confirms hider and seeker present', async () => {
-    const pool = {
-      query: vi.fn().mockResolvedValue({
-        rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 2 }],
-      }),
-    };
+  it('returns 204 and fires notify when pool confirms hider, seeker, and zone present', async () => {
+    const pool = { query: vi.fn() };
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'z1', game_id: 'g1', station_id: 's1', lat: 1, lon: 2, radius_m: 300, locked_at: null }] });
     const mockFetch = vi.fn().mockResolvedValue({});
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small' }),
@@ -295,7 +294,24 @@ describe('handleStartGame', () => {
     expect(mockFetch).toHaveBeenCalledOnce();
   });
 
-  it('skips DB check and fires notify immediately when pool is null', async () => {
+  // Task 101 — hider zone requirement before game start
+  it('returns 400 no_hider_zone when pool shows no zone set for game', async () => {
+    const pool = { query: vi.fn() };
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 2 }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small' }),
+      pool,
+      'http://game-server',
+      vi.fn(),
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('no_hider_zone');
+    expect(res.body.message).toMatch(/hiding zone/i);
+  });
+
+  it('skips zone check when pool is null', async () => {
     const mockFetch = vi.fn().mockResolvedValue({});
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small' }),

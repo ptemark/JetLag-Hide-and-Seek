@@ -19,6 +19,7 @@ import {
   dbGetCurseExpiry,
   createInstrumentedStore,
   dbCleanupStaleGames,
+  dbGetGameZone,
 } from './gameStore.js';
 import { MetricsCollector, MetricKey } from '../server/monitoring.js';
 
@@ -1766,5 +1767,44 @@ describe('dbCleanupStaleGames', () => {
   it('propagates query errors to the caller', async () => {
     const pool = makeMockPool(() => Promise.reject(new Error('db error')));
     await expect(dbCleanupStaleGames(pool, 86_400_000)).rejects.toThrow('db error');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetGameZone
+// ---------------------------------------------------------------------------
+
+describe('dbGetGameZone', () => {
+  it('returns null when no zone row exists for the game', async () => {
+    const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
+    const result = await dbGetGameZone(pool, 'game-1');
+    expect(result).toBeNull();
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('game_zones'), ['game-1']);
+  });
+
+  it('returns zone object when a zone row is found', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({
+        rows: [{
+          id: 'zone-uuid',
+          game_id: 'game-1',
+          station_id: 'station-42',
+          lat: 51.5,
+          lon: -0.1,
+          radius_m: 500,
+          locked_at: '2026-01-01T00:00:00.000Z',
+        }],
+      }),
+    );
+    const result = await dbGetGameZone(pool, 'game-1');
+    expect(result).toEqual({
+      zoneId: 'zone-uuid',
+      gameId: 'game-1',
+      stationId: 'station-42',
+      lat: 51.5,
+      lon: -0.1,
+      radiusM: 500,
+      lockedAt: '2026-01-01T00:00:00.000Z',
+    });
   });
 });

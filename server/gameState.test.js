@@ -302,4 +302,36 @@ describe('GameStateManager', () => {
     }).not.toThrow();
     expect(Object.keys(gsm.getGameState('g1').players)).toHaveLength(4);
   });
+
+  // -------------------------------------------------------------------------
+  // setGameBounds / getGameBounds — Task 94
+  // -------------------------------------------------------------------------
+
+  it('getGameBounds returns null for unknown game', () => {
+    expect(gsm.getGameBounds('unknown')).toBeNull();
+  });
+
+  it('getGameBounds returns null for a game with no bounds set', () => {
+    gsm.createGame('g1');
+    expect(gsm.getGameBounds('g1')).toBeNull();
+  });
+
+  it('setGameBounds stores bounds and getGameBounds retrieves them', () => {
+    gsm.createGame('g1');
+    const bounds = { latMin: 51.0, latMax: 52.0, lonMin: -1.0, lonMax: 0.0 };
+    const result = gsm.setGameBounds('g1', bounds);
+    expect(result).toBe(true);
+    expect(gsm.getGameBounds('g1')).toEqual(bounds);
+  });
+
+  it('setGameBounds returns false for unknown game', () => {
+    const bounds = { latMin: 51.0, latMax: 52.0, lonMin: -1.0, lonMax: 0.0 };
+    expect(gsm.setGameBounds('unknown', bounds)).toBe(false);
+  });
+
+  it('createGame accepts initial bounds via options', () => {
+    const bounds = { latMin: 10.0, latMax: 20.0, lonMin: 30.0, lonMax: 40.0 };
+    gsm.createGame('g1', { bounds });
+    expect(gsm.getGameBounds('g1')).toEqual(bounds);
+  });
 });

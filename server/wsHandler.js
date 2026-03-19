@@ -112,7 +112,7 @@ export class WsHandler {
     }
   }
 
-  _handleJoinGame(ws, playerId, { gameId, role = 'hider', team = null }) {
+  _handleJoinGame(ws, playerId, { gameId, role = 'hider', team = null, bounds = null }) {
     if (!gameId) {
       this._send(ws, { type: 'error', message: 'gameId required' });
       return;
@@ -176,6 +176,11 @@ export class WsHandler {
       }
     }
 
+    // Store game bounds if provided so location updates can be validated against them.
+    if (bounds && this.gameStateManager) {
+      this.gameStateManager.setGameBounds(gameId, bounds);
+    }
+
     // Confirm join to the new player, including team assignment if applicable.
     this._send(ws, { type: 'joined_game', gameId, playerId, role, team: assignedTeam ?? null });
 
@@ -225,6 +230,25 @@ export class WsHandler {
           });
         }
         return;
+      }
+    }
+
+    // Reject locations that fall outside the configured game bounds.
+    if (this.gameStateManager) {
+      const bounds = this.gameStateManager.getGameBounds(gameId);
+      if (bounds) {
+        const { latMin, latMax, lonMin, lonMax } = bounds;
+        if (lat < latMin || lat > latMax || lon < lonMin || lon > lonMax) {
+          const senderWs = this.clients.get(playerId);
+          if (senderWs) {
+            this._send(senderWs, {
+              type: 'location_rejected',
+              code: 'OUT_OF_BOUNDS',
+              message: 'Location is outside game bounds',
+            });
+          }
+          return;
+        }
       }
     }
 

@@ -1033,6 +1033,67 @@ describe('GameMap', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Location rejected banner — Task 94
+  // ---------------------------------------------------------------------------
+
+  it('does not show location-rejected-banner on initial render', () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('location-rejected-banner')).not.toBeInTheDocument();
+  });
+
+  it('shows location-rejected-banner on location_rejected OUT_OF_BOUNDS', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'location_rejected', code: 'OUT_OF_BOUNDS', message: 'Location is outside game bounds' }),
+      });
+    });
+    expect(screen.getByTestId('location-rejected-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('location-rejected-banner').textContent).toContain('outside game bounds');
+  });
+
+  it('does not show location-rejected-banner for location_rejected with different code', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'location_rejected', code: 'OTHER_CODE' }),
+      });
+    });
+    expect(screen.queryByTestId('location-rejected-banner')).not.toBeInTheDocument();
+  });
+
+  it('dismisses location-rejected-banner when dismiss button is clicked', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'location_rejected', code: 'OUT_OF_BOUNDS' }),
+      });
+    });
+    expect(screen.getByTestId('location-rejected-banner')).toBeInTheDocument();
+    await act(async () => {
+      screen.getByRole('button', { name: /dismiss/i }).click();
+    });
+    expect(screen.queryByTestId('location-rejected-banner')).not.toBeInTheDocument();
+  });
+
+  it('sends bounds in join_game message when game has bounds', async () => {
+    const gameWithBounds = {
+      ...game,
+      bounds: { lat_min: 51.0, lat_max: 52.0, lon_min: -1.0, lon_max: 0.0 },
+    };
+    render(<GameMap player={player} game={gameWithBounds} zones={[]} serverUrl={serverUrl} />);
+    // Trigger onopen so the join_game message is sent.
+    await act(async () => {
+      MockWebSocket.last.readyState = 1;
+      MockWebSocket.last.onopen?.();
+    });
+    const sentMsgs = MockWebSocket.last.send.mock.calls.map(([m]) => JSON.parse(m));
+    const joinMsg = sentMsgs.find(m => m.type === 'join_game');
+    expect(joinMsg).toBeDefined();
+    expect(joinMsg.bounds).toEqual({ latMin: 51.0, latMax: 52.0, lonMin: -1.0, lonMax: 0.0 });
+  });
+
+  // ---------------------------------------------------------------------------
   // Card draw WS notification — Task 92
   // ---------------------------------------------------------------------------
 

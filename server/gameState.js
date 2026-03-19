@@ -10,9 +10,9 @@ export class GameStateManager {
     this._games = new Map();
   }
 
-  createGame(gameId, { status = 'waiting', seekerTeams = 0 } = {}) {
+  createGame(gameId, { status = 'waiting', seekerTeams = 0, bounds = null } = {}) {
     if (this._games.has(gameId)) return;
-    this._games.set(gameId, { status, seekerTeams, players: new Map(), zones: [], endGameActive: false });
+    this._games.set(gameId, { status, seekerTeams, players: new Map(), zones: [], endGameActive: false, bounds });
   }
 
   setSeekerTeams(gameId, seekerTeams) {
@@ -137,6 +137,17 @@ export class GameStateManager {
 
   getGameZones(gameId) {
     return this._games.get(gameId)?.zones ?? [];
+  }
+
+  setGameBounds(gameId, bounds) {
+    const game = this._games.get(gameId);
+    if (!game) return false;
+    game.bounds = bounds;
+    return true;
+  }
+
+  getGameBounds(gameId) {
+    return this._games.get(gameId)?.bounds ?? null;
   }
 
   getGameState(gameId) {

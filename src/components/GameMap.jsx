@@ -102,6 +102,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [hiderOutOfZone, setHiderOutOfZone] = useState(false); // hider left zone (seeker view)
   const [movementLocked, setMovementLocked] = useState(false); // server blocked hider movement (End Game)
   const [cardRefresh, setCardRefresh] = useState(0);          // increments on card_drawn WS event for this player
+  const [locationRejected, setLocationRejected] = useState(false); // server rejected location as out of bounds
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -348,6 +349,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setHiderOutOfZone(true);
       } else if (msg.type === 'movement_locked' && msg.code === 'END_GAME_ACTIVE') {
         setMovementLocked(true);
+      } else if (msg.type === 'location_rejected' && msg.code === 'OUT_OF_BOUNDS') {
+        setLocationRejected(true);
       } else if (msg.type === 'card_drawn' && msg.playerId === player.playerId) {
         setCardRefresh((n) => n + 1);
       } else if (msg.type === 'error') {
@@ -365,11 +368,20 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       ws.onopen = () => {
         reconnectAttemptsRef.current = 0;
         // Register with the game server so the player is added to game broadcasts.
-        ws.send(JSON.stringify({
+        const joinMsg = {
           type: 'join_game',
           gameId: game.gameId,
           role: player.role,
-        }));
+        };
+        if (game.bounds?.lat_min != null) {
+          joinMsg.bounds = {
+            latMin: game.bounds.lat_min,
+            latMax: game.bounds.lat_max,
+            lonMin: game.bounds.lon_min,
+            lonMax: game.bounds.lon_max,
+          };
+        }
+        ws.send(JSON.stringify(joinMsg));
       };
 
       ws.onmessage = handleMessage;
@@ -469,6 +481,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       {movementLocked && player.role === 'hider' && (
         <p role="alert" data-testid="movement-locked-banner" style={{ background: '#fecaca', padding: '0.5rem', fontWeight: 'bold' }}>
           Movement locked — you cannot move during End Game!
+        </p>
+      )}
+
+      {locationRejected && (
+        <p role="alert" data-testid="location-rejected-banner" style={{ background: '#fecaca', padding: '0.5rem', fontWeight: 'bold' }}>
+          Your location is outside game bounds
+          <button onClick={() => setLocationRejected(false)} style={{ marginLeft: '0.5rem' }} aria-label="Dismiss">✕</button>
         </p>
       )}
 

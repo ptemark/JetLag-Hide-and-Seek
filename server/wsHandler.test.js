@@ -52,6 +52,8 @@ function makeGsm() {
     setPlayerTransit: vi.fn().mockReturnValue(true),
     getGameStatus: vi.fn().mockReturnValue(null),
     getGameZones: vi.fn().mockReturnValue([]),
+    setGameBounds: vi.fn().mockReturnValue(true),
+    getGameBounds: vi.fn().mockReturnValue(null),
   };
 }
 
@@ -1090,5 +1092,74 @@ describe('WsHandler — hider out-of-zone warning', () => {
     }));
 
     expect(sentMessages(hiderWs).some(m => m.type === 'zone_warning')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// location bounds validation — Task 94
+// ---------------------------------------------------------------------------
+
+describe('WsHandler — location bounds validation', () => {
+  let handler, loop, gsm, ws;
+
+  const BOUNDS = { latMin: 51.0, latMax: 52.0, lonMin: -1.0, lonMax: 0.0 };
+
+  beforeEach(() => {
+    loop = makeLoop();
+    gsm = makeGsm();
+    handler = new WsHandler(loop, gsm);
+    ws = mockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws.send.mockClear();
+  });
+
+  it('stores bounds from join_game message via setGameBounds', () => {
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g2', bounds: BOUNDS }));
+    expect(gsm.setGameBounds).toHaveBeenCalledWith('g2', BOUNDS);
+  });
+
+  it('does not call setGameBounds when join_game has no bounds field', () => {
+    gsm.setGameBounds.mockClear();
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g3' }));
+    expect(gsm.setGameBounds).not.toHaveBeenCalled();
+  });
+
+  it('accepts location inside bounds and updates state', () => {
+    gsm.getGameBounds.mockReturnValue(BOUNDS);
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 51.5, lon: -0.5 }));
+    expect(gsm.updatePlayerLocation).toHaveBeenCalledWith('g1', 'p1', 51.5, -0.5);
+    const rejected = sentMessages(ws).find(m => m.type === 'location_rejected');
+    expect(rejected).toBeUndefined();
+  });
+
+  it('rejects location outside bounds and does not update state', () => {
+    gsm.getGameBounds.mockReturnValue(BOUNDS);
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 53.0, lon: -0.5 }));
+    expect(gsm.updatePlayerLocation).not.toHaveBeenCalled();
+    const rejected = sentMessages(ws).find(m => m.type === 'location_rejected');
+    expect(rejected).toBeDefined();
+    expect(rejected.code).toBe('OUT_OF_BOUNDS');
+  });
+
+  it('rejects location with lon outside bounds and does not update state', () => {
+    gsm.getGameBounds.mockReturnValue(BOUNDS);
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 51.5, lon: 1.0 }));
+    expect(gsm.updatePlayerLocation).not.toHaveBeenCalled();
+    const rejected = sentMessages(ws).find(m => m.type === 'location_rejected');
+    expect(rejected).toBeDefined();
+    expect(rejected.code).toBe('OUT_OF_BOUNDS');
+  });
+
+  it('accepts all locations when no bounds are set', () => {
+    gsm.getGameBounds.mockReturnValue(null);
+    ws.emit('message', JSON.stringify({ type: 'location_update', gameId: 'g1', lat: 99.0, lon: 99.0 }));
+    expect(gsm.updatePlayerLocation).toHaveBeenCalledWith('g1', 'p1', 99.0, 99.0);
+    const rejected = sentMessages(ws).find(m => m.type === 'location_rejected');
+    expect(rejected).toBeUndefined();
   });
 });

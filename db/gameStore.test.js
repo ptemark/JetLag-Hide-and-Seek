@@ -13,6 +13,7 @@ import {
   dbGetQuestionsForPlayer,
   dbGetQuestionsForGame,
   dbExpireStaleQuestions,
+  dbSubmitAnswer,
   dbSetCurse,
   dbGetCurseExpiry,
   createInstrumentedStore,
@@ -934,6 +935,50 @@ describe('dbExpireStaleQuestions', () => {
   it('propagates query errors', async () => {
     const pool = makeMockPool(() => Promise.reject(new Error('timeout')));
     await expect(dbExpireStaleQuestions(pool, 'g1')).rejects.toThrow('timeout');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbSubmitAnswer
+// ---------------------------------------------------------------------------
+
+describe('dbSubmitAnswer', () => {
+  it('returns null when the question does not exist', async () => {
+    const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
+    const result = await dbSubmitAnswer(pool, { questionId: 'no-such', responderId: 'r-1', text: 'Yes.' });
+    expect(result).toBeNull();
+    expect(pool.query).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns { questionExpired: true } when question status is expired', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ id: 'q-1', game_id: 'g-1', status: 'expired' }] }),
+    );
+    const result = await dbSubmitAnswer(pool, { questionId: 'q-1', responderId: 'r-1', text: 'Late answer.' });
+    expect(result).toEqual({ questionExpired: true });
+    expect(pool.query).toHaveBeenCalledTimes(1); // only the check, no INSERT
+  });
+
+  it('returns { questionExpired: true } when question status is already answered', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ id: 'q-1', game_id: 'g-1', status: 'answered' }] }),
+    );
+    const result = await dbSubmitAnswer(pool, { questionId: 'q-1', responderId: 'r-1', text: 'Duplicate answer.' });
+    expect(result).toEqual({ questionExpired: true });
+    expect(pool.query).toHaveBeenCalledTimes(1);
+  });
+
+  it('inserts the answer and returns the record when question is pending', async () => {
+    const now = new Date().toISOString();
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{ id: 'q-1', game_id: 'g-1', status: 'pending' }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'ans-1', question_id: 'q-1', responder_id: 'r-1', text: 'Yes.', created_at: now }] })
+        .mockResolvedValueOnce({ rows: [] }),
+    };
+    const result = await dbSubmitAnswer(pool, { questionId: 'q-1', responderId: 'r-1', text: 'Yes.' });
+    expect(result).toMatchObject({ answerId: 'ans-1', questionId: 'q-1', responderId: 'r-1', text: 'Yes.' });
+    expect(pool.query).toHaveBeenCalledTimes(3); // check + INSERT + UPDATE
   });
 });
 

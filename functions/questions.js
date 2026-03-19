@@ -380,6 +380,12 @@ export function _getPhotoStore() { return new Map(_photos); }
 /** Clear all in-process stores (for test isolation). */
 export function _clearStores() { _questions.clear(); _answers.clear(); _photos.clear(); _teamMemberships.clear(); }
 
+/** Set the status of an in-process question (for testing expiry/answered scenarios). */
+export function _setQuestionStatus(questionId, status) {
+  const q = _questions.get(questionId);
+  if (q) _questions.set(questionId, { ...q, status });
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -804,6 +810,7 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
   if (pool) {
     const row = await dbSubmitAnswer(pool, { questionId, responderId, text: text.trim() });
     if (!row) return { status: 404, body: { error: 'question not found' } };
+    if (row.questionExpired) return { status: 409, body: { error: 'question_expired' } };
     answer = row;
 
     // Draw a card for the answering player (fire-and-forget; hand-full is silently ignored).
@@ -834,6 +841,9 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
       return { status: 404, body: { error: 'question not found' } };
     }
     const question = _questions.get(questionId);
+    if (question.status !== 'pending') {
+      return { status: 409, body: { error: 'question_expired' } };
+    }
     gameId = question.gameId ?? null;
     answer = {
       answerId: randomUUID(),

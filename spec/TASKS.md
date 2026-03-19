@@ -7,7 +7,11 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 95 complete. Photo upload size limit: `functions/questions.js` defines `MAX_PHOTO_BYTES = 512_000` and `MAX_PHOTO_BASE64_LEN = Math.ceil(512_000 * 4 / 3)`; `uploadQuestionPhoto` returns 413 when `photoData.length > MAX_PHOTO_BASE64_LEN`; `db/schema.sql` `photo_data` column comment updated to document the 500 KB cap. 3 new tests; 1431 tests pass._
+_Task 97 complete. Expired question answer rejection: `dbSubmitAnswer` now checks `status` in the existence query and returns `{ questionExpired: true }` when status is not `'pending'`; `submitAnswer` returns 409 `question_expired` for both DB and in-process paths; `_setQuestionStatus` test helper added. 7 new tests; 1448 tests pass._
+
+### Phase 41 — Answer Integrity
+
+- [x] **97** — Reject answers for expired questions: `submitAnswer` currently accepts answers for questions that have already expired or been answered. `dbSubmitAnswer` only checks that the question row exists (`WHERE id = $1`) before inserting the answer, so a hider can answer a question the server has already marked `'expired'` via `dbExpireStaleQuestions`. Changes needed: (1) `db/gameStore.js` — in `dbSubmitAnswer`, change the check query to also fetch `status` (`SELECT id, game_id, status FROM questions WHERE id = $1`); when `status !== 'pending'` return `{ questionExpired: true }` (without inserting an answer or updating the row). (2) `functions/questions.js` — in the DB path of `submitAnswer`, handle the new `{ questionExpired: true }` return with `{ status: 409, body: { error: 'question_expired' } }`; in the in-process path, check `question.status !== 'pending'` before proceeding and likewise return 409. Add exported test helper `_setQuestionStatus(questionId, status)` to allow in-process tests to mark a question expired. Tests: `db/gameStore.test.js` (dbSubmitAnswer returns `{ questionExpired: true }` when status is `'expired'`; returns `{ questionExpired: true }` when status is `'answered'`; still returns `null` when question not found; succeeds when status is `'pending'`); `functions/questions.test.js` (submitAnswer returns 409 with `error: 'question_expired'` for in-process expired question; submitAnswer returns 409 for in-process already-answered question; submitAnswer returns 409 via pool when dbSubmitAnswer returns `{ questionExpired: true }`).
 
 ### Phase 36 — Real-time Card Notifications
 
@@ -85,6 +89,7 @@ _Task 95 complete. Photo upload size limit: `functions/questions.js` defines `MA
 
 | # | Date | Task | Files | Notes |
 |---|------|------|-------|-------|
+| 97 | 2026-03-18 | Expired question answer rejection | db/gameStore.js, functions/questions.js, db/gameStore.test.js, functions/questions.test.js | dbSubmitAnswer checks status and returns { questionExpired: true } for non-pending questions; submitAnswer returns 409 question_expired for DB and in-process paths; _setQuestionStatus test helper; 7 new tests; 1448 tests pass |
 | 96 | 2026-03-18 | Reconnect game state sync | server/wsHandler.js, server/index.js, src/components/GameMap.jsx + tests | WsHandler accepts gameLoopManager param; _handleJoinGame sends game_state_sync after joined_game with phase/zones/endGameActive; GameMap handles game_state_sync updating phase/syncedZones/endGameActive without clearing locationTrail; 10 new tests; 1441 tests pass |
 | 95 | 2026-03-18 | Photo upload size limit | functions/questions.js, db/schema.sql, functions/questions.test.js | MAX_PHOTO_BYTES=512_000 constant; uploadQuestionPhoto returns 413 when base64 length exceeds ceil(512000*4/3); schema comment updated; 3 new tests; 1431 tests pass |
 | 94 | 2026-03-18 | Player location bounds validation | server/gameState.js, server/wsHandler.js, src/components/GameMap.jsx + tests | setGameBounds/getGameBounds; join_game stores bounds; location_update outside bounds sends location_rejected/OUT_OF_BOUNDS; GameMap shows dismissible banner; 16 new tests; 1428 tests pass |

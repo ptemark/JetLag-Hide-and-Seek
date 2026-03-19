@@ -599,16 +599,18 @@ export async function dbExpireStaleQuestions(pool, gameId) {
 
 /**
  * Insert an answer for a question and mark the question as answered.
- * Returns the answer record on success or null if the question was not found.
+ * Returns the answer record on success, null if the question was not found,
+ * or { questionExpired: true } if the question is not in 'pending' status.
  *
  * @param {import('pg').Pool} pool
  * @param {{ questionId: string, responderId: string, text: string }} options
- * @returns {Promise<{ answerId: string, questionId: string, responderId: string, text: string, createdAt: string } | null>}
+ * @returns {Promise<{ answerId: string, questionId: string, responderId: string, text: string, createdAt: string } | { questionExpired: true } | null>}
  */
 export async function dbSubmitAnswer(pool, { questionId, responderId, text }) {
-  // Verify the question exists before inserting the answer.
-  const check = await pool.query('SELECT id, game_id FROM questions WHERE id = $1', [questionId]);
+  // Verify the question exists and is still pending before inserting the answer.
+  const check = await pool.query('SELECT id, game_id, status FROM questions WHERE id = $1', [questionId]);
   if (check.rows.length === 0) return null;
+  if (check.rows[0].status !== 'pending') return { questionExpired: true };
   const questionGameId = check.rows[0].game_id;
 
   const answerRes = await pool.query(

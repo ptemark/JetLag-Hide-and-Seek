@@ -9,6 +9,7 @@ import {
   _getAnswerStore,
   _getPhotoStore,
   _clearStores,
+  _setQuestionStatus,
   _teamMemberships,
 } from './questions.js';
 
@@ -655,7 +656,7 @@ describe('submitAnswer', () => {
     };
     const pool = {
       query: vi.fn()
-        .mockResolvedValueOnce({ rows: [{ id: 'q-1' }] })   // check question exists
+        .mockResolvedValueOnce({ rows: [{ id: 'q-1', game_id: 'g-1', status: 'pending' }] })   // check question exists + status
         .mockResolvedValueOnce({ rows: [                       // insert answer
           { id: mockAnswer.answerId, question_id: mockAnswer.questionId,
             responder_id: mockAnswer.responderId, text: mockAnswer.text,
@@ -679,6 +680,39 @@ describe('submitAnswer', () => {
     );
     expect(status).toBe(404);
     expect(body.error).toMatch(/not found/);
+  });
+
+  it('returns 409 with question_expired for an expired question (in-process)', async () => {
+    const question = createQuestion();
+    _setQuestionStatus(question.questionId, 'expired');
+    const { status, body } = await submitAnswer(
+      { method: 'POST', params: { questionId: question.questionId }, body: { responderId: 'hider-1', text: 'Yes.' } },
+    );
+    expect(status).toBe(409);
+    expect(body.error).toBe('question_expired');
+  });
+
+  it('returns 409 with question_expired for an already-answered question (in-process)', async () => {
+    const question = createQuestion();
+    _setQuestionStatus(question.questionId, 'answered');
+    const { status, body } = await submitAnswer(
+      { method: 'POST', params: { questionId: question.questionId }, body: { responderId: 'hider-1', text: 'Yes again.' } },
+    );
+    expect(status).toBe(409);
+    expect(body.error).toBe('question_expired');
+  });
+
+  it('returns 409 with question_expired via pool when question is not pending', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [{ id: 'q-exp', game_id: 'g-1', status: 'expired' }] }),
+    };
+    const { status, body } = await submitAnswer(
+      { method: 'POST', params: { questionId: 'q-exp' }, body: { responderId: 'r-1', text: 'Late answer.' } },
+      pool,
+    );
+    expect(status).toBe(409);
+    expect(body.error).toBe('question_expired');
+    expect(pool.query).toHaveBeenCalledTimes(1); // only the check query, no insert
   });
 });
 

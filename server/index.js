@@ -455,6 +455,20 @@ export function createServer({
       return;
     }
 
+    // GET /health — unauthenticated liveness/readiness probe for container
+    // orchestrators (Docker HEALTHCHECK, ECS, Kubernetes, Fly.io).
+    if (req.method === 'GET' && urlPath === '/health') {
+      const payload = {
+        status: 'ok',
+        uptimeMs: Date.now() - startedAt,
+        activeGames: gameLoopManager.getActiveGameCount(),
+        connections: wsHandler.getConnectedCount(),
+      };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(payload));
+      return;
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok' }));
   });

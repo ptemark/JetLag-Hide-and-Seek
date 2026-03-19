@@ -588,6 +588,58 @@ describe('createServer', () => {
     expect(body).toEqual({ status: 'ok' });
   });
 
+  it('GET /health returns 200 with status ok', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/health`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe('ok');
+  });
+
+  it('GET /health returns non-negative uptimeMs', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/health`);
+    const body = await res.json();
+    expect(typeof body.uptimeMs).toBe('number');
+    expect(body.uptimeMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('GET /health returns activeGames 0 when no games active', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/health`);
+    const body = await res.json();
+    expect(body.activeGames).toBe(0);
+  });
+
+  it('GET /health returns connections 0 when no players connected', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/health`);
+    const body = await res.json();
+    expect(body.connections).toBe(0);
+  });
+
+  it('GET /health requires no Authorization header', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    // No Authorization header — should still succeed (unlike /internal/admin).
+    const res = await fetch(`http://localhost:${port}/health`);
+    expect(res.status).toBe(200);
+  });
+
   it('GET /internal/admin returns 200 with empty games when no active games', async () => {
     server = createServer({ tickInterval: 5000 });
     await server.start(0);

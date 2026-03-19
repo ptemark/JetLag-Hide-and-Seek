@@ -23,4 +23,9 @@ EXPOSE 3002
 ENV NODE_ENV=production
 ENV PORT=3002
 
+# Liveness probe: container orchestrators (ECS, Fly.io, Kubernetes) poll this
+# endpoint every 30 s to confirm the server is accepting requests.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:${PORT:-3002}/health || exit 1
+
 CMD ["node", "server/start.js"]

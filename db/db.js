@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS scores (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (game_id, player_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_questions_game_status ON questions (game_id, status);
+CREATE INDEX IF NOT EXISTS idx_questions_game_asker  ON questions (game_id, asker_id);
+CREATE INDEX IF NOT EXISTS idx_cards_game_player     ON cards     (game_id, player_id);
+CREATE INDEX IF NOT EXISTS idx_scores_game           ON scores    (game_id);
+CREATE INDEX IF NOT EXISTS idx_game_players_game     ON game_players (game_id);
 `.trim();
 
 /**

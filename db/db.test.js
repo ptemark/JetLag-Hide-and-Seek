@@ -124,6 +124,26 @@ describe('SCHEMA_SQL', () => {
   it('uses ON DELETE CASCADE for foreign key references', () => {
     expect(SCHEMA_SQL.match(/ON DELETE CASCADE/g).length).toBeGreaterThanOrEqual(4);
   });
+
+  it('includes performance index on questions (game_id, status)', () => {
+    expect(SCHEMA_SQL).toMatch(/CREATE INDEX IF NOT EXISTS idx_questions_game_status ON questions \(game_id, status\)/);
+  });
+
+  it('includes performance index on questions (game_id, asker_id)', () => {
+    expect(SCHEMA_SQL).toMatch(/CREATE INDEX IF NOT EXISTS idx_questions_game_asker\s+ON questions \(game_id, asker_id\)/);
+  });
+
+  it('includes performance index on cards (game_id, player_id)', () => {
+    expect(SCHEMA_SQL).toMatch(/CREATE INDEX IF NOT EXISTS idx_cards_game_player\s+ON cards\s+\(game_id, player_id\)/);
+  });
+
+  it('includes performance index on scores (game_id)', () => {
+    expect(SCHEMA_SQL).toMatch(/CREATE INDEX IF NOT EXISTS idx_scores_game\s+ON scores\s+\(game_id\)/);
+  });
+
+  it('includes performance index on game_players (game_id)', () => {
+    expect(SCHEMA_SQL).toMatch(/CREATE INDEX IF NOT EXISTS idx_game_players_game\s+ON game_players \(game_id\)/);
+  });
 });
 
 // ---------------------------------------------------------------------------

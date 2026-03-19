@@ -897,6 +897,39 @@ describe('uploadQuestionPhoto', () => {
     expect(status).toBe(405);
   });
 
+  it('accepts photoData exactly at the 500 KB base64 limit', async () => {
+    const question = createQuestion();
+    const maxLen = Math.ceil(512_000 * 4 / 3);
+    const { status } = await uploadQuestionPhoto({
+      method: 'POST',
+      params: { questionId: question.questionId },
+      body: { photoData: 'a'.repeat(maxLen) },
+    });
+    expect(status).toBe(201);
+  });
+
+  it('returns 413 when photoData is one byte over the 500 KB base64 limit', async () => {
+    const question = createQuestion();
+    const overLen = Math.ceil(512_000 * 4 / 3) + 1;
+    const { status, body } = await uploadQuestionPhoto({
+      method: 'POST',
+      params: { questionId: question.questionId },
+      body: { photoData: 'a'.repeat(overLen) },
+    });
+    expect(status).toBe(413);
+    expect(body.error).toMatch(/500 KB/);
+  });
+
+  it('accepts photoData well under the 500 KB limit', async () => {
+    const question = createQuestion();
+    const { status } = await uploadQuestionPhoto({
+      method: 'POST',
+      params: { questionId: question.questionId },
+      body: { photoData: 'data:image/png;base64,shortstring' },
+    });
+    expect(status).toBe(201);
+  });
+
   it('delegates to pool when provided', async () => {
     const pool = {
       query: vi.fn().mockResolvedValue({

@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS game_zones (
 -- question_photos
 -- Optional photo uploaded by the hider for a photo-category question.
 -- One photo per question (enforced by unique constraint).
--- photo_data: base64-encoded image string.
+-- photo_data: base64-encoded image string. Maximum 500 KB decoded (≈683 KB base64); enforced by API layer.
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS question_photos (
   id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -7,7 +7,7 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 94 complete. Player location bounds validation: `GameStateManager` gains `setGameBounds`/`getGameBounds` plus optional `bounds` param to `createGame`; `WsHandler._handleJoinGame` stores bounds from the message via `setGameBounds`; `_handleLocationUpdate` rejects coordinates outside bounds with `location_rejected`/`OUT_OF_BOUNDS` without updating state; `GameMap` sends `bounds` in `join_game` (converting lat_min/max/lon_min/max → latMin/Max/lonMin/Max) and shows a dismissible `location-rejected-banner` on `OUT_OF_BOUNDS`. 16 new tests; 1428 tests pass._
+_Task 95 complete. Photo upload size limit: `functions/questions.js` defines `MAX_PHOTO_BYTES = 512_000` and `MAX_PHOTO_BASE64_LEN = Math.ceil(512_000 * 4 / 3)`; `uploadQuestionPhoto` returns 413 when `photoData.length > MAX_PHOTO_BASE64_LEN`; `db/schema.sql` `photo_data` column comment updated to document the 500 KB cap. 3 new tests; 1431 tests pass._
 
 ### Phase 36 — Real-time Card Notifications
 
@@ -23,7 +23,7 @@ _Task 94 complete. Player location bounds validation: `GameStateManager` gains `
 
 ### Phase 39 — Robustness
 
-- [ ] **95** — Photo upload size limit: `POST /questions/:questionId/photo` accepts arbitrary `photoData` strings with no size cap. A client could upload a very large base64 image, exhausting memory in the in-process store or filling the DB column. Changes needed: (1) `functions/questions.js` — define `MAX_PHOTO_BYTES = 512_000` (500 KB decoded ≈ 683 KB base64); in the photo upload handler, after extracting `photoData`, check `typeof photoData === 'string' && photoData.length > Math.ceil(MAX_PHOTO_BYTES * 4 / 3)`; if so, return `{ status: 413, body: { error: 'Photo exceeds 500 KB limit' } }`. (2) `db/schema.sql` — add a comment on the `photo_data` column documenting the 500 KB cap (no schema change needed). Tests: `functions/questions.test.js` — 3 tests: (a) `photoData` exactly at the limit is accepted (201); (b) `photoData` one byte over the limit returns 413; (c) `photoData` well under the limit is accepted.
+- [x] **95** — Photo upload size limit: `POST /questions/:questionId/photo` accepts arbitrary `photoData` strings with no size cap. A client could upload a very large base64 image, exhausting memory in the in-process store or filling the DB column. Changes needed: (1) `functions/questions.js` — define `MAX_PHOTO_BYTES = 512_000` (500 KB decoded ≈ 683 KB base64); in the photo upload handler, after extracting `photoData`, check `typeof photoData === 'string' && photoData.length > Math.ceil(MAX_PHOTO_BYTES * 4 / 3)`; if so, return `{ status: 413, body: { error: 'Photo exceeds 500 KB limit' } }`. (2) `db/schema.sql` — add a comment on the `photo_data` column documenting the 500 KB cap (no schema change needed). Tests: `functions/questions.test.js` — 3 tests: (a) `photoData` exactly at the limit is accepted (201); (b) `photoData` one byte over the limit returns 413; (c) `photoData` well under the limit is accepted.
 
 ### Phase 40 — Reconnect State Recovery
 
@@ -85,6 +85,8 @@ _Task 94 complete. Player location bounds validation: `GameStateManager` gains `
 
 | # | Date | Task | Files | Notes |
 |---|------|------|-------|-------|
+| 95 | 2026-03-18 | Photo upload size limit | functions/questions.js, db/schema.sql, functions/questions.test.js | MAX_PHOTO_BYTES=512_000 constant; uploadQuestionPhoto returns 413 when base64 length exceeds ceil(512000*4/3); schema comment updated; 3 new tests; 1431 tests pass |
+| 94 | 2026-03-18 | Player location bounds validation | server/gameState.js, server/wsHandler.js, src/components/GameMap.jsx + tests | setGameBounds/getGameBounds; join_game stores bounds; location_update outside bounds sends location_rejected/OUT_OF_BOUNDS; GameMap shows dismissible banner; 16 new tests; 1428 tests pass |
 | 93 | 2026-03-18 | Two-team question history scoping | db/gameStore.js, functions/questions.js, src/api.js, src/components/QuestionPanel.jsx, db/gameStore.test.js, functions/questions.test.js, src/components/QA.test.jsx | dbGetQuestionsForGame accepts optional teamId with game_players JOIN; listQuestions passes teamId to DB path and filters via _teamMemberships in-process; QuestionPanel passes game.teamId; api.js forwards teamId; 9 new tests; 1412 tests pass |
 | 92 | 2026-03-18 | Card draw WS notification to hider | functions/questions.js, src/components/GameMap.jsx, functions/questions.test.js, src/components/GameMap.test.jsx | card_drawn notify fires after draw (both paths); GameMap increments cardRefresh on card_drawn for own playerId; CardPanel uses dedicated cardRefresh trigger; 4 new tests; 1403 tests pass |
 | 91 | 2026-03-18 | Computed hints in seeker question history | src/components/questionHints.js, src/components/AnswerPanel.jsx, src/components/QuestionPanel.jsx, src/components/QA.test.jsx | 5 hint functions extracted to questionHints.js; AnswerPanel imports from shared module; QuestionPanel history renders thermometer/tentacle/measuring/transit/matching hints for answered questions only; 6 new tests; 1399 tests pass |

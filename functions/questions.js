@@ -50,6 +50,12 @@ function computeExpiryMs(scale, category) {
 
 const VALID_CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
+/** Maximum decoded photo size in bytes (500 KB). Base64 representation is ~4/3 larger. */
+const MAX_PHOTO_BYTES = 512_000;
+
+/** Maximum base64 string length corresponding to MAX_PHOTO_BYTES. */
+const MAX_PHOTO_BASE64_LEN = Math.ceil(MAX_PHOTO_BYTES * 4 / 3);
+
 /**
  * Fetch tentacle proximity data from the managed server.
  * Returns `{ withinRadius, distanceKm }` with nulls on any failure.
@@ -901,6 +907,10 @@ export async function uploadQuestionPhoto(req, pool = null) {
   const { photoData } = req.body ?? {};
   if (!photoData || typeof photoData !== 'string' || !photoData.trim()) {
     return { status: 400, body: { error: 'photoData is required' } };
+  }
+
+  if (typeof photoData === 'string' && photoData.length > MAX_PHOTO_BASE64_LEN) {
+    return { status: 413, body: { error: 'Photo exceeds 500 KB limit' } };
   }
 
   if (pool) {

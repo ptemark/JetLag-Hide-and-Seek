@@ -103,6 +103,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [movementLocked, setMovementLocked] = useState(false); // server blocked hider movement (End Game)
   const [cardRefresh, setCardRefresh] = useState(0);          // increments on card_drawn WS event for this player
   const [locationRejected, setLocationRejected] = useState(false); // server rejected location as out of bounds
+  const [syncedZones, setSyncedZones] = useState(zones);           // updated on game_state_sync
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -353,6 +354,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setLocationRejected(true);
       } else if (msg.type === 'card_drawn' && msg.playerId === player.playerId) {
         setCardRefresh((n) => n + 1);
+      } else if (msg.type === 'game_state_sync') {
+        if (msg.phase != null) setPhase(msg.phase);
+        if (Array.isArray(msg.zones)) setSyncedZones(msg.zones);
+        if (msg.endGameActive != null) {
+          endGameActiveRef.current = msg.endGameActive;
+          setEndGameActive(msg.endGameActive);
+        }
       } else if (msg.type === 'error') {
         setJoinError(msg.message ?? 'An error occurred');
       }
@@ -607,7 +615,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         <ZoneSelector
           player={player}
           game={game}
-          zones={zones}
+          zones={syncedZones}
           onZoneLocked={(zone) => setLockedZone(zone)}
         />
       )}

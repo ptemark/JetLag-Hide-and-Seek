@@ -1163,3 +1163,76 @@ describe('WsHandler — location bounds validation', () => {
     expect(rejected).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// game_state_sync — Task 96
+// ---------------------------------------------------------------------------
+
+describe('WsHandler — game_state_sync on join', () => {
+  let handler, loop, gsm, glm, ws;
+
+  const ZONES = [{ stationId: 'z1', lat: 51.5, lon: -0.1, radiusM: 200 }];
+
+  beforeEach(() => {
+    loop = makeLoop();
+    gsm = makeGsm();
+    gsm.getGameZones = vi.fn().mockReturnValue(ZONES);
+    gsm.isEndGameActive = vi.fn().mockReturnValue(false);
+    glm = { getPhase: vi.fn().mockReturnValue('seeking') };
+    handler = new WsHandler(loop, gsm, 30_000, 30, null, glm);
+    ws = mockWs();
+    handler.handleConnection(ws, 'p1');
+    ws.send.mockClear();
+  });
+
+  it('sends game_state_sync immediately after joined_game', () => {
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const msgs = sentMessages(ws);
+    const joinedIdx = msgs.findIndex(m => m.type === 'joined_game');
+    const syncIdx = msgs.findIndex(m => m.type === 'game_state_sync');
+    expect(syncIdx).toBeGreaterThan(joinedIdx);
+  });
+
+  it('game_state_sync payload includes phase from gameLoopManager', () => {
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    expect(sync).toBeDefined();
+    expect(sync.phase).toBe('seeking');
+    expect(glm.getPhase).toHaveBeenCalledWith('g1');
+  });
+
+  it('game_state_sync payload includes zones from gameStateManager', () => {
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    expect(sync.zones).toEqual(ZONES);
+  });
+
+  it('game_state_sync payload includes endGameActive from gameStateManager', () => {
+    gsm.isEndGameActive.mockReturnValue(true);
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    expect(sync.endGameActive).toBe(true);
+  });
+
+  it('second player joining the same game also receives game_state_sync', () => {
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.send.mockClear();
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws2).find(m => m.type === 'game_state_sync');
+    expect(sync).toBeDefined();
+    expect(sync.gameId).toBe('g1');
+  });
+
+  it('omits phase field gracefully when gameLoopManager is absent', () => {
+    const handlerNoGlm = new WsHandler(loop, gsm);
+    const ws3 = mockWs();
+    handlerNoGlm.handleConnection(ws3, 'p3');
+    ws3.send.mockClear();
+    ws3.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws3).find(m => m.type === 'game_state_sync');
+    expect(sync).toBeDefined();
+    expect(sync.phase).toBeUndefined();
+    expect(sync.zones).toEqual(ZONES);
+  });
+});

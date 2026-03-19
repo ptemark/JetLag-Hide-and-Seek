@@ -14,12 +14,13 @@ const DEFAULT_SPOT_RADIUS_M = 30;
 
 export class WsHandler {
   /**
-   * @param {object}  gameLoop          - GameLoop instance.
+   * @param {object}  gameLoop           - GameLoop instance.
    * @param {object}  [gameStateManager] - GameStateManager instance (optional).
    * @param {number}  [reconnectGraceMs] - Grace period before finalising a disconnect.
    * @param {number}  [spotRadiusM]      - Max metres to confirm a spot_hider claim.
    * @param {Function} [onSpotConfirmed] - Called with (gameId, spotterId) when a spot
    *                                       claim is within range. Typically finishes the game.
+   * @param {object}  [gameLoopManager]  - GameLoopManager instance for phase queries (optional).
    */
   constructor(
     gameLoop,
@@ -27,12 +28,14 @@ export class WsHandler {
     reconnectGraceMs = DEFAULT_RECONNECT_GRACE_MS,
     spotRadiusM = DEFAULT_SPOT_RADIUS_M,
     onSpotConfirmed = null,
+    gameLoopManager = null,
   ) {
     this.gameLoop = gameLoop;
     this.gameStateManager = gameStateManager;
     this.reconnectGraceMs = reconnectGraceMs;
     this.spotRadiusM = spotRadiusM;
     this.onSpotConfirmed = onSpotConfirmed;
+    this.gameLoopManager = gameLoopManager;
     this.clients = new Map();      // playerId -> ws
     this.gameClients = new Map();  // gameId   -> Map<playerId, ws>
     this.playerGames = new Map();  // playerId -> Set<gameId>
@@ -183,6 +186,22 @@ export class WsHandler {
 
     // Confirm join to the new player, including team assignment if applicable.
     this._send(ws, { type: 'joined_game', gameId, playerId, role, team: assignedTeam ?? null });
+
+    // Send a state snapshot so the joining/reconnecting player immediately has
+    // the current phase, zones, and end-game flag without waiting for the next
+    // periodic broadcast.
+    {
+      const syncPayload = {
+        type: 'game_state_sync',
+        gameId,
+        zones: this.gameStateManager?.getGameZones(gameId) ?? [],
+        endGameActive: this.gameStateManager?.isEndGameActive(gameId) ?? false,
+      };
+      if (this.gameLoopManager) {
+        syncPayload.phase = this.gameLoopManager.getPhase(gameId);
+      }
+      this._send(ws, syncPayload);
+    }
 
     // On reconnect: send current game state so client can recover without a full rejoin sequence.
     if (isReconnect && this.gameStateManager) {

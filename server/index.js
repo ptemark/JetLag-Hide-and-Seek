@@ -490,7 +490,7 @@ export function createServer({
     gameLoopManager.finishGame(gameId);
   };
 
-  wsHandler = new WsHandler(gameLoop, gameStateManager, reconnectGraceMs, spotRadiusM, onSpotConfirmed);
+  wsHandler = new WsHandler(gameLoop, gameStateManager, reconnectGraceMs, spotRadiusM, onSpotConfirmed, gameLoopManager);
   const heartbeatManager = new HeartbeatManager(wss, { interval: heartbeatInterval });
 
   // Track last timer_sync broadcast time per game to enforce 30 s throttle.

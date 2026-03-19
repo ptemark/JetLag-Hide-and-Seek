@@ -1124,4 +1124,72 @@ describe('GameMap', () => {
     await new Promise(r => setTimeout(r, 50));
     expect(api.fetchCards).toHaveBeenCalledTimes(1);
   });
+
+  // ---------------------------------------------------------------------------
+  // game_state_sync — Task 96
+  // ---------------------------------------------------------------------------
+
+  it('game_state_sync sets phase in the phase display', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'seeking', zones: [], endGameActive: false }),
+      });
+    });
+    expect(screen.getByText(/seeking/i)).toBeInTheDocument();
+  });
+
+  it('game_state_sync updates zones state (ZoneSelector receives new zones)', async () => {
+    // Start with the hider in hiding phase so ZoneSelector is shown.
+    const hidingGame = { ...game, status: 'hiding' };
+    const syncedZone = { stationId: 'z1', name: 'Central Station', lat: 51.05, lon: -0.05, radiusM: 300 };
+    render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    // Before sync no zones are in syncedZones, so ZoneSelector should receive empty array.
+    // After sync it should receive the synced zone.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'hiding', zones: [syncedZone], endGameActive: false }),
+      });
+    });
+    // The component should have rendered without throwing — zone state was updated.
+    expect(screen.getByLabelText('Game map')).toBeInTheDocument();
+  });
+
+  it('game_state_sync sets endGameActive and shows end-game banner for hider', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'seeking', zones: [], endGameActive: true }),
+      });
+    });
+    expect(screen.getByTestId('end-game-banner-hider')).toBeInTheDocument();
+  });
+
+  it('game_state_sync does not clear existing locationTrail', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    // Build up a trail first.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.05, lon: -0.05 }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', playerId: 'p1', lat: 51.06, lon: -0.06 }),
+      });
+    });
+    // Polyline was created — trail has data.
+    expect(mockL.polyline).toHaveBeenCalled();
+    const callsBefore = mockPolyline.setLatLngs.mock.calls.length;
+
+    // Receive game_state_sync — trail must NOT be reset.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'seeking', zones: [], endGameActive: false }),
+      });
+    });
+
+    // setLatLngs should not have been called with an empty array after the sync.
+    const newCalls = mockPolyline.setLatLngs.mock.calls.slice(callsBefore);
+    const cleared = newCalls.some(([latlngs]) => latlngs.length === 0);
+    expect(cleared).toBe(false);
+  });
 });

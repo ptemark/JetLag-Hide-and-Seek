@@ -8,7 +8,9 @@ import {
   SCALE_DURATION_RANGES,
   _getStore,
   _clearStore,
+  cleanupStaleGames,
 } from './games.js';
+import { handleRequest } from './router.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -304,5 +306,113 @@ describe('handleStartGame', () => {
     expect(res.status).toBe(204);
     await new Promise(r => setTimeout(r, 0));
     expect(mockFetch).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cleanupStaleGames
+// ---------------------------------------------------------------------------
+
+describe('cleanupStaleGames', () => {
+  const VALID_TOKEN = 'secret-key';
+
+  function makeCleanupReq(body = {}, token = VALID_TOKEN) {
+    return {
+      method: 'POST',
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      body,
+    };
+  }
+
+  it('returns 405 for non-POST methods', async () => {
+    const req = { method: 'GET', headers: { authorization: `Bearer ${VALID_TOKEN}` }, body: null };
+    const res = await cleanupStaleGames(req, null, VALID_TOKEN);
+    expect(res.status).toBe(405);
+  });
+
+  it('returns 401 when no auth token provided', async () => {
+    const res = await cleanupStaleGames(makeCleanupReq({}, null), null, VALID_TOKEN);
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Unauthorized');
+  });
+
+  it('returns 401 when wrong auth token provided', async () => {
+    const res = await cleanupStaleGames(makeCleanupReq({}, 'wrong'), null, VALID_TOKEN);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 200 with deletedCount from pool', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValue({ rows: [{ id: 'g1' }, { id: 'g2' }] }),
+    };
+    const res = await cleanupStaleGames(makeCleanupReq({}), pool, VALID_TOKEN);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deletedCount: 2 });
+  });
+
+  it('defaults maxAgeHours to 24 when not provided', async () => {
+    const capturedParams = [];
+    const pool = {
+      query: vi.fn((sql, params) => {
+        capturedParams.push(params);
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+    await cleanupStaleGames(makeCleanupReq({}), pool, VALID_TOKEN);
+    const expectedMs = 24 * 60 * 60 * 1000;
+    expect(capturedParams[0]).toEqual([expectedMs]);
+  });
+
+  it('passes custom maxAgeHours through to dbCleanupStaleGames', async () => {
+    const capturedParams = [];
+    const pool = {
+      query: vi.fn((sql, params) => {
+        capturedParams.push(params);
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+    await cleanupStaleGames(makeCleanupReq({ maxAgeHours: 48 }), pool, VALID_TOKEN);
+    const expectedMs = 48 * 60 * 60 * 1000;
+    expect(capturedParams[0]).toEqual([expectedMs]);
+  });
+
+  it('returns deletedCount 0 when no pool provided', async () => {
+    const res = await cleanupStaleGames(makeCleanupReq({}), null, VALID_TOKEN);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ deletedCount: 0 });
+  });
+});
+
+describe('POST /games/cleanup via router — auth enforcement', () => {
+  it('returns 401 when Authorization header is missing', async () => {
+    // Set ADMIN_API_KEY so that checkAdminAuth returns 401 (missing token)
+    // rather than 503 (key not configured).
+    const originalKey = process.env.ADMIN_API_KEY;
+    process.env.ADMIN_API_KEY = 'test-key';
+    try {
+      const { status, body } = await new Promise((resolve) => {
+        const reqEvents = {};
+        const mockReq = {
+          method: 'POST',
+          url: '/games/cleanup',
+          headers: { host: 'localhost' },
+          socket: { remoteAddress: '127.0.0.1' },
+          on: (event, cb) => { reqEvents[event] = cb; return mockReq; },
+        };
+        const mockRes = {
+          writeHead: vi.fn(),
+          end: vi.fn((data) => {
+            resolve({ status: mockRes.writeHead.mock.calls[0][0], body: JSON.parse(data) });
+          }),
+        };
+        handleRequest(mockReq, mockRes, { pool: null }).then(() => {});
+        setTimeout(() => { if (reqEvents['end']) reqEvents['end'](); }, 0);
+      });
+      expect(status).toBe(401);
+      expect(body.error).toBe('Unauthorized');
+    } finally {
+      if (originalKey === undefined) delete process.env.ADMIN_API_KEY;
+      else process.env.ADMIN_API_KEY = originalKey;
+    }
   });
 });

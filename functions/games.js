@@ -10,7 +10,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts } from '../db/gameStore.js';
+import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbCleanupStaleGames } from '../db/gameStore.js';
+import { checkAdminAuth } from './auth.js';
 
 export const VALID_SIZES = Object.freeze(['small', 'medium', 'large']);
 export const VALID_STATUSES = Object.freeze(['waiting', 'hiding', 'seeking', 'finished']);
@@ -211,6 +212,44 @@ export async function handleStartGame(req, pool = null, gameServerUrl, fetchFn =
   const hidingDurationMs = hidingDurationMin != null ? hidingDurationMin * 60_000 : undefined;
   notifyGameStart({ gameId, scale, hidingDurationMs, seekingDurationMs: hidingDurationMs }, gameServerUrl, fetchFn);
   return { status: 204, body: {} };
+}
+
+/**
+ * HTTP handler: delete waiting games older than maxAgeHours.
+ *
+ * POST /games/cleanup  { maxAgeHours?: number }  → 200 { deletedCount }
+ *
+ * Requires a valid admin Bearer token (ADMIN_API_KEY env var).
+ * Without a DB pool, returns { deletedCount: 0 }.
+ *
+ * @param {{ method: string, headers?: Record<string, string>, body: unknown }} req
+ * @param {import('pg').Pool|null} [pool]
+ * @param {string} [adminApiKey]  Override for ADMIN_API_KEY env var.
+ * @returns {Promise<{ status: number, body: object }>}
+ */
+export async function cleanupStaleGames(req, pool = null, adminApiKey) {
+  if (req.method !== 'POST') {
+    return { status: 405, body: { error: 'Method Not Allowed' } };
+  }
+
+  const key = adminApiKey !== undefined
+    ? adminApiKey
+    : (typeof process !== 'undefined' ? process.env.ADMIN_API_KEY : '') ?? '';
+
+  const authResult = checkAdminAuth(req.headers ?? {}, key);
+  if (!authResult.ok) {
+    return { status: authResult.status, body: { error: authResult.error } };
+  }
+
+  const { maxAgeHours = 24 } = req.body ?? {};
+  const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+
+  if (pool) {
+    const result = await dbCleanupStaleGames(pool, maxAgeMs);
+    return { status: 200, body: result };
+  }
+
+  return { status: 200, body: { deletedCount: 0 } };
 }
 
 /** Return a copy of the in-process game store (for testing). */

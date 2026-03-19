@@ -836,6 +836,28 @@ export async function dbGetCurseExpiry(pool, gameId) {
   return val ? new Date(val).toISOString() : null;
 }
 
+// ── Stale game cleanup ────────────────────────────────────────────────────────
+
+/**
+ * Delete waiting games older than maxAgeMs milliseconds and return a count.
+ * All child rows (game_players, scores, questions, answers, cards, game_zones,
+ * question_photos) are removed automatically via ON DELETE CASCADE.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {number} maxAgeMs  Maximum age in milliseconds for waiting games.
+ * @returns {Promise<{ deletedCount: number }>}
+ */
+export async function dbCleanupStaleGames(pool, maxAgeMs) {
+  const res = await pool.query(
+    `DELETE FROM games
+     WHERE status = 'waiting'
+       AND created_at < NOW() - ($1 || ' milliseconds')::interval
+     RETURNING id`,
+    [maxAgeMs],
+  );
+  return { deletedCount: res.rows.length };
+}
+
 // ── Leaderboard query ─────────────────────────────────────────────────────────
 
 /**

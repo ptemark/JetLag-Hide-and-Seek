@@ -18,6 +18,7 @@ import {
   dbSetCurse,
   dbGetCurseExpiry,
   createInstrumentedStore,
+  dbCleanupStaleGames,
 } from './gameStore.js';
 import { MetricsCollector, MetricKey } from '../server/monitoring.js';
 
@@ -1709,5 +1710,61 @@ describe('dbGetQuestionsForGame — teamId filtering', () => {
     expect(questions[0].askerId).toBe('sA');
     expect(questions[0].thermometerCurrentDistanceM).toBe(500);
     expect(questions[0].answer).toEqual(expect.objectContaining({ text: 'Warmer' }));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbCleanupStaleGames
+// ---------------------------------------------------------------------------
+
+describe('dbCleanupStaleGames', () => {
+  it('deletes stale waiting games and returns correct deletedCount', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ id: 'uuid-stale-1' }, { id: 'uuid-stale-2' }] }),
+    );
+    const result = await dbCleanupStaleGames(pool, 86_400_000);
+    expect(result).toEqual({ deletedCount: 2 });
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining("status = 'waiting'"),
+      [86_400_000],
+    );
+  });
+
+  it('returns deletedCount of 0 when no stale games exist', async () => {
+    const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
+    const result = await dbCleanupStaleGames(pool, 86_400_000);
+    expect(result).toEqual({ deletedCount: 0 });
+  });
+
+  it('targets only waiting games (SQL contains status waiting filter)', async () => {
+    const capturedSql = [];
+    const pool = {
+      query: vi.fn((sql, params) => {
+        capturedSql.push(sql);
+        return Promise.resolve({ rows: [] });
+      }),
+    };
+    await dbCleanupStaleGames(pool, 3_600_000);
+    expect(capturedSql[0]).toMatch(/status = 'waiting'/);
+    expect(capturedSql[0]).toMatch(/created_at/);
+    expect(capturedSql[0]).toMatch(/DELETE FROM games/i);
+  });
+
+  it('passes maxAgeMs as a query parameter (not interpolated into SQL)', async () => {
+    const capturedParams = [];
+    const pool = {
+      query: vi.fn((sql, params) => {
+        capturedParams.push(params);
+        return Promise.resolve({ rows: [{ id: 'x' }] });
+      }),
+    };
+    const maxAgeMs = 7_200_000;
+    await dbCleanupStaleGames(pool, maxAgeMs);
+    expect(capturedParams[0]).toEqual([maxAgeMs]);
+  });
+
+  it('propagates query errors to the caller', async () => {
+    const pool = makeMockPool(() => Promise.reject(new Error('db error')));
+    await expect(dbCleanupStaleGames(pool, 86_400_000)).rejects.toThrow('db error');
   });
 });

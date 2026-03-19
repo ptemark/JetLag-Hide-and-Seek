@@ -1574,6 +1574,43 @@ describe('createServer — hider timeout victory', () => {
     vi.useRealTimers();
   });
 
+  it('createServer with custom endGameTimeoutMs uses that value for the End Game timer', async () => {
+    vi.useFakeTimers();
+    const CUSTOM_END_GAME_MS = 300;
+    const s = createServer({ tickInterval: 5000, seekingDuration: 600_000, endGameTimeoutMs: CUSTOM_END_GAME_MS });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'custom-timeout-game', role: 'seeker' }));
+    s.gameLoopManager.startGame('custom-timeout-game');
+    s.gameLoopManager.beginHiding('custom-timeout-game');
+    s.gameLoopManager.beginSeeking('custom-timeout-game');
+
+    s.gameStateManager.addPlayerToGame('custom-timeout-game', 'hider1', 'hider');
+    s.gameStateManager.updatePlayerLocation('custom-timeout-game', 'hider1', 0, 0);
+    s.gameStateManager.updatePlayerLocation('custom-timeout-game', 'p1', 0, 0);
+    s.gameStateManager.setGameZones('custom-timeout-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+
+    // Trigger End Game (phase 1).
+    const gameState = s.gameStateManager.getGameState('custom-timeout-game');
+    await s.stateDispatcher.dispatch(gameState);
+    mockWs.send.mockClear();
+
+    // Advance just before custom timeout — no capture yet.
+    vi.advanceTimersByTime(CUSTOM_END_GAME_MS - 50);
+    const earlyBroadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    expect(earlyBroadcasts.find((b) => b.type === 'capture')).toBeUndefined();
+
+    // Advance past custom timeout — hider wins.
+    vi.advanceTimersByTime(100);
+    const lateBroadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const captureEvent = lateBroadcasts.find((b) => b.type === 'capture');
+    expect(captureEvent).toBeTruthy();
+    expect(captureEvent.winner).toBe('hider');
+
+    vi.useRealTimers();
+  });
+
   it('does not broadcast capture event when game is stopped without playing (stopGame)', () => {
     vi.useFakeTimers();
     const s = createServer({ tickInterval: 5000 });

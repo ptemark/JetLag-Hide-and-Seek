@@ -13,6 +13,7 @@ import { nullAlertManager, AlertType } from './alerting.js';
 import { nullAutoScaler } from './autoScaler.js';
 import { checkCapture, calculateThermometer, calculateTentacle, calculateMeasuring } from './captureDetector.js';
 import { SCALE_DURATION_RANGES, SCALE_DURATIONS } from '../config/gameRules.js';
+import { ENV } from '../config/env.js';
 export { SCALE_DURATION_RANGES };
 
 /** Default spot radius in metres (RULES.md §End Game GPS practical range). */
@@ -46,9 +47,6 @@ function generateDecoyZone(zone, decoyId) {
   };
 }
 
-/** Default End Game timeout (ms): if no spot_hider arrives, hider wins. */
-const DEFAULT_END_GAME_TIMEOUT_MS = 10 * 60_000;
-
 export function createServer({
   tickInterval = 1000,
   heartbeatInterval = 30_000,
@@ -56,7 +54,7 @@ export function createServer({
   seekingDuration = 600_000,
   reconnectGraceMs = 30_000,
   spotRadiusM        = DEFAULT_SPOT_RADIUS_M,
-  endGameTimeoutMs   = DEFAULT_END_GAME_TIMEOUT_MS,
+  endGameTimeoutMs   = ENV.endGameTimeoutMs,
   adminApiKey        = null,
   logger        = new Logger({ level: LogLevel.INFO }),
   metrics       = new MetricsCollector(),

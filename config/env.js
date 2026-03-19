@@ -26,6 +26,11 @@ function parseBool(value, fallback = false) {
   return fallback;
 }
 
+function number(key, fallback) {
+  const parsed = parseInt(getEnvVar(key, String(fallback)), 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
 const ENV = {
   /** Current environment name: development | staging | production */
   name: getEnvVar('VITE_ENV', 'development'),
@@ -85,6 +90,13 @@ const ENV = {
     /** Fire ERROR_RATE_HIGH when cumulative errors exceed this value. */
     errorThreshold: parseInt(getEnvVar('ALERT_ERROR_THRESHOLD', '10'), 10),
   },
+
+  /**
+   * End Game phase duration in milliseconds. When all seekers enter the hiding
+   * zone, the End Game timer starts; if no seeker spots the hider before this
+   * elapses, the hider wins. Default: 600 000 ms (10 minutes).
+   */
+  endGameTimeoutMs: number('END_GAME_TIMEOUT_MS', 600_000),
 
   features: {
     /** Enable experimental two-team seeker mode */

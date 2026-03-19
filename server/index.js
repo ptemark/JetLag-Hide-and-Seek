@@ -12,31 +12,13 @@ import { MetricsCollector, MetricKey, RateTracker } from './monitoring.js';
 import { nullAlertManager, AlertType } from './alerting.js';
 import { nullAutoScaler } from './autoScaler.js';
 import { checkCapture, calculateThermometer, calculateTentacle, calculateMeasuring } from './captureDetector.js';
+import { SCALE_DURATION_RANGES, SCALE_DURATIONS } from '../config/gameRules.js';
+export { SCALE_DURATION_RANGES };
 
 /** Default spot radius in metres (RULES.md §End Game GPS practical range). */
 const DEFAULT_SPOT_RADIUS_M = 30;
 
 const FALSE_ZONE_DURATION_MS = 5 * 60_000;
-
-/**
- * Hiding and seeking durations per game scale (RULES.md).
- * Both hiding and seeking phases use the same duration for a given scale.
- */
-const SCALE_DURATIONS = Object.freeze({
-  small:  30 * 60_000,
-  medium: 60 * 60_000,
-  large:  180 * 60_000,
-});
-
-/**
- * Valid hiding/seeking duration ranges per scale (RULES.md §Game Scales).
- * All values in minutes.
- */
-export const SCALE_DURATION_RANGES = Object.freeze({
-  small:  Object.freeze({ min: 30,  max: 60  }),
-  medium: Object.freeze({ min: 60,  max: 180 }),
-  large:  Object.freeze({ min: 180, max: 360 }),
-});
 
 /**
  * Offset a zone's lat/lon by a random distance of 0.5–2 km in a random

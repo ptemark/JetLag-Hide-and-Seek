@@ -12,19 +12,11 @@
 import { randomUUID } from 'node:crypto';
 import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbGetGameZone, dbCleanupStaleGames } from '../db/gameStore.js';
 import { checkAdminAuth } from './auth.js';
+import { SCALE_DURATION_RANGES } from '../config/gameRules.js';
+export { SCALE_DURATION_RANGES };
 
 export const VALID_SIZES = Object.freeze(['small', 'medium', 'large']);
 export const VALID_STATUSES = Object.freeze(['waiting', 'hiding', 'seeking', 'finished']);
-
-/**
- * Valid hiding/seeking duration ranges per scale (RULES.md §Game Scales).
- * All values in minutes.
- */
-export const SCALE_DURATION_RANGES = Object.freeze({
-  small:  Object.freeze({ min: 30,  max: 60  }),
-  medium: Object.freeze({ min: 60,  max: 180 }),
-  large:  Object.freeze({ min: 180, max: 360 }),
-});
 
 // In-process store — used when no DB pool is provided (tests / local dev).
 const _games = new Map();

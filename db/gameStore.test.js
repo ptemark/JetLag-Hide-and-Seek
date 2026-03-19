@@ -93,46 +93,60 @@ describe('dbCreateGame', () => {
       Promise.resolve({
         rows: [{
           id: 'game-1', size: 'medium', bounds: {}, status: 'waiting',
-          seeker_teams: 0, created_at: '2026-01-01T00:00:00Z',
+          seeker_teams: 0, host_player_id: null, created_at: '2026-01-01T00:00:00Z',
         }],
       }),
     );
     const game = await dbCreateGame(pool, { size: 'medium' });
     expect(game).toEqual({
       gameId: 'game-1', size: 'medium', bounds: {}, status: 'waiting',
-      seekerTeams: 0, createdAt: '2026-01-01T00:00:00Z',
+      seekerTeams: 0, hostPlayerId: null, createdAt: '2026-01-01T00:00:00Z',
     });
     expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO games'),
-      ['medium', JSON.stringify({}), 0],
+      ['medium', JSON.stringify({}), 0, null],
     );
   });
 
   it('stores seekerTeams = 2 for two-team games', async () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
-        rows: [{ id: 'game-t', size: 'medium', bounds: {}, status: 'waiting', seeker_teams: 2, created_at: '' }],
+        rows: [{ id: 'game-t', size: 'medium', bounds: {}, status: 'waiting', seeker_teams: 2, host_player_id: null, created_at: '' }],
       }),
     );
     const game = await dbCreateGame(pool, { size: 'medium', seekerTeams: 2 });
     expect(game.seekerTeams).toBe(2);
     expect(pool.query).toHaveBeenCalledWith(
       expect.any(String),
-      ['medium', JSON.stringify({}), 2],
+      ['medium', JSON.stringify({}), 2, null],
     );
   });
 
   it('serialises custom bounds to JSON', async () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
-        rows: [{ id: 'game-2', size: 'large', bounds: { lat_min: 1 }, status: 'waiting', seeker_teams: 0, created_at: '' }],
+        rows: [{ id: 'game-2', size: 'large', bounds: { lat_min: 1 }, status: 'waiting', seeker_teams: 0, host_player_id: null, created_at: '' }],
       }),
     );
     const bounds = { lat_min: 1, lat_max: 2, lon_min: 3, lon_max: 4 };
     await dbCreateGame(pool, { size: 'large', bounds });
     expect(pool.query).toHaveBeenCalledWith(
       expect.any(String),
-      ['large', JSON.stringify(bounds), 0],
+      ['large', JSON.stringify(bounds), 0, null],
+    );
+  });
+
+  it('stores hostPlayerId when provided', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({
+        rows: [{ id: 'game-h', size: 'small', bounds: {}, status: 'waiting', seeker_teams: 0, host_player_id: 'player-1', created_at: '' }],
+      }),
+    );
+    const game = await dbCreateGame(pool, { size: 'small', hostPlayerId: 'player-1' });
+    expect(game.hostPlayerId).toBe('player-1');
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.any(String),
+      ['small', JSON.stringify({}), 0, 'player-1'],
     );
   });
 
@@ -157,7 +171,7 @@ describe('dbGetGame', () => {
   it('returns game with empty players list when no one has joined', async () => {
     const mockQuery = vi.fn()
       .mockResolvedValueOnce({
-        rows: [{ id: 'g1', size: 'small', bounds: {}, status: 'waiting', seeker_teams: 0, created_at: '2026-01-01' }],
+        rows: [{ id: 'g1', size: 'small', bounds: {}, status: 'waiting', seeker_teams: 0, host_player_id: null, created_at: '2026-01-01' }],
       })
       .mockResolvedValueOnce({ rows: [] });
     const poolWithPlayers = { query: mockQuery };
@@ -165,12 +179,23 @@ describe('dbGetGame', () => {
     expect(game.gameId).toBe('g1');
     expect(game.players).toEqual([]);
     expect(game.seekerTeams).toBe(0);
+    expect(game.hostPlayerId).toBeNull();
+  });
+
+  it('returns hostPlayerId when game was created with a host', async () => {
+    const mockQuery = vi.fn()
+      .mockResolvedValueOnce({
+        rows: [{ id: 'g-host', size: 'small', bounds: {}, status: 'waiting', seeker_teams: 0, host_player_id: 'player-42', created_at: '2026-01-01' }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+    const game = await dbGetGame({ query: mockQuery }, 'g-host');
+    expect(game.hostPlayerId).toBe('player-42');
   });
 
   it('includes players joined to the game with team field', async () => {
     const mockQuery = vi.fn()
       .mockResolvedValueOnce({
-        rows: [{ id: 'g2', size: 'medium', bounds: {}, status: 'hiding', seeker_teams: 2, created_at: '2026-02-01' }],
+        rows: [{ id: 'g2', size: 'medium', bounds: {}, status: 'hiding', seeker_teams: 2, host_player_id: null, created_at: '2026-02-01' }],
       })
       .mockResolvedValueOnce({
         rows: [
@@ -565,14 +590,14 @@ describe('createGame with pool', () => {
   it('passes seekerTeams to DB', async () => {
     const pool = makeMockPool(() =>
       Promise.resolve({
-        rows: [{ id: 'db-g2', size: 'medium', bounds: {}, status: 'waiting', seeker_teams: 2, created_at: '' }],
+        rows: [{ id: 'db-g2', size: 'medium', bounds: {}, status: 'waiting', seeker_teams: 2, host_player_id: null, created_at: '' }],
       }),
     );
     const game = await createGame({ size: 'medium', seekerTeams: 2 }, pool);
     expect(game.seekerTeams).toBe(2);
     expect(pool.query).toHaveBeenCalledWith(
       expect.any(String),
-      ['medium', expect.any(String), 2],
+      ['medium', expect.any(String), 2, null],
     );
   });
 

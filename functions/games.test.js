@@ -57,6 +57,16 @@ describe('createGame (in-process)', () => {
     const game = createGame({ size: 'small' });
     expect(_getStore().has(game.gameId)).toBe(true);
   });
+
+  it('stores hostPlayerId when provided', () => {
+    const game = createGame({ size: 'small', hostPlayerId: 'player-99' });
+    expect(game.hostPlayerId).toBe('player-99');
+  });
+
+  it('hostPlayerId defaults to null when not provided', () => {
+    const game = createGame({ size: 'small' });
+    expect(game.hostPlayerId).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -82,6 +92,18 @@ describe('handleCreateGame (in-process)', () => {
     const res = handleCreateGame(makePostReq({}, { size: 'giant' }));
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/size/);
+  });
+
+  it('stores playerId as hostPlayerId in the created game', () => {
+    const res = handleCreateGame(makePostReq({}, { size: 'small', playerId: 'player-42' }));
+    expect(res.status).toBe(201);
+    expect(res.body.hostPlayerId).toBe('player-42');
+  });
+
+  it('hostPlayerId is null when no playerId in body', () => {
+    const res = handleCreateGame(makePostReq({}, { size: 'small' }));
+    expect(res.status).toBe(201);
+    expect(res.body.hostPlayerId).toBeNull();
   });
 });
 

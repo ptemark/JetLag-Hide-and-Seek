@@ -17,7 +17,7 @@ import WaitingRoom from './WaitingRoom.jsx';
 import Lobby from './Lobby.jsx';
 
 const PLAYER = { playerId: 'p1', name: 'Alice', role: 'seeker', createdAt: '2026-01-01T00:00:00Z' };
-const GAME   = { gameId: 'g1', size: 'medium', status: 'waiting' };
+const GAME   = { gameId: 'g1', size: 'medium', status: 'waiting', hostPlayerId: 'p1' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -321,5 +321,42 @@ describe('Lobby', () => {
     expect(screen.getByLabelText(/game id/i)).toHaveValue('invite99');
 
     vi.unstubAllGlobals();
+  });
+
+  it('shows Start Game button when the current player is the host', async () => {
+    const user = userEvent.setup();
+    api.registerPlayer.mockResolvedValue(PLAYER);
+    // GAME.hostPlayerId === PLAYER.playerId
+    api.createGame.mockResolvedValue(GAME);
+    render(<Lobby />);
+
+    await user.type(screen.getByLabelText(/name/i), 'Alice');
+    await user.click(screen.getByRole('button', { name: /register/i }));
+    await waitFor(() => screen.getByRole('tab', { name: /create game/i }));
+
+    await user.click(screen.getByRole('button', { name: /create game/i }));
+    await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+
+    expect(screen.getByRole('button', { name: /start game/i })).toBeInTheDocument();
+  });
+
+  it('hides Start Game button when the current player joined but is not the host', async () => {
+    const user = userEvent.setup();
+    api.registerPlayer.mockResolvedValue(PLAYER);
+    // different hostPlayerId — current player is not the host
+    api.lookupGame.mockResolvedValue({ ...GAME, hostPlayerId: 'other-player' });
+    render(<Lobby />);
+
+    await user.type(screen.getByLabelText(/name/i), 'Alice');
+    await user.click(screen.getByRole('button', { name: /register/i }));
+    await waitFor(() => screen.getByRole('tab', { name: /join game/i }));
+
+    await user.click(screen.getByRole('tab', { name: /join game/i }));
+    await user.type(screen.getByLabelText(/game id/i), 'g1');
+    await user.click(screen.getByRole('button', { name: /join game/i }));
+
+    await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+
+    expect(screen.queryByRole('button', { name: /start game/i })).not.toBeInTheDocument();
   });
 });

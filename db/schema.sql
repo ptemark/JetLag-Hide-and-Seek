@@ -35,6 +35,9 @@ ALTER TABLE games ADD COLUMN IF NOT EXISTS seeker_teams INTEGER NOT NULL DEFAULT
 -- Idempotent migration: add curse_expires_at for curse card enforcement.
 ALTER TABLE games ADD COLUMN IF NOT EXISTS curse_expires_at TIMESTAMPTZ;
 
+-- Idempotent migration: add host_player_id to track the game creator (Task 102).
+ALTER TABLE games ADD COLUMN IF NOT EXISTS host_player_id UUID REFERENCES players(id) ON DELETE SET NULL;
+
 -- Idempotent migration: expand questions category CHECK to include measuring and transit.
 -- The old 4-value constraint is dropped first (IF EXISTS) so this script is safe to re-run.
 ALTER TABLE questions DROP CONSTRAINT IF EXISTS questions_category_check;

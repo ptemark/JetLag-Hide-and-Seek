@@ -7,7 +7,11 @@ See `RALPH.md` for the loop process and `DESIGN.md` for all design decisions.
 
 ## Current Task
 
-_Task 100 complete. Stale game cleanup: `dbCleanupStaleGames` added to `db/gameStore.js`; `cleanupStaleGames` handler added to `functions/games.js` (admin-auth protected); `POST /games/cleanup` route added to `functions/router.js`; 13 new tests; 1479 tests pass._
+_Task 102 complete. Host player tracking: `host_player_id` column added to `games` table; `dbCreateGame` stores it; `dbGetGame` returns it; `handleCreateGame` reads `playerId` from body; `createGame` stores `hostPlayerId` in-process; `src/api.js` sends `playerId`; `GameForm` passes `player.playerId`; `Lobby` gates `onStart` to host only; 7 new tests; 1492 tests pass._
+
+### Phase 44 — Game Lifecycle Management
+
+- [x] **102** — Host player tracking: The `games` table has no `host_player_id` column, so the system has no record of who created a game. The Lobby currently passes `onStart` to `WaitingRoom` for every player, meaning any player in the waiting room sees the "Start Game" button and can start the game — not just the creator. Changes needed: (1) `db/schema.sql` — add idempotent migration `ALTER TABLE games ADD COLUMN IF NOT EXISTS host_player_id UUID REFERENCES players(id) ON DELETE SET NULL;`. (2) `db/gameStore.js` — `dbCreateGame` accepts optional `hostPlayerId` and includes it as `$4` in the INSERT; returns `hostPlayerId` in the result; `dbGetGame` SELECTs `host_player_id` and returns it as `hostPlayerId`. (3) `functions/games.js` — `createGame` accepts `hostPlayerId` and stores it in the in-process game entry; `handleCreateGame` reads `playerId` from request body and passes as `hostPlayerId` to `createGame`. (4) `src/api.js` — `createGame` accepts `playerId` and includes it in the POST body. (5) `src/components/GameForm.jsx` — passes `player.id` when calling `createGame`. (6) `src/components/Lobby.jsx` — passes `onStart` to `WaitingRoom` only when `player.playerId === game.hostPlayerId`; non-host players see a read-only waiting room. Tests: `db/gameStore.test.js` (dbCreateGame with hostPlayerId passes it as 4th param and returns hostPlayerId; dbCreateGame without hostPlayerId defaults to null; dbGetGame returns hostPlayerId); `functions/games.test.js` (createGame stores hostPlayerId in in-process entry; handleCreateGame reads playerId from body and stores as hostPlayerId); `src/components/Lobby.test.jsx` (Start Game button visible when player is host; Start Game button absent when player joined but is not host).
 
 ### Phase 43 — Operational Hardening
 
@@ -101,6 +105,7 @@ _Task 100 complete. Stale game cleanup: `dbCleanupStaleGames` added to `db/gameS
 
 | # | Date | Task | Files | Notes |
 |---|------|------|-------|-------|
+| 102 | 2026-03-18 | Host player tracking | db/schema.sql, db/gameStore.js, functions/games.js, src/api.js, src/components/GameForm.jsx, src/components/Lobby.jsx + tests | host_player_id column (idempotent migration); dbCreateGame/dbGetGame updated; handleCreateGame reads playerId; createGame stores hostPlayerId in-process; api.js sends playerId; GameForm passes player.playerId; Lobby gates onStart to host only; 7 new tests; 1492 tests pass |
 | 101 | 2026-03-18 | Hider zone requirement before game start | functions/games.js, server/index.js, db/gameStore.test.js, functions/games.test.js, server/server.test.js | dbGetGameZone already present; handleStartGame checks zone after player counts; server start endpoint checks getGameZones().length > 0; seedPlayers updated with zone; 5 new tests; 1484 tests pass |
 | 100 | 2026-03-18 | Stale game cleanup | db/gameStore.js, functions/games.js, functions/router.js, db/gameStore.test.js, functions/games.test.js | dbCleanupStaleGames DELETE waiting games by age; cleanupStaleGames handler with admin-auth; POST /games/cleanup route; 13 new tests; 1479 tests pass |
 | 99 | 2026-03-18 | Container health check endpoint | server/index.js, Dockerfile, server/server.test.js | GET /health returns { status, uptimeMs, activeGames, connections }; HEALTHCHECK instruction in Dockerfile; no auth required; 5 new tests; 1466 tests pass |

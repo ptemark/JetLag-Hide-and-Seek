@@ -36,11 +36,11 @@ const _games = new Map();
  * Promise is returned.  Without a pool the operation is synchronous and
  * uses the in-process Map.
  *
- * @param {{ size?: string, bounds?: object }} options
+ * @param {{ size?: string, bounds?: object, seekerTeams?: number, hostPlayerId?: string|null }} options
  * @param {import('pg').Pool|null} [pool]
  * @returns {object | Promise<object>} game record
  */
-export function createGame({ size = 'medium', bounds = {}, seekerTeams = 0 } = {}, pool = null) {
+export function createGame({ size = 'medium', bounds = {}, seekerTeams = 0, hostPlayerId = null } = {}, pool = null) {
   if (!VALID_SIZES.includes(size)) {
     throw new Error(`size must be one of: ${VALID_SIZES.join(', ')}`);
   }
@@ -49,7 +49,7 @@ export function createGame({ size = 'medium', bounds = {}, seekerTeams = 0 } = {
   }
 
   if (pool) {
-    return dbCreateGame(pool, { size, bounds, seekerTeams });
+    return dbCreateGame(pool, { size, bounds, seekerTeams, hostPlayerId });
   }
 
   const game = {
@@ -57,6 +57,7 @@ export function createGame({ size = 'medium', bounds = {}, seekerTeams = 0 } = {
     size,
     status: 'waiting',
     seekerTeams,
+    hostPlayerId,
     players: [],
     zones: [],
     questions: [],
@@ -117,10 +118,10 @@ export function handleCreateGame(req, pool = null) {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
 
-  const { size = 'medium', bounds = {}, seekerTeams = 0 } = req.body ?? {};
+  const { size = 'medium', bounds = {}, seekerTeams = 0, playerId = null } = req.body ?? {};
 
   try {
-    const result = createGame({ size, bounds, seekerTeams }, pool);
+    const result = createGame({ size, bounds, seekerTeams, hostPlayerId: playerId }, pool);
     if (result && typeof result.then === 'function') {
       return result.then(game => ({ status: 201, body: game }));
     }

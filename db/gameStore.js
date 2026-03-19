@@ -47,15 +47,15 @@ export async function dbGetPlayer(pool, id) {
  * Insert a new game record.
  *
  * @param {import('pg').Pool} pool
- * @param {{ size: string, bounds?: object, seekerTeams?: number }} options
- * @returns {Promise<{ gameId: string, size: string, bounds: object, status: string, seekerTeams: number, createdAt: string }>}
+ * @param {{ size: string, bounds?: object, seekerTeams?: number, hostPlayerId?: string|null }} options
+ * @returns {Promise<{ gameId: string, size: string, bounds: object, status: string, seekerTeams: number, hostPlayerId: string|null, createdAt: string }>}
  */
-export async function dbCreateGame(pool, { size, bounds = {}, seekerTeams = 0 }) {
+export async function dbCreateGame(pool, { size, bounds = {}, seekerTeams = 0, hostPlayerId = null }) {
   const res = await pool.query(
-    `INSERT INTO games (size, bounds, seeker_teams)
-     VALUES ($1, $2, $3)
-     RETURNING id, size, bounds, status, seeker_teams, created_at`,
-    [size, JSON.stringify(bounds), seekerTeams],
+    `INSERT INTO games (size, bounds, seeker_teams, host_player_id)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, size, bounds, status, seeker_teams, host_player_id, created_at`,
+    [size, JSON.stringify(bounds), seekerTeams, hostPlayerId],
   );
   const row = res.rows[0];
   return {
@@ -64,6 +64,7 @@ export async function dbCreateGame(pool, { size, bounds = {}, seekerTeams = 0 })
     bounds: row.bounds,
     status: row.status,
     seekerTeams: row.seeker_teams,
+    hostPlayerId: row.host_player_id ?? null,
     createdAt: row.created_at,
   };
 }
@@ -77,7 +78,7 @@ export async function dbCreateGame(pool, { size, bounds = {}, seekerTeams = 0 })
  */
 export async function dbGetGame(pool, id) {
   const gameRes = await pool.query(
-    'SELECT id, size, bounds, status, seeker_teams, created_at FROM games WHERE id = $1',
+    'SELECT id, size, bounds, status, seeker_teams, host_player_id, created_at FROM games WHERE id = $1',
     [id],
   );
   if (gameRes.rows.length === 0) return null;
@@ -105,6 +106,7 @@ export async function dbGetGame(pool, id) {
     bounds: g.bounds,
     status: g.status,
     seekerTeams: g.seeker_teams,
+    hostPlayerId: g.host_player_id ?? null,
     createdAt: g.created_at,
     players,
   };

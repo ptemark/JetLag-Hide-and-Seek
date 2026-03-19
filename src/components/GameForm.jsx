@@ -41,7 +41,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
         lon_min: parseFloat(bounds.lon_min) || 0,
         lon_max: parseFloat(bounds.lon_max) || 0,
       };
-      const game = await createGame({ size: scale, bounds: parsedBounds, seekerTeams });
+      const game = await createGame({ size: scale, bounds: parsedBounds, seekerTeams, playerId: player.playerId });
       onGameReady(game);
     } catch (err) {
       setError(err.message);

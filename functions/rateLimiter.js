@@ -44,19 +44,24 @@ export function createRateLimiter({
   /**
    * Evict expired entries when the store exceeds maxEntries.
    * Deletes all entries whose window has already expired.  If the store is
-   * still at or above the cap after pruning (all entries are current), the
-   * entire store is cleared — this resets all rate-limit counters but
-   * prevents unbounded memory growth in warm instances serving many unique IPs.
+   * still at or above the cap after pruning (all entries are current and
+   * within their window), the store is saturated — the caller must reject
+   * the incoming request rather than evicting valid counters.
    *
    * @param {number} currentMs
+   * @returns {boolean} true if a slot is available, false if store is saturated
    */
   function prune(currentMs) {
-    if (store.size < maxEntries) return;
+    if (store.size < maxEntries) return true;
     for (const [key, entry] of store) {
       if (currentMs - entry.windowStart >= windowMs) store.delete(key);
     }
-    // If still at limit after removing expired entries, clear all.
-    if (store.size >= maxEntries) store.clear();
+    // If still at limit after removing expired entries, the store is saturated.
+    if (store.size >= maxEntries) {
+      console.warn('[rateLimiter] store saturated: maxEntries=%d reached with no expired entries to prune', maxEntries);
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -72,7 +77,11 @@ export function createRateLimiter({
 
     if (!entry || currentMs - entry.windowStart >= windowMs) {
       // New window — prune stale entries before inserting to bound memory.
-      prune(currentMs);
+      const hasSpace = prune(currentMs);
+      if (!hasSpace) {
+        // Store is saturated; reject without disturbing existing counters.
+        return { allowed: false, remaining: 0, resetAtMs: currentMs + windowMs };
+      }
       const windowStart = currentMs;
       store.set(key, { count: 1, windowStart });
       return { allowed: true, remaining: maxRequests - 1, resetAtMs: windowStart + windowMs };

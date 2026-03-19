@@ -244,7 +244,7 @@ describe('createRateLimiter — maxEntries pruning', () => {
     expect(store.has('ip-3')).toBe(false);
   });
 
-  it('clears all entries when no expired entries can be pruned at the limit', () => {
+  it('rejects new IP without clearing existing counters when store is saturated', () => {
     const store = new Map();
     let t = 1_000_000;
     const limiter = createRateLimiter({ windowMs: 10_000, maxRequests: 10, maxEntries: 3, now: () => t, store });
@@ -254,20 +254,29 @@ describe('createRateLimiter — maxEntries pruning', () => {
     limiter.check('ip-3'); // store.size == 3 == maxEntries
     // Advance by less than windowMs so none are expired, then trigger a new client
     t += 5_000;
-    limiter.check('ip-4'); // prune finds 0 expired → store.clear() → inserts ip-4
-    expect(store.has('ip-4')).toBe(true);
-    expect(store.size).toBe(1); // only ip-4 remains after clear
+    const r = limiter.check('ip-4'); // prune finds 0 expired → store saturated → reject
+    expect(r.allowed).toBe(false);
+    expect(r.remaining).toBe(0);
+    // Existing counters must NOT be cleared
+    expect(store.has('ip-1')).toBe(true);
+    expect(store.has('ip-2')).toBe(true);
+    expect(store.has('ip-3')).toBe(true);
+    expect(store.has('ip-4')).toBe(false);
+    expect(store.size).toBe(3);
   });
 
-  it('allows normal rate limiting after a full-store clear', () => {
+  it('admits new IP once expired entries are pruned and slot becomes available', () => {
     const store = new Map();
     let t = 1_000_000;
-    const limiter = createRateLimiter({ windowMs: 10_000, maxRequests: 3, maxEntries: 2, now: () => t, store });
+    const limiter = createRateLimiter({ windowMs: 10_000, maxRequests: 10, maxEntries: 2, now: () => t, store });
     limiter.check('ip-1');
     limiter.check('ip-2'); // store.size == 2 == maxEntries
-    t += 5_000; // still within window — next new key triggers clear
-    const r = limiter.check('ip-3'); // clears store, inserts ip-3
+    t += 11_000; // expire both entries
+    const r = limiter.check('ip-3'); // prune removes ip-1 and ip-2 → slot free → admitted
     expect(r.allowed).toBe(true);
-    expect(r.remaining).toBe(2); // fresh window for ip-3
+    expect(r.remaining).toBe(9);
+    expect(store.has('ip-3')).toBe(true);
+    expect(store.has('ip-1')).toBe(false);
+    expect(store.has('ip-2')).toBe(false);
   });
 });

@@ -128,7 +128,89 @@ Before coding:
 
 ---
 
-# Security Rules
+# Frontend Guardrails
+
+Apply these rules to every change touching `src/` (React components, CSS, API client). They are **mandatory** — violations must be fixed before committing, the same as any other CI failure.
+
+---
+
+## React Conventions
+
+- **Functional components only.** No class components.
+- **Hooks at the top of the function body.** Never inside conditions, loops, or nested functions — this is a React requirement, not a style preference.
+- **One component per file.** Filename must match the exported component name (PascalCase `.jsx`). Utility/helper files use camelCase `.js`.
+- **Destructure props in the function signature.** `function Foo({ bar, baz })` not `function Foo(props)`.
+- **Document props in a JSDoc comment** above the function. No PropTypes library; no TypeScript. A three-line comment stating what each prop is and whether it is optional is sufficient.
+- **Derive, don't store.** If a value can be computed from existing state or props, compute it — do not duplicate it into a separate `useState`. Redundant state leads to sync bugs.
+- **Every `useEffect` with a timer, subscription, or event listener must return a cleanup function.** An effect that can leak must not be merged.
+- **No `useEffect` for data derivation.** Compute derived values inline or with `useMemo`; `useEffect` is for synchronising with external systems only.
+- **Avoid prop drilling deeper than two levels.** If a prop passes through more than two components unused, lift state or introduce a context.
+- **Refs for imperative handles only** (`clearInterval` IDs, DOM focus, WS instances). Do not use a `ref` as a way to avoid a re-render caused by state that the UI actually depends on.
+
+---
+
+## CSS Conventions
+
+- **All colours via CSS custom properties.** Never write a hex value, `rgb()`, or `hsl()` literal inside a component file or `.module.css` file. Use `var(--color-*)` tokens defined in `src/index.css`.
+- **Per-component `.module.css` files.** Name the file `ComponentName.module.css`. Import as `import styles from './ComponentName.module.css'` and apply with `className={styles.foo}`.
+- **Module class names: camelCase** (`styles.waitingRoom`, not `styles['waiting-room']`).
+- **No inline `style` objects for static values.** Inline styles are acceptable only for values that are dynamically computed at runtime (e.g., a width derived from a JavaScript variable). Static appearances belong in CSS.
+- **Mobile-first media queries.** Write base styles for mobile viewports; add `@media (min-width: 600px)` overrides for wider screens. Never write desktop-first then subtract.
+- **No `!important`.** Its presence signals a specificity problem that must be fixed structurally.
+- **No CSS-in-JS.** Do not add Styled Components, Emotion, or any library that inserts `<style>` tags at runtime.
+
+---
+
+## JavaScript / JSX Style
+
+- **Named constants for every magic value.** Polling intervals, timeout durations, threshold values, and URL path segments must be defined as `const UPPER_SNAKE_CASE` at module scope with a comment explaining their source (e.g., `RULES.md §Game Scales`).
+- **Early returns over nested `if/else`.** Flatten guard clauses; keep the happy path at the lowest indentation level.
+- **`async/await` over `.then()` chains.** Async functions are easier to read and easier to add cleanup to.
+- **Destructuring for imports, state tuples, and props.** `const { gameId, size } = game` not `game.gameId`, `game.size` repeated everywhere.
+- **No unused variables or imports.** A variable declared but never read is a bug waiting to happen. Delete it.
+- **Error messages must reach the UI.** When an API call rejects, surface the error message in a `role="alert"` element. Never silently swallow it.
+- **No `console.log` in committed code.** Use the server-side `logger` for backend; remove any debug logging before committing frontend code.
+- **Consistent event handler naming: `handle` prefix.** `handleStart`, `handleSubmit`, `handleClose` — not `onClickStart` or `doStart`.
+
+---
+
+## Accessibility
+
+- **Minimum 44 × 44 px touch target** for every interactive element. Add padding if the visible element is smaller.
+- **Every `<input>` and `<select>` must have a `<label>`.** Use `htmlFor`/`id` pairing or `aria-label`. Never rely on placeholder text as the only label.
+- **Every `<img>` must have `alt`.** Decorative images get `alt=""`. Meaningful images get a concise description.
+- **Every icon-only button must have `aria-label`.**
+- **Error messages must use `role="alert"`** so screen readers announce them without focus change.
+- **No `tabIndex` greater than 0.** Positive tabindex breaks natural focus order. Fix the DOM order instead.
+- **Never `outline: none` without a visible custom replacement.** The focus ring is required; replace it with a `2px solid var(--color-accent)` ring, never remove it entirely.
+- **Colour alone must not convey meaning.** Error states need both colour change and a text label or icon.
+
+---
+
+## Performance / Mobile
+
+- **No heavy computation in render.** Move expensive calculations to the server or to a `useMemo` with correct dependencies.
+- **Throttle GPS to 10–20 s.** Do not use `watchPosition` with no interval; read `DESIGN.md §13` for the constraint source.
+- **Map redraws on state changes only.** A Leaflet layer should only be added, moved, or removed when the underlying data has actually changed. Guard with equality checks before calling Leaflet APIs.
+- **No animations during active gameplay map updates.** CSS transitions on map elements during a tick loop drain battery. Animations are acceptable on UI chrome (panels, buttons), not on map layers.
+- **Lazy-load non-critical views.** Components like `Leaderboard` and `CardPanel` that are not needed on initial load should use `React.lazy` + `Suspense`.
+- **No additional npm dependencies without a documented rationale in TASKS.md.** Every new dependency adds to the bundle and the maintenance surface. If a native API or a ~20-line utility achieves the same goal, use that instead.
+
+---
+
+## Component Testing Standards
+
+These rules apply to every `*.test.jsx` file:
+
+- **Test user behaviour, not implementation.** Query by role, label, and text — not by component name, internal state, or CSS class.
+- **Use `userEvent` not `fireEvent`.** `userEvent` simulates real browser interactions including focus, pointer events, and keyboard dispatch.
+- **Mock the API module at the top of the file** with `vi.mock('../api.js', ...)`. Never make real HTTP calls in a test.
+- **Use `data-testid` only as a last resort.** If no accessible role, label, or visible text uniquely identifies the element, add an `aria-label` to the component instead of reaching for `data-testid`.
+- **Every test that sets up a timer, interval, spy, or global stub must tear it down** in an `afterEach` (use `vi.restoreAllMocks()` / `vi.unstubAllGlobals()`). Leaked state between tests causes flaky failures that are painful to diagnose.
+- **No `screen.debug()` or `console.log` in committed test files.**
+- **Test the sad path as well as the happy path.** For every API call tested for success, also test the rejection/error branch and assert that an error message reaches the DOM.
+
+---
 
 Never commit:
 

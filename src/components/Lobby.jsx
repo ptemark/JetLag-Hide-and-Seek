@@ -67,7 +67,8 @@ export default function Lobby() {
             <WaitingRoom
               game={game}
               player={player}
-              onStart={player.playerId === game.hostPlayerId ? () => setPlaying(true) : undefined}
+              onStart={player.playerId === game.hostPlayerId ? () => {} : undefined}
+              onGameStarted={() => setPlaying(true)}
             />
           )}
 

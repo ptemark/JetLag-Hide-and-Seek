@@ -3,12 +3,13 @@
  * for all players to join before the host starts the game.
  *
  * Props:
- *   game    — game record { gameId, size, status, seekerTeams? }
- *   player  — player record { playerId, name, role, team? }
- *   onStart — callback invoked after the managed server confirms game start (optional)
+ *   game           — game record { gameId, size, status, seekerTeams? }
+ *   player         — player record { playerId, name, role, team? }
+ *   onStart        — callback invoked after the managed server confirms game start (host only; optional)
+ *   onGameStarted  — callback invoked when the game transitions away from 'waiting' (all players)
  */
-import { useState } from 'react';
-import { startGame } from '../api.js';
+import { useState, useEffect } from 'react';
+import { startGame, lookupGame } from '../api.js';
 
 /** Valid hiding duration ranges per scale (RULES.md §Game Scales), in minutes. */
 const SCALE_DURATION_RANGES = {
@@ -17,7 +18,10 @@ const SCALE_DURATION_RANGES = {
   large:  { min: 180, max: 360 },
 };
 
-export default function WaitingRoom({ game, player, onStart }) {
+/** How often non-host players poll for game start, in milliseconds. */
+const POLL_INTERVAL_MS = 3000;
+
+export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
   const [error, setError] = useState('');
   const range = SCALE_DURATION_RANGES[game.size] ?? { min: 30, max: 360 };
   const [hidingDurationMin, setHidingDurationMin] = useState(range.min);
@@ -25,11 +29,39 @@ export default function WaitingRoom({ game, player, onStart }) {
   const showTeam = (game.seekerTeams ?? 0) >= 2 && player?.role === 'seeker' && player?.team;
   const inviteUrl = `${window.location.origin}${window.location.pathname}?gameId=${game.gameId}`;
 
+  // Non-host players poll the API until the host starts the game.
+  useEffect(() => {
+    if (onStart || !onGameStarted) return;
+
+    let cancelled = false;
+    const id = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const g = await lookupGame(game.gameId);
+        if (!cancelled && g.status !== 'waiting') {
+          cancelled = true;
+          clearInterval(id);
+          onGameStarted();
+        }
+      } catch {
+        // ignore transient poll failures
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+    // Run once on mount. Props are stable during the WaitingRoom's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleStart() {
     setError('');
     try {
       await startGame({ gameId: game.gameId, scale: game.size, hidingDurationMin });
       onStart?.();
+      onGameStarted?.();
     } catch (err) {
       setError(err.message || 'Failed to start game');
     }

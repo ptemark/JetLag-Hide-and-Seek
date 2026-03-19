@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+// Mock GameMap to prevent Leaflet from running in jsdom when Lobby transitions
+// to the playing state. GameMap behaviour is tested in its own test file.
+vi.mock('./GameMap.jsx', () => ({ default: () => null }));
 
 // Mock API module before importing components that use it.
 vi.mock('../api.js', () => ({
@@ -8,6 +12,16 @@ vi.mock('../api.js', () => ({
   createGame: vi.fn(),
   lookupGame: vi.fn(),
   startGame: vi.fn(),
+  submitQuestion: vi.fn(),
+  listQuestions: vi.fn().mockResolvedValue([]),
+  submitAnswer: vi.fn(),
+  fetchCards: vi.fn().mockResolvedValue([]),
+  playCardApi: vi.fn(),
+  uploadQuestionPhoto: vi.fn(),
+  fetchQuestionPhoto: vi.fn(),
+  submitScore: vi.fn(),
+  fetchLeaderboard: vi.fn().mockResolvedValue([]),
+  lockZone: vi.fn(),
 }));
 
 import * as api from '../api.js';
@@ -17,7 +31,8 @@ import WaitingRoom from './WaitingRoom.jsx';
 import Lobby from './Lobby.jsx';
 
 const PLAYER = { playerId: 'p1', name: 'Alice', role: 'seeker', createdAt: '2026-01-01T00:00:00Z' };
-const GAME   = { gameId: 'g1', size: 'medium', status: 'waiting', hostPlayerId: 'p1' };
+const BOUNDS = { lat_min: 51.5, lat_max: 51.6, lon_min: -0.1, lon_max: 0.0 };
+const GAME   = { gameId: 'g1', size: 'medium', status: 'waiting', hostPlayerId: 'p1', bounds: BOUNDS };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -359,4 +374,32 @@ describe('Lobby', () => {
 
     expect(screen.queryByRole('button', { name: /start game/i })).not.toBeInTheDocument();
   });
+
+  it('non-host player transitions away from WaitingRoom when game starts', async () => {
+    const user = userEvent.setup();
+    api.registerPlayer.mockResolvedValue(PLAYER);
+    const nonHostGame = { ...GAME, hostPlayerId: 'other-player' };
+    // First lookupGame call: join validation. Subsequent calls: game has started.
+    api.lookupGame
+      .mockResolvedValueOnce(nonHostGame)
+      .mockResolvedValue({ ...nonHostGame, status: 'hiding' });
+
+    render(<Lobby />);
+
+    await user.type(screen.getByLabelText(/name/i), 'Alice');
+    await user.click(screen.getByRole('button', { name: /register/i }));
+    await waitFor(() => screen.getByRole('tab', { name: /join game/i }));
+
+    await user.click(screen.getByRole('tab', { name: /join game/i }));
+    await user.type(screen.getByLabelText(/game id/i), 'g1');
+    await user.click(screen.getByRole('button', { name: /join game/i }));
+    await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+
+    // WaitingRoom polls every 3 s; allow it to fire naturally and detect the
+    // transition.  The 4 s timeout is generous relative to POLL_INTERVAL_MS.
+    await waitFor(
+      () => expect(screen.queryByRole('heading', { name: /waiting room/i })).not.toBeInTheDocument(),
+      { timeout: 4000 },
+    );
+  }, 10000);
 });

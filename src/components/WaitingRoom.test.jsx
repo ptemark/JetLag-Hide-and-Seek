@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // Mock the API module before importing the component.
 vi.mock('../api.js', () => ({
   startGame: vi.fn(),
+  lookupGame: vi.fn(),
 }));
 
 import * as api from '../api.js';
@@ -203,5 +204,74 @@ describe('WaitingRoom duration picker', () => {
     await waitFor(() =>
       expect(api.startGame).toHaveBeenCalledWith({ gameId: 'g1', scale: 'medium', hidingDurationMin: 90 })
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-host polling (Task 103)
+// ---------------------------------------------------------------------------
+
+describe('WaitingRoom non-host polling', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('starts polling when onStart is absent and onGameStarted is provided', () => {
+    vi.spyOn(global, 'setInterval').mockReturnValue(1);
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+
+    render(<WaitingRoom game={GAME} player={PLAYER} onGameStarted={() => {}} />);
+
+    expect(global.setInterval).toHaveBeenCalled();
+  });
+
+  it('fires onGameStarted when lookupGame returns status !== waiting', async () => {
+    let capturedCallback;
+    vi.spyOn(global, 'setInterval').mockImplementation((fn) => { capturedCallback = fn; return 1; });
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+    api.lookupGame.mockResolvedValue({ ...GAME, status: 'hiding' });
+    const onGameStarted = vi.fn();
+
+    render(<WaitingRoom game={GAME} player={PLAYER} onGameStarted={onGameStarted} />);
+
+    await capturedCallback();
+
+    expect(onGameStarted).toHaveBeenCalledOnce();
+  });
+
+  it('does not start polling when onStart is provided (host path)', () => {
+    vi.spyOn(global, 'setInterval');
+
+    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} onGameStarted={() => {}} />);
+
+    expect(global.setInterval).not.toHaveBeenCalled();
+  });
+
+  it('clears the interval on unmount', () => {
+    const intervalId = 42;
+    vi.spyOn(global, 'setInterval').mockReturnValue(intervalId);
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+
+    const { unmount } = render(<WaitingRoom game={GAME} player={PLAYER} onGameStarted={() => {}} />);
+
+    unmount();
+
+    expect(global.clearInterval).toHaveBeenCalledWith(intervalId);
+  });
+
+  it('calls onGameStarted after startGame resolves on the host path', async () => {
+    const user = userEvent.setup();
+    api.startGame.mockResolvedValue(undefined);
+    const onStart = vi.fn();
+    const onGameStarted = vi.fn();
+
+    render(<WaitingRoom game={GAME} player={PLAYER} onStart={onStart} onGameStarted={onGameStarted} />);
+
+    await user.click(screen.getByRole('button', { name: /start game/i }));
+
+    await waitFor(() => {
+      expect(onStart).toHaveBeenCalledOnce();
+      expect(onGameStarted).toHaveBeenCalledOnce();
+    });
   });
 });

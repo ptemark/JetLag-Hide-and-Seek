@@ -63,10 +63,28 @@ Managed Game Loop / WebSocket Container
 - Timers managed server-side
 
 ## 7️⃣ Frontend
-- SPA React + Vite
-- Mobile-first, battery optimized
-- Maps: OSM/Google Maps; redraw only on state changes
-- Location updates throttled 10–20s
+
+### Core Stack
+
+| Concern | Technology | Why |
+|---------|-----------|-----|
+| SPA framework | **React 18 + Vite** | Minimal runtime, fast HMR, static output |
+| Map rendering | **Leaflet** | Lightweight, mobile-optimised, free OSM tiles; no paid API |
+| Map tiles | **CartoDB dark_all** (OSM) | Dark palette matches brand; free, no key required |
+| Styling | **CSS Modules** + CSS custom properties | Scoped styles, zero runtime overhead, works with Vite |
+| Fonts | **Google Fonts** — Oswald, Inter, JetBrains Mono | Loaded via `<link>` in HTML, not JS import |
+| Icons | **Inline SVG only** | No icon-font payload; full colour control |
+| State management | **React `useState` / `useReducer`** | No external store library; keep bundle lean |
+| Testing | **Vitest** + **@testing-library/react** + **userEvent** | Already in CI; tests user behaviour not internals |
+
+### Hard Constraints
+
+- **No CSS-in-JS** (no Styled Components, Emotion, etc.) — runtime cost unacceptable on mid-range mobile.
+- **No Redux / Zustand / MobX** — global state is unnecessary given the single-game-at-a-time data model.
+- **No additional map libraries** (Google Maps JS SDK, Mapbox GL) unless explicitly approved in TASKS.md; they carry per-request cost.
+- **No heavy date/utility libraries** (moment.js, lodash) — use native APIs.
+- Location updates throttled **10–20 s** — no continuous GPS streaming.
+- Map redraws only on meaningful state changes — never on every render cycle.
 
 ## 8️⃣ Backend
 - Node.js with WebSocket or Supabase Realtime
@@ -444,4 +462,175 @@ Internet
               starts on first WS connection
               shuts down after last game ends + IDLE_SHUTDOWN_DELAY_MS
 ```
+
+---
+
+## 2️⃣2️⃣ Frontend Visual Design
+
+### Brand Identity
+
+The JetLag visual identity is a **retro 1970s travel poster** aesthetic — dark navy backgrounds, warm sunset gradient bands, and a clean airplane silhouette. Every UI component should feel like it belongs on a vintage transit map.
+
+Reference image: `images/jetlag.jpeg`
+
+---
+
+### Colour Palette
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `--color-bg` | `#1B2A3A` | Page background, card backgrounds |
+| `--color-surface` | `#243447` | Raised surfaces: panels, modals, inputs |
+| `--color-surface-2` | `#2D3F55` | Hover states, secondary surfaces |
+| `--color-border` | `#3A5068` | Input borders, dividers |
+| `--color-text-primary` | `#F0EAD6` | Body text, labels (warm off-white) |
+| `--color-text-secondary` | `#9EB3C8` | Placeholder text, captions |
+| `--color-sunset-1` | `#F5C84A` | Innermost band — warm yellow |
+| `--color-sunset-2` | `#F08730` | Second band — amber orange |
+| `--color-sunset-3` | `#E05828` | Third band — burnt orange |
+| `--color-sunset-4` | `#C83A18` | Outermost band — deep red-orange |
+| `--color-accent` | `#F08730` | Primary buttons, active states, links |
+| `--color-accent-hover` | `#E05828` | Button hover |
+| `--color-success` | `#4CAF82` | Positive feedback (found, joined) |
+| `--color-error` | `#E05828` | Error alerts (reuses sunset-3) |
+| `--color-white` | `#FDFAF4` | Inner semicircle / logo highlight |
+
+The sunset gradient runs: `--color-white` → `--color-sunset-1` → `--color-sunset-2` → `--color-sunset-3` → `--color-sunset-4`.
+
+---
+
+### Typography
+
+| Role | Font | Weight | Size |
+|------|------|--------|------|
+| App title (h1) | `'Oswald', sans-serif` | 700 | `2rem` |
+| Section headings (h2) | `'Oswald', sans-serif` | 600 | `1.4rem` |
+| Body / labels | `'Inter', sans-serif` | 400 | `1rem` |
+| Monospace (game IDs, coords) | `'JetBrains Mono', monospace` | 400 | `0.9rem` |
+| Button text | `'Oswald', sans-serif` | 600 | `1rem`, uppercase, letter-spacing 0.05em |
+
+Load via Google Fonts: `Oswald`, `Inter`, `JetBrains Mono`.
+
+---
+
+### Logo & Icon
+
+- **Primary mark:** airplane silhouette (from `images/jetlag.jpeg`) — dark navy `#1B2A3A` on a sunset semicircle background.
+- **App icon:** `public/icon-192.svg` / `public/icon-512.svg` — update to match the retro palette.
+- **Minimum clear space:** half the icon height on all sides.
+- Never rotate, recolour, or add drop shadows to the airplane mark.
+
+---
+
+### Component Styles
+
+#### Buttons
+
+```
+Primary button
+  background:    --color-accent  (#F08730)
+  color:         --color-bg      (#1B2A3A)
+  font:          Oswald 600, uppercase
+  border-radius: 4px
+  padding:       0.6rem 1.4rem
+  hover:         --color-accent-hover (#E05828)
+
+Danger / destructive button
+  background: --color-sunset-4  (#C83A18)
+  color:      --color-white
+
+Ghost button (secondary)
+  background:   transparent
+  border:       1px solid --color-accent
+  color:        --color-accent
+  hover-bg:     rgba(240,135,48,0.12)
+```
+
+#### Inputs & Selects
+
+```
+background:    --color-surface   (#243447)
+border:        1px solid --color-border  (#3A5068)
+color:         --color-text-primary
+border-radius: 4px
+padding:       0.5rem 0.75rem
+focus outline: 2px solid --color-accent (no default browser ring)
+placeholder:   --color-text-secondary
+```
+
+#### Cards / Panels
+
+```
+background:    --color-surface  (#243447)
+border:        1px solid --color-border
+border-radius: 6px
+padding:       1rem 1.25rem
+box-shadow:    0 2px 8px rgba(0,0,0,0.4)
+```
+
+#### Alerts / Error Messages
+
+```
+background:    rgba(200,58,24, 0.15)   (sunset-4 tinted)
+border-left:   3px solid --color-error
+color:         --color-text-primary
+border-radius: 0 4px 4px 0
+padding:       0.5rem 0.75rem
+```
+
+#### Map Overlay (GameMap)
+
+- Base tiles: OSM dark style (`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`)
+- Hider zone polygon fill: `rgba(240,135,48,0.15)` / stroke `--color-sunset-2`
+- Seeker position marker: `--color-accent` circle
+- Hider position marker: `--color-sunset-4` circle (during End Game only)
+- End Game active banner: sunset gradient bar across top of map
+
+---
+
+### Layout
+
+- **Max content width:** `480px` (mobile-first; centred on desktop)
+- **Page padding:** `1rem` horizontal
+- **Section spacing:** `1.5rem` gap between stacked panels
+- **Responsive breakpoint:** `600px` — widen to `560px` max, increase font slightly
+
+---
+
+### Motion & Feedback
+
+- Button press: `transform: scale(0.97)` + `transition: 80ms`
+- Panel entry: `opacity 0→1` + `translateY 8px→0`, `200ms ease-out`
+- Error alert: shake keyframe `±4px` horizontal, `300ms`
+- Avoid animations during gameplay map updates (battery concern)
+
+---
+
+### Accessibility
+
+- All interactive elements: minimum `44×44 px` touch target
+- Colour contrast: all text against its background ≥ 4.5:1 (WCAG AA)
+- Focus rings: `2px solid --color-accent` — never `outline: none` without a custom replacement
+- `aria-label` on all icon-only buttons; `role="alert"` on error messages (already in components)
+
+---
+
+### CSS Architecture
+
+- Define all tokens in `:root` in `src/index.css`
+- Components use CSS custom properties — no hardcoded colour hex values in component files
+- One global stylesheet (`src/index.css`) for tokens + resets; per-component `.module.css` files for layout
+- No CSS-in-JS dependencies (keep bundle lean for mobile)
+
+### Technology Selection Rationale
+
+| Decision | Chosen | Rejected alternatives | Reason |
+|----------|--------|-----------------------|--------|
+| Map library | Leaflet | Google Maps SDK, Mapbox GL | Free, ~40 KB gzipped, first-class OSM support, no API key |
+| Dark tile provider | CartoDB dark_all | Mapbox dark, Stamen toner | Free with attribution, aligns with navy brand palette |
+| Styling approach | CSS Modules + custom properties | Tailwind, Styled Components, Emotion | Zero runtime, Vite native, no class-name memorisation overhead |
+| Icon strategy | Inline SVG | Font Awesome, Heroicons JS | No payload; full colour/animation control without extra dependency |
+| Font loading | `<link rel="preconnect">` + Google Fonts stylesheet | Self-hosted, `@fontsource` npm | Google CDN caching; preconnect eliminates render-blocking penalty |
+| State management | React built-ins | Redux, Zustand | Single-game data model fits component state; extra library = dead weight |
+| Build tool | Vite | CRA, webpack | Fast cold start, native ES modules, minimal config |
 

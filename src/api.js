@@ -7,6 +7,34 @@
 
 export const BASE_URL = '';
 
+/** Abort a fetch if it has not resolved within this duration (DESIGN.md §13). */
+const FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Wrapper around fetch that aborts and throws 'Request timed out' if the
+ * request does not resolve within FETCH_TIMEOUT_MS.  The abort timer is
+ * cleared on both success and failure so no dangling timer is left behind.
+ *
+ * @param {string} url
+ * @param {RequestInit} [options]
+ * @returns {Promise<Response>}
+ */
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timerId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('Request timed out');
+    throw err;
+  } finally {
+    clearTimeout(timerId);
+  }
+}
+
+// Export for unit testing only — not part of the public API surface.
+export { fetchWithTimeout, FETCH_TIMEOUT_MS };
+
 /**
  * Register a new player.
  * POST /api/players  { name, role }  → { playerId, name, role, createdAt }
@@ -15,7 +43,7 @@ export const BASE_URL = '';
  * @returns {Promise<{ playerId: string, name: string, role: string, createdAt: string }>}
  */
 export async function registerPlayer({ name, role }) {
-  const res = await fetch(`${BASE_URL}/api/players`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/players`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, role }),
@@ -32,7 +60,7 @@ export async function registerPlayer({ name, role }) {
  * @returns {Promise<{ gameId: string, size: string, status: string, seekerTeams: number, hostPlayerId: string|null }>}
  */
 export async function createGame({ size, bounds, seekerTeams = 0, playerId = null }) {
-  const res = await fetch(`${BASE_URL}/api/games`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/games`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ size, bounds, seekerTeams, playerId }),
@@ -49,7 +77,7 @@ export async function createGame({ size, bounds, seekerTeams = 0, playerId = nul
  * @returns {Promise<{ gameId: string, size: string, status: string }>}
  */
 export async function lookupGame(gameId) {
-  const res = await fetch(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}`);
+  const res = await fetchWithTimeout(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}`);
   if (!res.ok) throw new Error(`lookupGame failed: ${res.status}`);
   return res.json();
 }
@@ -62,7 +90,7 @@ export async function lookupGame(gameId) {
  * @param {{ gameId: string, askerId: string, targetId: string, category: string, text: string }} options
  */
 export async function submitQuestion({ gameId, askerId, targetId, category, text }) {
-  const res = await fetch(`${BASE_URL}/api/questions`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/questions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ gameId, askerId, targetId, category, text }),
@@ -87,7 +115,7 @@ export async function listQuestions({ playerId, gameId, teamId } = {}) {
   if (gameId)        params.append('gameId',   gameId);
   else if (playerId) params.append('playerId', playerId);
   if (teamId)        params.append('teamId',   teamId);
-  const res = await fetch(`${BASE_URL}/api/questions?${params}`);
+  const res = await fetchWithTimeout(`${BASE_URL}/api/questions?${params}`);
   if (!res.ok) throw new Error(`listQuestions failed: ${res.status}`);
   return res.json();
 }
@@ -100,7 +128,7 @@ export async function listQuestions({ playerId, gameId, teamId } = {}) {
  * @param {{ questionId: string, responderId: string, text: string }} options
  */
 export async function submitAnswer({ questionId, responderId, text }) {
-  const res = await fetch(`${BASE_URL}/api/answers/${encodeURIComponent(questionId)}`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/answers/${encodeURIComponent(questionId)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ responderId, text }),
@@ -117,7 +145,7 @@ export async function submitAnswer({ questionId, responderId, text }) {
  */
 export async function fetchCards({ gameId, playerId }) {
   const params = new URLSearchParams({ gameId, playerId });
-  const res = await fetch(`${BASE_URL}/api/cards?${params}`);
+  const res = await fetchWithTimeout(`${BASE_URL}/api/cards?${params}`);
   if (!res.ok) throw new Error(`fetchCards failed: ${res.status}`);
   return res.json();
 }
@@ -129,7 +157,7 @@ export async function fetchCards({ gameId, playerId }) {
  * @param {{ cardId: string, playerId: string }} options
  */
 export async function playCardApi({ cardId, playerId }) {
-  const res = await fetch(`${BASE_URL}/api/cards/${encodeURIComponent(cardId)}/play`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/cards/${encodeURIComponent(cardId)}/play`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ playerId }),
@@ -146,7 +174,7 @@ export async function playCardApi({ cardId, playerId }) {
  * @param {{ questionId: string, photoData: string }} options
  */
 export async function uploadQuestionPhoto({ questionId, photoData }) {
-  const res = await fetch(`${BASE_URL}/api/questions/${encodeURIComponent(questionId)}/photo`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/questions/${encodeURIComponent(questionId)}/photo`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ photoData }),
@@ -163,7 +191,7 @@ export async function uploadQuestionPhoto({ questionId, photoData }) {
  * @param {string} questionId
  */
 export async function fetchQuestionPhoto(questionId) {
-  const res = await fetch(`${BASE_URL}/api/questions/${encodeURIComponent(questionId)}/photo`);
+  const res = await fetchWithTimeout(`${BASE_URL}/api/questions/${encodeURIComponent(questionId)}/photo`);
   if (!res.ok) throw new Error(`fetchQuestionPhoto failed: ${res.status}`);
   return res.json();
 }
@@ -176,7 +204,7 @@ export async function fetchQuestionPhoto(questionId) {
  * @param {{ playerId: string, gameId: string, hidingTimeMs: number, captured: boolean, bonusSeconds?: number }} options
  */
 export async function submitScore({ playerId, gameId, hidingTimeMs, captured, bonusSeconds = 0 }) {
-  const res = await fetch(`${BASE_URL}/api/scores`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/scores`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ playerId, gameId, hidingTimeMs, captured, bonusSeconds }),
@@ -195,7 +223,7 @@ export async function submitScore({ playerId, gameId, hidingTimeMs, captured, bo
 export async function fetchLeaderboard({ limit = 20, gameId } = {}) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (gameId) params.append('gameId', gameId);
-  const res = await fetch(`${BASE_URL}/api/scores?${params}`);
+  const res = await fetchWithTimeout(`${BASE_URL}/api/scores?${params}`);
   if (!res.ok) throw new Error(`fetchLeaderboard failed: ${res.status}`);
   return res.json();
 }
@@ -216,7 +244,7 @@ export async function fetchLeaderboard({ limit = 20, gameId } = {}) {
 export async function startGame({ gameId, scale, hidingDurationMin }) {
   const body = { scale };
   if (hidingDurationMin !== undefined) body.hidingDurationMin = hidingDurationMin;
-  const res = await fetch(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/start`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -236,7 +264,7 @@ export async function startGame({ gameId, scale, hidingDurationMin }) {
  * @param {{ gameId: string, stationId: string, lat: number, lon: number, radiusM: number, playerId: string }} options
  */
 export async function lockZone({ gameId, stationId, lat, lon, radiusM, playerId }) {
-  const res = await fetch(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/zone`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/zone`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ stationId, lat, lon, radiusM, playerId }),

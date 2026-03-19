@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { dbCreateGame, dbGetGame } from '../db/gameStore.js';
+import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts } from '../db/gameStore.js';
 
 export const VALID_SIZES = Object.freeze(['small', 'medium', 'large']);
 export const VALID_STATUSES = Object.freeze(['waiting', 'hiding', 'seeking', 'finished']);
@@ -171,7 +171,7 @@ function notifyGameStart({ gameId, scale, hidingDurationMs, seekingDurationMs },
  * @param {typeof fetch} [fetchFn]  Injectable fetch (tests / local dev).
  * @returns {{ status: number, body: object }}
  */
-export function handleStartGame(req, pool = null, gameServerUrl, fetchFn = globalThis.fetch) {
+export async function handleStartGame(req, pool = null, gameServerUrl, fetchFn = globalThis.fetch) {
   if (req.method !== 'POST') {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
@@ -193,6 +193,18 @@ export function handleStartGame(req, pool = null, gameServerUrl, fetchFn = globa
         status: 400,
         body: { error: `hidingDurationMin out of range for scale '${scale}': must be ${range.min}–${range.max} min` },
       };
+    }
+  }
+
+  // When a DB pool is available, validate minimum player requirements before
+  // notifying the managed server. Without a pool the server performs its own check.
+  if (pool) {
+    const { hiderCount, seekerCount } = await dbGetGamePlayerCounts(pool, gameId);
+    if (hiderCount < 1) {
+      return { status: 400, body: { error: 'insufficient_players', message: 'Game requires at least one hider' } };
+    }
+    if (seekerCount < 1) {
+      return { status: 400, body: { error: 'insufficient_players', message: 'Game requires at least one seeker' } };
     }
   }
 

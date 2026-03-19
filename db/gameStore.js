@@ -180,6 +180,30 @@ export async function dbJoinGame(pool, { gameId, playerId, role, team = null }) 
 }
 
 /**
+ * Return hider and seeker counts for a game.
+ * Used to validate minimum player requirements before the game can start.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {string} gameId
+ * @returns {Promise<{ hiderCount: number, seekerCount: number }>}
+ */
+export async function dbGetGamePlayerCounts(pool, gameId) {
+  const res = await pool.query(
+    `SELECT role, COUNT(*)::int AS count
+     FROM game_players
+     WHERE game_id = $1
+     GROUP BY role`,
+    [gameId],
+  );
+  const counts = { hiderCount: 0, seekerCount: 0 };
+  for (const row of res.rows) {
+    if (row.role === 'hider')  counts.hiderCount  = row.count;
+    if (row.role === 'seeker') counts.seekerCount = row.count;
+  }
+  return counts;
+}
+
+/**
  * Insert or update a score for a player in a game.
  * On conflict (same game + player pair), updates score_seconds, bonus_seconds, and captured_at.
  *

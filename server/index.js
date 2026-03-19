@@ -348,6 +348,19 @@ export function createServer({
           }
         }
 
+        const { gameId } = startMatch.groups;
+
+        // Validate minimum player requirements before starting.
+        const { hiderCount, seekerCount } = gameStateManager.getPlayerCounts(gameId);
+        if (hiderCount < 1 || seekerCount < 1) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            error: 'insufficient_players',
+            message: 'Game requires at least one hider and at least one seeker',
+          }));
+          return;
+        }
+
         const scaleDurationMs = SCALE_DURATIONS[scale] ?? null;
         const opts = {};
         if (hidingDurationMs != null) {
@@ -360,7 +373,6 @@ export function createServer({
         } else if (scaleDurationMs != null) {
           opts.seekingDurationMs = scaleDurationMs;
         }
-        const { gameId } = startMatch.groups;
         gameLoopManager.startGame(gameId, opts);
         gameLoopManager.beginHiding(gameId);
         res.writeHead(204);

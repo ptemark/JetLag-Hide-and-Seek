@@ -280,6 +280,25 @@ describe('GameStateManager', () => {
   });
 
   // -------------------------------------------------------------------------
+  // getPlayerCounts (Task 98)
+  // -------------------------------------------------------------------------
+
+  it('getPlayerCounts returns { hiderCount: 0, seekerCount: 0 } for a new empty game', () => {
+    expect(gsm.getPlayerCounts('g1')).toEqual({ hiderCount: 0, seekerCount: 0 });
+  });
+
+  it('getPlayerCounts returns { hiderCount: 0, seekerCount: 0 } for unknown game', () => {
+    expect(gsm.getPlayerCounts('unknown')).toEqual({ hiderCount: 0, seekerCount: 0 });
+  });
+
+  it('getPlayerCounts counts hider and seeker separately', () => {
+    gsm.addPlayerToGame('g1', 'h1', 'hider');
+    gsm.addPlayerToGame('g1', 's1', 'seeker');
+    gsm.addPlayerToGame('g1', 's2', 'seeker');
+    expect(gsm.getPlayerCounts('g1')).toEqual({ hiderCount: 1, seekerCount: 2 });
+  });
+
+  // -------------------------------------------------------------------------
   // Single-hider enforcement in addPlayerToGame
   // -------------------------------------------------------------------------
 

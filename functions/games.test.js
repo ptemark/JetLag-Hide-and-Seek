@@ -120,20 +120,20 @@ describe('getGame (in-process)', () => {
 // ---------------------------------------------------------------------------
 
 describe('handleStartGame', () => {
-  it('returns 405 for non-POST', () => {
-    const res = handleStartGame({ method: 'GET', params: { gameId: 'g1' }, body: null });
+  it('returns 405 for non-POST', async () => {
+    const res = await handleStartGame({ method: 'GET', params: { gameId: 'g1' }, body: null });
     expect(res.status).toBe(405);
   });
 
-  it('returns 400 when gameId is missing from params', () => {
-    const res = handleStartGame(makePostReq({}, { scale: 'medium' }));
+  it('returns 400 when gameId is missing from params', async () => {
+    const res = await handleStartGame(makePostReq({}, { scale: 'medium' }));
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/gameId/);
   });
 
   it('returns 204 without calling fetch when no game server URL is configured', async () => {
     const mockFetch = vi.fn().mockResolvedValue({});
-    const res = handleStartGame(
+    const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'medium' }),
       null,
       undefined,
@@ -147,7 +147,7 @@ describe('handleStartGame', () => {
 
   it('returns 204 and notifies the managed server with gameId and scale', async () => {
     const mockFetch = vi.fn().mockResolvedValue({});
-    const res = handleStartGame(
+    const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'large' }),
       null,
       'http://game-server',
@@ -165,7 +165,7 @@ describe('handleStartGame', () => {
 
   it('URL-encodes the gameId in the notify request', async () => {
     const mockFetch = vi.fn().mockResolvedValue({});
-    handleStartGame(
+    await handleStartGame(
       makePostReq({ gameId: 'game/with/slashes' }, { scale: 'small' }),
       null,
       'http://game-server',
@@ -178,7 +178,7 @@ describe('handleStartGame', () => {
 
   it('silently swallows notify errors so the 204 response is unaffected', async () => {
     const mockFetch = vi.fn().mockRejectedValue(new Error('network failure'));
-    const res = handleStartGame(
+    const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small' }),
       null,
       'http://game-server',
@@ -190,8 +190,8 @@ describe('handleStartGame', () => {
   });
 
   // Task 74 — configurable hiding duration
-  it('returns 400 when hidingDurationMin is below scale minimum', () => {
-    const res = handleStartGame(
+  it('returns 400 when hidingDurationMin is below scale minimum', async () => {
+    const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small', hidingDurationMin: 10 }),
       null,
       undefined,
@@ -201,8 +201,8 @@ describe('handleStartGame', () => {
     expect(res.body.error).toMatch(/out of range/i);
   });
 
-  it('returns 400 when hidingDurationMin exceeds scale maximum', () => {
-    const res = handleStartGame(
+  it('returns 400 when hidingDurationMin exceeds scale maximum', async () => {
+    const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'medium', hidingDurationMin: 300 }),
       null,
       undefined,
@@ -212,8 +212,8 @@ describe('handleStartGame', () => {
     expect(res.body.error).toMatch(/out of range/i);
   });
 
-  it('returns 400 when hidingDurationMin is set but scale is missing', () => {
-    const res = handleStartGame(
+  it('returns 400 when hidingDurationMin is set but scale is missing', async () => {
+    const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { hidingDurationMin: 45 }),
       null,
       undefined,
@@ -225,7 +225,7 @@ describe('handleStartGame', () => {
 
   it('passes hidingDurationMs to managed server when hidingDurationMin is valid', async () => {
     const mockFetch = vi.fn().mockResolvedValue({});
-    const res = handleStartGame(
+    const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small', hidingDurationMin: 45 }),
       null,
       'http://game-server',
@@ -242,5 +242,67 @@ describe('handleStartGame', () => {
     expect(SCALE_DURATION_RANGES.small).toEqual({ min: 30, max: 60 });
     expect(SCALE_DURATION_RANGES.medium).toEqual({ min: 60, max: 180 });
     expect(SCALE_DURATION_RANGES.large).toEqual({ min: 180, max: 360 });
+  });
+
+  // Task 98 — minimum player count validation
+  it('returns 400 insufficient_players when pool shows no hider', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValue({ rows: [{ role: 'seeker', count: 2 }] }),
+    };
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'medium' }),
+      pool,
+      'http://game-server',
+      vi.fn(),
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('insufficient_players');
+    expect(res.body.message).toMatch(/hider/i);
+  });
+
+  it('returns 400 insufficient_players when pool shows no seeker', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValue({ rows: [{ role: 'hider', count: 1 }] }),
+    };
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'medium' }),
+      pool,
+      'http://game-server',
+      vi.fn(),
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('insufficient_players');
+    expect(res.body.message).toMatch(/seeker/i);
+  });
+
+  it('returns 204 and fires notify when pool confirms hider and seeker present', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValue({
+        rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 2 }],
+      }),
+    };
+    const mockFetch = vi.fn().mockResolvedValue({});
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small' }),
+      pool,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(204);
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  it('skips DB check and fires notify immediately when pool is null', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({});
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small' }),
+      null,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(204);
+    await new Promise(r => setTimeout(r, 0));
+    expect(mockFetch).toHaveBeenCalledOnce();
   });
 });

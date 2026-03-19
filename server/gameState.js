@@ -62,6 +62,19 @@ export class GameStateManager {
     return null;
   }
 
+  /** Return hider and seeker counts for a game (both 0 when game not found). */
+  getPlayerCounts(gameId) {
+    const game = this._games.get(gameId);
+    if (!game) return { hiderCount: 0, seekerCount: 0 };
+    let hiderCount = 0;
+    let seekerCount = 0;
+    for (const data of game.players.values()) {
+      if (data.role === 'hider')  hiderCount++;
+      if (data.role === 'seeker') seekerCount++;
+    }
+    return { hiderCount, seekerCount };
+  }
+
   addPlayerToGame(gameId, playerId, role = 'hider', team = null) {
     if (!this._games.has(gameId)) {
       this.createGame(gameId);

@@ -221,7 +221,11 @@ export async function startGame({ gameId, scale, hidingDurationMin }) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`startGame failed: ${res.status}`);
+  if (!res.ok) {
+    let body;
+    try { body = await res.json(); } catch { /* ignore parse errors */ }
+    throw new Error(body?.message || `startGame failed: ${res.status}`);
+  }
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   dbGetGame,
   dbUpdateGameStatus,
   dbJoinGame,
+  dbGetGamePlayerCounts,
   dbSubmitScore,
   dbGetGameScores,
   dbCreateQuestion,
@@ -276,6 +277,43 @@ describe('dbJoinGame', () => {
   it('propagates constraint errors (duplicate join)', async () => {
     const pool = makeMockPool(() => Promise.reject(new Error('unique constraint')));
     await expect(dbJoinGame(pool, { gameId: 'g1', playerId: 'p1', role: 'hider' })).rejects.toThrow('unique constraint');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dbGetGamePlayerCounts (Task 98)
+// ---------------------------------------------------------------------------
+
+describe('dbGetGamePlayerCounts', () => {
+  it('returns { hiderCount: 0, seekerCount: 0 } when no players have joined', async () => {
+    const pool = makeMockPool(() => Promise.resolve({ rows: [] }));
+    const counts = await dbGetGamePlayerCounts(pool, 'game-1');
+    expect(counts).toEqual({ hiderCount: 0, seekerCount: 0 });
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('GROUP BY role'),
+      ['game-1'],
+    );
+  });
+
+  it('returns { hiderCount: 1, seekerCount: 0 } when only a hider has joined', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({ rows: [{ role: 'hider', count: 1 }] }),
+    );
+    const counts = await dbGetGamePlayerCounts(pool, 'game-2');
+    expect(counts).toEqual({ hiderCount: 1, seekerCount: 0 });
+  });
+
+  it('returns correct counts when both hider and seekers have joined', async () => {
+    const pool = makeMockPool(() =>
+      Promise.resolve({
+        rows: [
+          { role: 'hider',  count: 1 },
+          { role: 'seeker', count: 2 },
+        ],
+      }),
+    );
+    const counts = await dbGetGamePlayerCounts(pool, 'game-3');
+    expect(counts).toEqual({ hiderCount: 1, seekerCount: 2 });
   });
 });
 

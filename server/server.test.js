@@ -866,10 +866,18 @@ describe('POST /internal/games/:gameId/start', () => {
     }
   });
 
+  /** Seed a game with one hider and one seeker in the in-memory game state. */
+  function seedPlayers(srv, gameId) {
+    srv.gameStateManager.createGame(gameId);
+    srv.gameStateManager.addPlayerToGame(gameId, 'hider-1', 'hider');
+    srv.gameStateManager.addPlayerToGame(gameId, 'seeker-1', 'seeker');
+  }
+
   it('responds 204 and starts the game in HIDING phase', async () => {
     server = createServer({ tickInterval: 5000 });
     await server.start(0);
     const port = server.httpServer.address().port;
+    seedPlayers(server, 'my-game');
 
     const res = await fetch(`http://localhost:${port}/internal/games/my-game/start`, {
       method: 'POST',
@@ -884,6 +892,7 @@ describe('POST /internal/games/:gameId/start', () => {
     server = createServer({ tickInterval: 5000 });
     await server.start(0);
     const port = server.httpServer.address().port;
+    seedPlayers(server, 'small-game');
 
     await fetch(`http://localhost:${port}/internal/games/small-game/start`, {
       method: 'POST',
@@ -898,6 +907,7 @@ describe('POST /internal/games/:gameId/start', () => {
     server = createServer({ tickInterval: 5000 });
     await server.start(0);
     const port = server.httpServer.address().port;
+    seedPlayers(server, 'med-game');
 
     await fetch(`http://localhost:${port}/internal/games/med-game/start`, {
       method: 'POST',
@@ -912,6 +922,7 @@ describe('POST /internal/games/:gameId/start', () => {
     server = createServer({ tickInterval: 5000 });
     await server.start(0);
     const port = server.httpServer.address().port;
+    seedPlayers(server, 'large-game');
 
     await fetch(`http://localhost:${port}/internal/games/large-game/start`, {
       method: 'POST',
@@ -926,6 +937,7 @@ describe('POST /internal/games/:gameId/start', () => {
     server = createServer({ tickInterval: 5000, hidingDuration: 120_000, seekingDuration: 600_000 });
     await server.start(0);
     const port = server.httpServer.address().port;
+    seedPlayers(server, 'unknown-scale-game');
 
     await fetch(`http://localhost:${port}/internal/games/unknown-scale-game/start`, {
       method: 'POST',
@@ -940,6 +952,7 @@ describe('POST /internal/games/:gameId/start', () => {
     server = createServer({ tickInterval: 5000, hidingDuration: 120_000, seekingDuration: 600_000 });
     await server.start(0);
     const port = server.httpServer.address().port;
+    seedPlayers(server, 'no-body-game');
 
     await fetch(`http://localhost:${port}/internal/games/no-body-game/start`, {
       method: 'POST',
@@ -952,6 +965,7 @@ describe('POST /internal/games/:gameId/start', () => {
     server = createServer({ tickInterval: 5000 });
     await server.start(0);
     const port = server.httpServer.address().port;
+    seedPlayers(server, 'dup-game');
 
     await fetch(`http://localhost:${port}/internal/games/dup-game/start`, {
       method: 'POST',
@@ -975,6 +989,7 @@ describe('POST /internal/games/:gameId/start', () => {
     server = createServer({ tickInterval: 5000 });
     await server.start(0);
     const port = server.httpServer.address().port;
+    seedPlayers(server, 'custom-game');
 
     await fetch(`http://localhost:${port}/internal/games/custom-game/start`, {
       method: 'POST',
@@ -1019,6 +1034,7 @@ describe('POST /internal/games/:gameId/start', () => {
     server = createServer({ tickInterval: 5000 });
     await server.start(0);
     const port = server.httpServer.address().port;
+    seedPlayers(server, 'no-scale-game');
 
     const res = await fetch(`http://localhost:${port}/internal/games/no-scale-game/start`, {
       method: 'POST',
@@ -1027,6 +1043,56 @@ describe('POST /internal/games/:gameId/start', () => {
     });
     expect(res.status).toBe(204);
     expect(server.gameLoopManager.getGameDuration('no-scale-game', 'hiding')).toBe(25 * 60_000);
+  });
+
+  // Task 98 — minimum player count validation
+  it('returns 400 insufficient_players when no players are in game state', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/empty-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('insufficient_players');
+  });
+
+  it('returns 400 insufficient_players when only a hider is present', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+    server.gameStateManager.createGame('hider-only');
+    server.gameStateManager.addPlayerToGame('hider-only', 'h1', 'hider');
+
+    const res = await fetch(`http://localhost:${port}/internal/games/hider-only/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('insufficient_players');
+  });
+
+  it('returns 400 insufficient_players when only seekers are present', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+    server.gameStateManager.createGame('seeker-only');
+    server.gameStateManager.addPlayerToGame('seeker-only', 's1', 'seeker');
+
+    const res = await fetch(`http://localhost:${port}/internal/games/seeker-only/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('insufficient_players');
   });
 });
 

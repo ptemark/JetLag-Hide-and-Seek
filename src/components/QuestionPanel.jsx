@@ -22,6 +22,10 @@ const CATEGORY_HINTS = {
  * Props:
  *   player      — { playerId, name, role }
  *   game        — { gameId }
+ *   teamId      — 'A' | 'B' | null; the player's team assignment delivered via the
+ *                 joined_game WebSocket message and stored in GameMap as myTeam.
+ *                 When provided, only questions belonging to this team are fetched.
+ *                 Optional — omit (or pass null/undefined) for single-team games.
  *   qaRefresh   — number; increment to force a history re-fetch (e.g. on
  *                 question_answered WS event). Defaults to 0.
  *   curseEndsAt — ISO timestamp string while a curse card is active; null otherwise.
@@ -30,7 +34,7 @@ const CATEGORY_HINTS = {
  * Maintains a local list of submitted questions (optimistic) merged with the
  * server-side Q&A history fetched on mount and on each qaRefresh change.
  */
-export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt = null }) {
+export default function QuestionPanel({ player, game, teamId = null, qaRefresh = 0, curseEndsAt = null }) {
   const [targetId, setTargetId] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [text, setText] = useState('');
@@ -67,7 +71,7 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
   // Fetch full Q&A history for the game on mount and whenever qaRefresh changes.
   useEffect(() => {
     setHistoryError(null);
-    listQuestions({ gameId: game.gameId, teamId: game.teamId ?? undefined })
+    listQuestions({ gameId: game.gameId, ...(teamId ? { teamId } : {}) })
       .then((data) => {
         setHistory(data.questions ?? []);
         // Drop optimistically-submitted questions that are now in the server history.
@@ -77,7 +81,7 @@ export default function QuestionPanel({ player, game, qaRefresh = 0, curseEndsAt
         });
       })
       .catch((err) => setHistoryError(err.message));
-  }, [game.gameId, qaRefresh]);
+  }, [game.gameId, teamId, qaRefresh]);
 
   // Fetch photos for answered photo questions that appear in the server history.
   useEffect(() => {

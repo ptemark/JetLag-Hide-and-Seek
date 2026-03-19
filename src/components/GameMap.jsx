@@ -608,7 +608,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {player.role === 'seeker' && (
-        <QuestionPanel player={player} game={game} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} />
+        <QuestionPanel player={player} game={game} teamId={myTeam} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} />
       )}
 
       {player.role === 'hider' && phase === 'hiding' && !lockedZone && (

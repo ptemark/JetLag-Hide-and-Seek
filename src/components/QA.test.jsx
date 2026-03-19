@@ -249,16 +249,24 @@ describe('QuestionPanel', () => {
     expect(screen.getByRole('button', { name: /submit question/i })).not.toBeDisabled();
   });
 
-  it('passes teamId to listQuestions when game.teamId is set', async () => {
-    const gameWithTeam = { gameId: 'g1', teamId: 'A' };
-    render(<QuestionPanel player={SEEKER} game={gameWithTeam} />);
+  it('passes teamId to listQuestions when teamId prop is provided', async () => {
+    render(<QuestionPanel player={SEEKER} game={GAME} teamId="A" />);
     await waitFor(() => expect(api.listQuestions).toHaveBeenCalledWith(
       expect.objectContaining({ gameId: 'g1', teamId: 'A' }),
     ));
   });
 
-  it('does not pass teamId to listQuestions when game.teamId is absent', async () => {
+  it('does not pass teamId to listQuestions when teamId prop is absent', async () => {
     render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ gameId: 'g1' }),
+    ));
+    const call = api.listQuestions.mock.calls[0][0];
+    expect(call.teamId).toBeUndefined();
+  });
+
+  it('does not pass teamId to listQuestions when teamId prop is null', async () => {
+    render(<QuestionPanel player={SEEKER} game={GAME} teamId={null} />);
     await waitFor(() => expect(api.listQuestions).toHaveBeenCalledWith(
       expect.objectContaining({ gameId: 'g1' }),
     ));

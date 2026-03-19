@@ -282,18 +282,18 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         }
         setPlayers(positions);
       } else if (msg.type === 'phase_change') {
-        setPhase(msg.phase);
+        setPhase(msg.newPhase);
         setPendingQuestionExpiresAt(null); // phase change clears any pending question timer
         setOutOfZone(false);              // zone warnings reset on phase transition
         setHiderOutOfZone(false);
         setMovementLocked(false);
-        if (msg.newPhase === 'hiding' || msg.phase === 'hiding') {
+        if (msg.newPhase === 'hiding') {
           endGameActiveRef.current = false;
           setEndGameActive(false);
           hidingStartedAtRef.current = Date.now();
           if (player.role === 'hider') setLocationTrail([]); // fresh trail at hiding start
         }
-        if (msg.newPhase === 'finished' || msg.phase === 'finished') {
+        if (msg.newPhase === 'finished') {
           endGameActiveRef.current = false;
           setEndGameActive(false);
           const elapsedMs = hidingStartedAtRef.current

@@ -142,7 +142,7 @@ describe('GameMap', () => {
     render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
       });
     });
     expect(screen.getByText(/seeking/i)).toBeInTheDocument();
@@ -319,7 +319,7 @@ describe('GameMap', () => {
     render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
       });
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'timer_sync', phase: 'seeking', phaseEndsAt }),
@@ -366,7 +366,7 @@ describe('GameMap', () => {
     render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
       });
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'timer_sync', phase: 'seeking', phaseEndsAt }),
@@ -394,7 +394,7 @@ describe('GameMap', () => {
     render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
       });
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'timer_sync', phase: 'seeking', phaseEndsAt }),
@@ -835,7 +835,7 @@ describe('GameMap', () => {
     // Transition back to hiding (e.g. replay).
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'hiding' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'hiding' }),
       });
     });
     // After reset the polyline should be updated to an empty array.
@@ -918,7 +918,7 @@ describe('GameMap', () => {
     expect(screen.getByTestId('out-of-zone-banner')).toBeInTheDocument();
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
       });
     });
     expect(screen.queryByTestId('out-of-zone-banner')).not.toBeInTheDocument();
@@ -952,7 +952,7 @@ describe('GameMap', () => {
     expect(screen.getByTestId('hider-out-of-zone-banner')).toBeInTheDocument();
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'seeking' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
       });
     });
     expect(screen.queryByTestId('hider-out-of-zone-banner')).not.toBeInTheDocument();
@@ -992,7 +992,7 @@ describe('GameMap', () => {
     expect(screen.getByTestId('movement-locked-banner')).toBeInTheDocument();
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'hiding' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'hiding' }),
       });
     });
     expect(screen.queryByTestId('movement-locked-banner')).not.toBeInTheDocument();
@@ -1009,7 +1009,7 @@ describe('GameMap', () => {
     expect(screen.getByTestId('end-game-banner-hider')).toBeInTheDocument();
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'finished', winner: 'hider' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'finished', winner: 'hider' }),
       });
     });
     expect(screen.queryByTestId('end-game-banner-hider')).not.toBeInTheDocument();
@@ -1026,7 +1026,7 @@ describe('GameMap', () => {
     expect(screen.getByTestId('end-game-banner-hider')).toBeInTheDocument();
     await act(async () => {
       MockWebSocket.last.onmessage?.({
-        data: JSON.stringify({ type: 'phase_change', phase: 'hiding' }),
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'hiding' }),
       });
     });
     expect(screen.queryByTestId('end-game-banner-hider')).not.toBeInTheDocument();
@@ -1191,5 +1191,61 @@ describe('GameMap', () => {
     const newCalls = mockPolyline.setLatLngs.mock.calls.slice(callsBefore);
     const cleared = newCalls.some(([latlngs]) => latlngs.length === 0);
     expect(cleared).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // phase_change newPhase property correctness — Task 120
+  // ---------------------------------------------------------------------------
+
+  it('phase_change sets phase state to newPhase value', async () => {
+    const waitingGame = { ...game, status: 'waiting' };
+    render(<GameMap player={player} game={waitingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+    });
+    // The phase display should now show 'seeking'.
+    expect(screen.getByText(/seeking/i)).toBeInTheDocument();
+  });
+
+  it('ZoneSelector renders for hider after phase_change to hiding', async () => {
+    const waitingGame = { ...game, status: 'waiting' };
+    render(<GameMap player={player} game={waitingGame} zones={[]} serverUrl={serverUrl} />);
+    // ZoneSelector should NOT be present before the phase transition.
+    expect(screen.queryByTestId('zone-selector')).not.toBeInTheDocument();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'hiding' }),
+      });
+    });
+    // ZoneSelector should appear now that phase is hiding.
+    expect(screen.getByTestId('zone-selector')).toBeInTheDocument();
+  });
+
+  it('spot-hider button renders for seeker after phase_change to seeking', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const hidingGame = { ...game, status: 'hiding' };
+    render(<GameMap player={seeker} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    // Spot button should NOT be present while phase is hiding.
+    expect(screen.queryByTestId('spot-hider-btn')).not.toBeInTheDocument();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+    });
+    // Spot button should appear now that phase is seeking.
+    expect(screen.getByTestId('spot-hider-btn')).toBeInTheDocument();
+  });
+
+  it('results overlay renders after phase_change with newPhase finished', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'finished', winner: 'hider' }),
+      });
+    });
+    expect(screen.getByRole('dialog', { name: /results screen/i })).toBeInTheDocument();
   });
 });

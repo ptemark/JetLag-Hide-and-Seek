@@ -36,14 +36,15 @@ describe('Leaderboard', () => {
     );
   });
 
-  it('renders column headers: Rank, Player, Scale, Hiding Time', async () => {
+  it('renders column headers: Rank, Player, Scale, Score, Bonus', async () => {
     api.fetchLeaderboard.mockResolvedValue({ scores: SCORES });
     render(<Leaderboard />);
     await waitFor(() => screen.getByRole('table', { name: /leaderboard/i }));
     expect(screen.getByText('Rank')).toBeInTheDocument();
     expect(screen.getByText('Player')).toBeInTheDocument();
     expect(screen.getByText('Scale')).toBeInTheDocument();
-    expect(screen.getByText('Hiding Time')).toBeInTheDocument();
+    expect(screen.getByText('Score')).toBeInTheDocument();
+    expect(screen.getByText('Bonus')).toBeInTheDocument();
   });
 
   it('renders one row per score', async () => {
@@ -71,12 +72,12 @@ describe('Leaderboard', () => {
     expect(screen.getByText('small')).toBeInTheDocument();
   });
 
-  it('formats hiding time as MM:SS', async () => {
+  it('formats total score as MM:SS including bonus', async () => {
     api.fetchLeaderboard.mockResolvedValue({ scores: SCORES });
     render(<Leaderboard />);
-    await waitFor(() => screen.getByText('60:00')); // 3600s → 60:00
-    expect(screen.getByText('30:00')).toBeInTheDocument(); // 1800s
-    expect(screen.getByText('01:30')).toBeInTheDocument(); // 90s
+    await waitFor(() => screen.getByText('60:00')); // Alice: 3600+0=3600s → 60:00
+    expect(screen.getByText('31:00')).toBeInTheDocument(); // Bob: 1800+60=1860s → 31:00
+    expect(screen.getByText('01:30')).toBeInTheDocument(); // Carol: 90+0=90s → 01:30
   });
 
   it('displays ranks', async () => {
@@ -120,5 +121,44 @@ describe('Leaderboard', () => {
     api.fetchLeaderboard.mockResolvedValue({ scores: [] });
     render(<Leaderboard gameId="g42" />);
     await waitFor(() => expect(api.fetchLeaderboard).toHaveBeenCalledWith({ limit: 20, gameId: 'g42' }));
+  });
+
+  it('shows only scoreSeconds formatted when bonusSeconds is 0', async () => {
+    const scores = [{ rank: 1, playerName: 'X', scale: 'small', scoreSeconds: 300, bonusSeconds: 0, createdAt: '' }];
+    api.fetchLeaderboard.mockResolvedValue({ scores });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByRole('table', { name: /leaderboard/i }));
+    expect(screen.getByText('05:00')).toBeInTheDocument(); // 300s → 05:00
+    // Bonus cell is empty — no "+Xm" text
+    const bonusCells = screen.getAllByRole('cell');
+    const bonusCell = bonusCells[bonusCells.length - 1]; // last cell is the Bonus cell
+    expect(bonusCell.textContent).toBe('');
+  });
+
+  it('shows total scoreSeconds + bonusSeconds in the score column', async () => {
+    const scores = [{ rank: 1, playerName: 'Y', scale: 'medium', scoreSeconds: 600, bonusSeconds: 120, createdAt: '' }];
+    api.fetchLeaderboard.mockResolvedValue({ scores });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByRole('table', { name: /leaderboard/i }));
+    expect(screen.getByText('12:00')).toBeInTheDocument(); // 600+120=720s → 12:00
+    expect(screen.getByText('+2m')).toBeInTheDocument();
+  });
+
+  it('sorts rows by total score descending regardless of incoming rank', async () => {
+    // Incoming rank order: A(rank1), B(rank2), C(rank3) — but total scores are C > A > B
+    const scores = [
+      { rank: 1, playerName: 'A', scale: 'small',  scoreSeconds: 100, bonusSeconds: 0,   createdAt: '' },
+      { rank: 2, playerName: 'B', scale: 'small',  scoreSeconds: 50,  bonusSeconds: 0,   createdAt: '' },
+      { rank: 3, playerName: 'C', scale: 'small',  scoreSeconds: 50,  bonusSeconds: 120, createdAt: '' },
+    ];
+    api.fetchLeaderboard.mockResolvedValue({ scores });
+    render(<Leaderboard />);
+    await waitFor(() => screen.getByRole('table', { name: /leaderboard/i }));
+    const rows = screen.getAllByRole('row');
+    // rows[0] = header, rows[1] = rank1, rows[2] = rank2, rows[3] = rank3
+    // C has total 170s, A has 100s, B has 50s → order C, A, B
+    expect(rows[1].textContent).toContain('C');
+    expect(rows[2].textContent).toContain('A');
+    expect(rows[3].textContent).toContain('B');
   });
 });

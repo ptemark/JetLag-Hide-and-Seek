@@ -41,7 +41,7 @@ export default function Lobby() {
       <AppHeader />
 
       {!playing && (
-        <button onClick={() => setShowLeaderboard(v => !v)}>
+        <button type="button" onClick={() => setShowLeaderboard(v => !v)}>
           {showLeaderboard ? 'Back' : 'Leaderboard'}
         </button>
       )}

@@ -553,6 +553,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
 
         {player.role === 'seeker' && phase === 'seeking' && (
           <button
+            type="button"
             data-testid="spot-hider-btn"
             className={styles.spotButton}
             disabled={spotResult === 'pending' || spotResult === 'confirmed'}
@@ -584,6 +585,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       {player.role === 'seeker' && phase === 'seeking' && (
         <div style={{ padding: '0.5rem 0' }}>
           <button
+            type="button"
             data-testid="transit-toggle"
             onClick={() => {
               const next = !myOnTransit;

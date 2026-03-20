@@ -152,4 +152,21 @@ describe('ZoneSelector', () => {
     render(<ZoneSelector player={player} game={game} zones={zones} />);
     expect(screen.getByLabelText('Zone selector')).toBeInTheDocument();
   });
+
+  it('updates aria-live region when a station is selected', () => {
+    render(<ZoneSelector player={player} game={game} zones={zones} />);
+    const liveRegion = screen.getByRole('status');
+    expect(liveRegion).toHaveTextContent('');
+    fireEvent.click(screen.getByText(/Central Station \(500 m\)/));
+    expect(liveRegion).toHaveTextContent('Selected: Central Station');
+  });
+
+  it('clears aria-live region when cancel is clicked', () => {
+    render(<ZoneSelector player={player} game={game} zones={zones} />);
+    const liveRegion = screen.getByRole('status');
+    fireEvent.click(screen.getByText(/Central Station \(500 m\)/));
+    expect(liveRegion).toHaveTextContent('Selected: Central Station');
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(liveRegion).toHaveTextContent('');
+  });
 });

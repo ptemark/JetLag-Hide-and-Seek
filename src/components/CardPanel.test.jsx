@@ -186,6 +186,19 @@ describe('CardPanel', () => {
     await waitFor(() => expect(screen.getByText(/0\/6/)).toBeInTheDocument());
   });
 
+  it('each play button has a unique aria-label containing the card type', async () => {
+    api.fetchCards.mockResolvedValue({ gameId: 'g1', playerId: 'p2', hand: [CARD_TIME, CARD_POWERUP, CARD_CURSE] });
+    render(<CardPanel player={HIDER} game={GAME} />);
+    await waitFor(() => {
+      const labels = screen.getAllByRole('button').map((btn) => btn.getAttribute('aria-label'));
+      expect(labels).toContain('Play Time Bonus');
+      expect(labels).toContain('Play Power-Up');
+      expect(labels).toContain('Play Curse');
+      // All labels are unique
+      expect(new Set(labels).size).toBe(labels.length);
+    });
+  });
+
   it('shows all three card types when hand has one of each', async () => {
     api.fetchCards.mockResolvedValue({ gameId: 'g1', playerId: 'p2', hand: [CARD_TIME, CARD_POWERUP, CARD_CURSE] });
     render(<CardPanel player={HIDER} game={GAME} />);

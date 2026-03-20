@@ -34,6 +34,13 @@
   color: var(--color-error);
 }
 
+/* Visually hidden but available to screen readers for live announcements */
+.selectionAnnounce {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  min-height: 1.2em;
+}
+
 .zoneList {
   list-style: none;
   padding: 0;

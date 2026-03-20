@@ -70,10 +70,19 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
         <p>No stations available in the game area.</p>
       )}
 
+      <p
+        role="status"
+        aria-live="polite"
+        className={styles.selectionAnnounce}
+      >
+        {staged ? `Selected: ${staged.name ?? staged.stationId}` : ''}
+      </p>
+
       <ul className={styles.zoneList}>
         {zones.map((zone) => (
           <li key={zone.stationId} className={styles.zoneItem}>
             <button
+              type="button"
               disabled={!!locked || loading}
               onClick={() => setStaged(zone)}
               aria-pressed={staged?.stationId === zone.stationId}
@@ -93,10 +102,10 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
           <p>
             Lock <strong>{staged.name ?? staged.stationId}</strong> as your hiding zone?
           </p>
-          <button className={styles.confirmBtn} onClick={confirmLock} disabled={loading}>
+          <button type="button" className={styles.confirmBtn} onClick={confirmLock} disabled={loading}>
             {loading ? 'Locking…' : 'Confirm'}
           </button>
-          <button onClick={() => setStaged(null)} disabled={loading}>
+          <button type="button" onClick={() => setStaged(null)} disabled={loading}>
             Cancel
           </button>
         </div>

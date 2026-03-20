@@ -1248,4 +1248,15 @@ describe('GameMap', () => {
     });
     expect(screen.getByRole('dialog', { name: /results screen/i })).toBeInTheDocument();
   });
+
+  // ---------------------------------------------------------------------------
+  // Task 114 — CartoDB dark tile URL
+  // ---------------------------------------------------------------------------
+
+  it('initialises the Leaflet tile layer with the CartoDB dark tile URL', () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(mockL.tileLayer).toHaveBeenCalled();
+    const url = mockL.tileLayer.mock.calls[0][0];
+    expect(url).toContain('cartocdn.com');
+  });
 });

@@ -1,0 +1,70 @@
+.mapWrapper {
+  position: relative;
+}
+
+.mapContainer {
+  height: 60vh;
+  width: 100%;
+  border: 1px solid var(--color-border);
+}
+
+.endGameBanner {
+  background: linear-gradient(to right, var(--color-sunset-1), var(--color-sunset-2), var(--color-sunset-3));
+  color: var(--color-bg);
+  text-align: center;
+  padding: 0.5rem;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 600;
+  position: relative;
+  z-index: 500;
+}
+
+.reconnectingBanner {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 0.4rem;
+  font-size: 0.875rem;
+}
+
+.spotButton {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  font-family: 'Oswald', sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: none;
+  border-radius: 4px;
+  padding: 0.6rem 1.4rem;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.spotButton:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.spotButton:active:not(:disabled) {
+  transform: translateX(-50%) scale(0.97);
+}
+
+.spotButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.timer {
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.1rem;
+  padding: 0.25rem 0;
+}

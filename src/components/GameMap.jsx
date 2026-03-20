@@ -7,12 +7,19 @@ import CardPanel from './CardPanel.jsx';
 import ZoneSelector from './ZoneSelector.jsx';
 import ResultsScreen from './ResultsScreen.jsx';
 import { submitScore } from '../api.js';
+import styles from './GameMap.module.css';
 
 const LOCATION_INTERVAL_MS = 10_000;
 const TIMER_TICK_MS = 1_000;
 const MAX_TRAIL_POINTS = 500;
-const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const OSM_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+// CartoDB dark tiles — free OSM-based dark palette, no API key required (DESIGN.md §7)
+const CARTO_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const CARTO_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>';
+// Brand colours for Leaflet API options (DESIGN.md §22) — must be literals, not CSS vars
+const ZONE_COLOR = '#F08730';          // --color-sunset-2 / --color-accent
+const ZONE_FILL = 'rgba(240,135,48,0.15)';
+const SEEKER_MARKER_COLOR = '#F08730'; // --color-accent
+const HIDER_MARKER_COLOR = '#C83A18';  // --color-sunset-4 (End Game only)
 const MAX_RECONNECT_ATTEMPTS = 6; // 1 s, 2 s, 4 s, 8 s, 16 s, 30 s
 
 /**
@@ -71,6 +78,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const falseZoneLayersRef = useRef({}); // { [decoyId]: L.circle }
   const trailPolylineRef = useRef(null); // L.Polyline for hider journey trail
   const wsRef = useRef(null);
+  // Tracks each player's role so End Game hider markers use the correct colour.
+  const playerRolesRef = useRef({ [player.playerId]: player.role });
   const hidingStartedAtRef = useRef(null); // timestamp (ms) when hiding phase began
   const bonusSecondsRef = useRef(0);       // accumulated time_bonus card seconds
   const captureWinnerRef = useRef(null);   // winner string from capture event (avoids stale closure)
@@ -113,8 +122,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     const center = boundsCenter(bounds);
     const map = L.map(mapContainerRef.current).setView([center.lat, center.lng], 13);
 
-    L.tileLayer(OSM_TILE_URL, {
-      attribution: OSM_ATTRIBUTION,
+    L.tileLayer(CARTO_TILE_URL, {
+      attribution: CARTO_ATTRIBUTION,
       maxZoom: 19,
     }).addTo(map);
 
@@ -126,14 +135,14 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       ).addTo(map);
     }
 
-    // Hiding zone circles
+    // Hiding zone circles — brand colours per DESIGN.md §22
     for (const zone of zones) {
       L.circle([zone.lat, zone.lon], {
         radius: zone.radius,
-        color: '#ff7800',
-        fillColor: '#ff7800',
-        fillOpacity: 0.15,
-        weight: 1,
+        color: ZONE_COLOR,
+        fillColor: ZONE_FILL,
+        fillOpacity: 1,
+        weight: 2,
       }).addTo(map);
     }
 
@@ -155,12 +164,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     const map = mapRef.current;
     if (!map) return;
 
-    // Colour palette: Team A = blue, Team B = green, no team / hider = red.
-    function markerColor(pid, team) {
-      if (pid === player.playerId) return '#0000ff';
-      if (team === 'A') return '#1d6db5';
-      if (team === 'B') return '#16a34a';
-      return '#cc0000';
+    // Hider markers use --color-sunset-4 during End Game; all other visible positions
+    // use --color-accent (seeker orange). Values are Leaflet API literals (not CSS vars).
+    function markerColor(pid) {
+      const role = playerRolesRef.current[pid];
+      if (role === 'hider' && endGameActiveRef.current) return HIDER_MARKER_COLOR;
+      return SEEKER_MARKER_COLOR;
     }
 
     // Add or move existing markers
@@ -169,7 +178,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         markersRef.current[pid].setLatLng([pos.lat, pos.lon]);
       } else {
         const isMe = pid === player.playerId;
-        const color = markerColor(pid, pos.team ?? null);
+        const color = markerColor(pid);
         const isOnTransit = pos.onTransit ?? false;
         const transitIcon = isOnTransit ? ' 🚌' : '';
         const baseLabel = isMe ? `You${myTeam ? ` (Team ${myTeam})` : ''}` : pid;
@@ -278,6 +287,9 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         for (const p of msg.players ?? []) {
           if (p.lat != null && p.lon != null) {
             positions[p.playerId] = { lat: p.lat, lon: p.lon };
+          }
+          if (p.role) {
+            playerRolesRef.current[p.playerId] = p.role;
           }
         }
         setPlayers(positions);
@@ -463,7 +475,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       </div>
 
       {wsStatus === 'reconnecting' && (
-        <p role="status" data-testid="reconnecting-banner" style={{ background: '#fee2e2', padding: '0.25rem 0.5rem' }}>
+        <p role="status" data-testid="reconnecting-banner" className={styles.reconnectingBanner}>
           Reconnecting…
         </p>
       )}
@@ -500,13 +512,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {endGameActive && player.role === 'hider' && (
-        <p role="alert" data-testid="end-game-banner-hider" style={{ background: '#fef3c7', padding: '0.5rem', fontWeight: 'bold' }}>
+        <p role="alert" data-testid="end-game-banner-hider" className={styles.endGameBanner}>
           End Game: Stay put! Seekers are looking for you.
         </p>
       )}
 
       {endGameActive && player.role === 'seeker' && (
-        <p role="status" data-testid="end-game-banner-seeker" style={{ background: '#dbeafe', padding: '0.5rem', fontWeight: 'bold' }}>
+        <p role="status" data-testid="end-game-banner-seeker" className={styles.endGameBanner}>
           End Game! Find and spot the hider.
         </p>
       )}
@@ -518,25 +530,56 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {pendingQuestionExpiresAt ? (
-        <p data-testid="timer-banner" style={{ background: '#fef3c7', padding: '0.25rem 0.5rem' }}>
+        <p data-testid="timer-banner" className={styles.timer}>
           Question expires in {formatCountdown(pendingQuestionExpiresAt)}
         </p>
       ) : phaseEndsAt && endGameActive ? (
-        <p data-testid="timer-banner" style={{ background: '#fce7f3', padding: '0.25rem 0.5rem' }}>
+        <p data-testid="timer-banner" className={styles.timer}>
           {player.role === 'hider' ? 'You win if not spotted in' : 'Find the hider in'}{' '}
           {formatCountdown(phaseEndsAt)}
         </p>
       ) : phaseEndsAt && (phase === 'hiding' || phase === 'seeking') ? (
-        <p data-testid="timer-banner" style={{ background: '#e0f2fe', padding: '0.25rem 0.5rem' }}>
+        <p data-testid="timer-banner" className={styles.timer}>
           {phase === 'hiding' ? 'Hiding ends in' : 'Seeking ends in'} {formatCountdown(phaseEndsAt)}
         </p>
       ) : null}
 
-      <div
-        ref={mapContainerRef}
-        data-testid="map-container"
-        style={{ height: '60vh', width: '100%', border: '1px solid #ccc' }}
-      />
+      <div className={styles.mapWrapper}>
+        <div
+          ref={mapContainerRef}
+          data-testid="map-container"
+          className={styles.mapContainer}
+        />
+
+        {player.role === 'seeker' && phase === 'seeking' && (
+          <button
+            data-testid="spot-hider-btn"
+            className={styles.spotButton}
+            disabled={spotResult === 'pending' || spotResult === 'confirmed'}
+            onClick={() => {
+              setSpotResult('pending');
+              setSpotDistance({ distanceM: null, spotRadiusM: null });
+              if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({
+                  type: 'spot_hider',
+                  gameId: game.gameId,
+                  playerId: player.playerId,
+                }));
+              }
+            }}
+          >
+            {spotResult === 'confirmed' ? 'Hider Spotted!' : spotResult === 'rejected' ? 'Not Close Enough' : 'I See the Hider!'}
+          </button>
+        )}
+      </div>
+
+      {spotResult === 'rejected' && player.role === 'seeker' && phase === 'seeking' && (
+        <span data-testid="spot-rejected-msg" style={{ color: 'var(--color-error)', fontSize: '0.875rem' }}>
+          {spotDistance.distanceM != null && spotDistance.spotRadiusM != null
+            ? `You are ${Math.round(spotDistance.distanceM)} m away; need to be within ${spotDistance.spotRadiusM} m`
+            : 'You are not close enough to the hider yet.'}
+        </span>
+      )}
 
       {player.role === 'seeker' && phase === 'seeking' && (
         <div style={{ padding: '0.5rem 0' }}>
@@ -565,45 +608,6 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           >
             {myOnTransit ? '🚌 On Transit' : '🚶 Off Transit'}
           </button>
-        </div>
-      )}
-
-      {player.role === 'seeker' && phase === 'seeking' && (
-        <div style={{ padding: '0.5rem 0' }}>
-          <button
-            data-testid="spot-hider-btn"
-            disabled={spotResult === 'pending' || spotResult === 'confirmed'}
-            onClick={() => {
-              setSpotResult('pending');
-              setSpotDistance({ distanceM: null, spotRadiusM: null });
-              if (wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({
-                  type: 'spot_hider',
-                  gameId: game.gameId,
-                  playerId: player.playerId,
-                }));
-              }
-            }}
-            style={{
-              background: spotResult === 'confirmed' ? '#bbf7d0'
-                : spotResult === 'rejected'  ? '#fee2e2'
-                : '#fef9c3',
-              border: '1px solid #999',
-              borderRadius: '0.375rem',
-              padding: '0.375rem 0.75rem',
-              cursor: spotResult === 'pending' || spotResult === 'confirmed' ? 'not-allowed' : 'pointer',
-              fontWeight: 'bold',
-            }}
-          >
-            {spotResult === 'confirmed' ? 'Hider Spotted!' : spotResult === 'rejected' ? 'Not Close Enough' : 'I See the Hider!'}
-          </button>
-          {spotResult === 'rejected' && (
-            <span data-testid="spot-rejected-msg" style={{ marginLeft: '0.5rem', color: '#b91c1c', fontSize: '0.875rem' }}>
-              {spotDistance.distanceM != null && spotDistance.spotRadiusM != null
-                ? `You are ${Math.round(spotDistance.distanceM)} m away; need to be within ${spotDistance.spotRadiusM} m`
-                : 'You are not close enough to the hider yet.'}
-            </span>
-          )}
         </div>
       )}
 

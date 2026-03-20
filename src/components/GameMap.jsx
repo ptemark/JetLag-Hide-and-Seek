@@ -6,7 +6,7 @@ import AnswerPanel from './AnswerPanel.jsx';
 import CardPanel from './CardPanel.jsx';
 import ZoneSelector from './ZoneSelector.jsx';
 import ResultsScreen from './ResultsScreen.jsx';
-import { submitScore } from '../api.js';
+import { submitScore, listZones } from '../api.js';
 import styles from './GameMap.module.css';
 
 const LOCATION_INTERVAL_MS = 10_000;
@@ -112,7 +112,10 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [movementLocked, setMovementLocked] = useState(false); // server blocked hider movement (End Game)
   const [cardRefresh, setCardRefresh] = useState(0);          // increments on card_drawn WS event for this player
   const [locationRejected, setLocationRejected] = useState(false); // server rejected location as out of bounds
-  const [syncedZones, setSyncedZones] = useState(zones);           // updated on game_state_sync
+  const [syncedZones, setSyncedZones] = useState(zones);           // locked zone from game_state_sync (for map circle)
+  const [availableZones, setAvailableZones] = useState([]);        // transit stations fetched from /api/zones
+  const [zonesError, setZonesError] = useState(null);              // error fetching transit zones
+  const lockedZoneLayerRef = useRef(null);                         // L.circle for the hider's locked zone
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -236,6 +239,37 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       }
     }
   }, [falseZones, player.role]);
+
+  // ── Fetch transit stations for ZoneSelector when hider enters hiding phase ─
+  useEffect(() => {
+    if (phase !== 'hiding' || player.role !== 'hider') return;
+    let cancelled = false;
+    listZones({ scale: game.size, bounds: game.bounds })
+      .then((zs) => { if (!cancelled) setAvailableZones(zs); })
+      .catch((err) => { if (!cancelled) setZonesError(err.message); });
+    return () => { cancelled = true; };
+  // game.bounds is stable per gameId — changes with gameId, not on every render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, player.role, game.gameId, game.size]);
+
+  // ── Draw/update locked zone circle on the Leaflet map ─────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (lockedZoneLayerRef.current) {
+      lockedZoneLayerRef.current.remove();
+      lockedZoneLayerRef.current = null;
+    }
+    if (lockedZone) {
+      lockedZoneLayerRef.current = L.circle([lockedZone.lat, lockedZone.lon], {
+        radius: lockedZone.radiusM ?? 500,
+        color: ZONE_COLOR,
+        fillColor: ZONE_FILL,
+        fillOpacity: 1,
+        weight: 2,
+      }).addTo(map);
+    }
+  }, [lockedZone]);
 
   // ── Render hider journey trail polyline ───────────────────────────────────
   useEffect(() => {
@@ -618,12 +652,17 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {player.role === 'hider' && phase === 'hiding' && !lockedZone && (
-        <ZoneSelector
-          player={player}
-          game={game}
-          zones={syncedZones}
-          onZoneLocked={(zone) => setLockedZone(zone)}
-        />
+        <>
+          {zonesError && (
+            <p role="alert">{zonesError}</p>
+          )}
+          <ZoneSelector
+            player={player}
+            game={game}
+            zones={availableZones}
+            onZoneLocked={(zone) => setLockedZone(zone)}
+          />
+        </>
       )}
 
       {player.role === 'hider' && (

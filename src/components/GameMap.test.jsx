@@ -15,6 +15,7 @@ vi.mock('../api.js', () => ({
   playCardApi:    vi.fn(),
   lockZone:       vi.fn(),
   submitScore:    vi.fn().mockResolvedValue({}),
+  listZones:      vi.fn().mockResolvedValue([]),
 }));
 
 // ── Hoist mock objects so they're available inside vi.mock factory ─────────────
@@ -1139,13 +1140,12 @@ describe('GameMap', () => {
     expect(screen.getByText(/seeking/i)).toBeInTheDocument();
   });
 
-  it('game_state_sync updates zones state (ZoneSelector receives new zones)', async () => {
-    // Start with the hider in hiding phase so ZoneSelector is shown.
+  it('game_state_sync updates locked-zone state without throwing', async () => {
+    // game_state_sync carries the already-locked zone; syncedZones is used for the map circle,
+    // not the ZoneSelector list (which now uses availableZones from /api/zones fetch).
     const hidingGame = { ...game, status: 'hiding' };
     const syncedZone = { stationId: 'z1', name: 'Central Station', lat: 51.05, lon: -0.05, radiusM: 300 };
     render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
-    // Before sync no zones are in syncedZones, so ZoneSelector should receive empty array.
-    // After sync it should receive the synced zone.
     await act(async () => {
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'hiding', zones: [syncedZone], endGameActive: false }),
@@ -1153,6 +1153,48 @@ describe('GameMap', () => {
     });
     // The component should have rendered without throwing — zone state was updated.
     expect(screen.getByLabelText('Game map')).toBeInTheDocument();
+  });
+
+  it('listZones is called when hider enters hiding phase', async () => {
+    const hidingGame = { ...game, status: 'hiding' };
+    const stations = [
+      { stationId: 's1', name: 'Kings Cross', lat: 51.53, lon: -0.12, radiusM: 500 },
+      { stationId: 's2', name: 'London Bridge', lat: 51.50, lon: -0.09, radiusM: 500 },
+    ];
+    api.listZones.mockResolvedValueOnce(stations);
+    render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    await waitFor(() => {
+      expect(api.listZones).toHaveBeenCalledWith({
+        scale: hidingGame.size,
+        bounds: hidingGame.bounds,
+      });
+    });
+  });
+
+  it('ZoneSelector receives zones returned by listZones', async () => {
+    const hidingGame = { ...game, status: 'hiding' };
+    const stations = [
+      { stationId: 's1', name: 'Kings Cross', lat: 51.53, lon: -0.12, radiusM: 500 },
+    ];
+    api.listZones.mockResolvedValueOnce(stations);
+    render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    // ZoneSelector should eventually show the station fetched from listZones.
+    await waitFor(() => {
+      expect(screen.getByText(/Kings Cross/)).toBeInTheDocument();
+    });
+  });
+
+  it('shows role=alert error when listZones rejects', async () => {
+    const hidingGame = { ...game, status: 'hiding' };
+    api.listZones.mockRejectedValueOnce(new Error('listZones failed: 503'));
+    render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    await waitFor(() => {
+      expect(screen.getByRole('alert', { name: '' })).toBeInTheDocument();
+    });
+    // The error message should mention the failure.
+    const alerts = screen.getAllByRole('alert');
+    const zonesAlert = alerts.find((el) => el.textContent.includes('listZones failed'));
+    expect(zonesAlert).toBeTruthy();
   });
 
   it('game_state_sync sets endGameActive and shows end-game banner for hider', async () => {

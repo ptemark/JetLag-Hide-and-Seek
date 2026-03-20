@@ -257,6 +257,24 @@ export async function startGame({ gameId, scale, hidingDurationMin }) {
 }
 
 /**
+ * Fetch transit station zones within game bounds from the OSM Overpass API.
+ * GET /api/zones?bounds=lat_min,lon_min,lat_max,lon_max&scale=small|medium|large
+ *   → zones array: [{ stationId, name, lat, lon, radiusM }]
+ *
+ * @param {{ scale: 'small'|'medium'|'large', bounds: { lat_min: number, lon_min: number, lat_max: number, lon_max: number } }} options
+ * @returns {Promise<Array<{ stationId: string, name: string, lat: number, lon: number, radiusM: number }>>}
+ */
+export async function listZones({ scale, bounds }) {
+  const b = bounds ?? {};
+  const boundsParam = `${b.lat_min ?? 0},${b.lon_min ?? 0},${b.lat_max ?? 0},${b.lon_max ?? 0}`;
+  const params = new URLSearchParams({ bounds: boundsParam, scale });
+  const res = await fetchWithTimeout(`${BASE_URL}/api/zones?${params}`);
+  if (!res.ok) throw new Error(`listZones failed: ${res.status}`);
+  const data = await res.json();
+  return data.zones ?? [];
+}
+
+/**
  * Lock the hider's chosen hiding zone for a game.
  * POST /api/games/:gameId/zone  { stationId, lat, lon, radiusM, playerId }
  *   → { zoneId, gameId, stationId, lat, lon, radiusM, lockedAt }

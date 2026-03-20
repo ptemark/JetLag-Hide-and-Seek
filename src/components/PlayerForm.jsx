@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { registerPlayer } from '../api.js';
+import Alert from './Alert.jsx';
 
 /**
  * PlayerForm — collects player name and role, then calls POST /api/players.
@@ -71,7 +72,7 @@ export default function PlayerForm({ onRegistered }) {
         </label>
       </fieldset>
 
-      {error && <p role="alert">{error}</p>}
+      {error && <Alert>{error}</Alert>}
 
       <button type="submit" disabled={loading}>
         {loading ? 'Registering…' : 'Register'}

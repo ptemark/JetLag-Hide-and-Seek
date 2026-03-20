@@ -10,6 +10,7 @@
  */
 import { useState, useEffect } from 'react';
 import { startGame, lookupGame } from '../api.js';
+import Alert from './Alert.jsx';
 
 /** Valid hiding duration ranges per scale (RULES.md §Game Scales), in minutes. */
 const SCALE_DURATION_RANGES = {
@@ -106,7 +107,7 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
       {onStart && (
         <button onClick={handleStart}>Start Game</button>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && <Alert>{error}</Alert>}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createGame, lookupGame } from '../api.js';
+import Alert from './Alert.jsx';
 
 const SCALES = ['small', 'medium', 'large'];
 
@@ -163,7 +164,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
             </label>
           </fieldset>
 
-          {error && <p role="alert">{error}</p>}
+          {error && <Alert>{error}</Alert>}
 
           <button type="submit" disabled={loading}>
             {loading ? 'Creating…' : 'Create Game'}
@@ -185,7 +186,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
             />
           </div>
 
-          {error && <p role="alert">{error}</p>}
+          {error && <Alert>{error}</Alert>}
 
           <button type="submit" disabled={loading}>
             {loading ? 'Joining…' : 'Join Game'}

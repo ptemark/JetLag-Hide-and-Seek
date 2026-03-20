@@ -22,11 +22,22 @@ function ensurePool() {
 }
 
 export default async function handler(req, res) {
-  const pool = ensurePool();
-  if (_tablesReady) await _tablesReady;
+  ensurePool();
+  if (_tablesReady) {
+    try {
+      await _tablesReady;
+    } catch (err) {
+      // DB unavailable (e.g. Neon waking from pause, transient connection error).
+      // Reset so the next request retries table setup rather than re-throwing
+      // the same cached rejection forever across warm Lambda invocations.
+      console.error('[api] createTables failed — resetting pool:', err.message);
+      _pool = null;
+      _tablesReady = null;
+    }
+  }
 
   // Strip /api prefix so the router sees /players instead of /api/players
   req.url = req.url.replace(/^\/api/, '') || '/';
 
-  return handleRequest(req, res, { pool });
+  return handleRequest(req, res, { pool: _pool });
 }

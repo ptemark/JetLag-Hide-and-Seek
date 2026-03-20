@@ -69,7 +69,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
   }
 
   return (
-    <div aria-label="Game lobby">
+    <div aria-label="Game lobby" className="panel">
       <h2>Game Lobby</h2>
       <p>Playing as <strong>{player.name}</strong> ({player.role})</p>
 

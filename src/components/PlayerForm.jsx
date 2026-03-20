@@ -32,7 +32,7 @@ export default function PlayerForm({ onRegistered }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} aria-label="Player registration">
+    <form onSubmit={handleSubmit} aria-label="Player registration" className="panel">
       <h2>Register</h2>
 
       <div>

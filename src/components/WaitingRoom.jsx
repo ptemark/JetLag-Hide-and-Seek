@@ -68,7 +68,7 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
   }
 
   return (
-    <div aria-label="Waiting room">
+    <div aria-label="Waiting room" className="panel">
       <h2>Waiting Room</h2>
       <p>
         Game ID: <code>{game.gameId}</code>

@@ -131,3 +131,23 @@ input[type="checkbox"] {
   width: auto;
   accent-color: var(--color-accent);
 }
+
+/* ============================================================
+   Utility classes — DESIGN.md §22
+   ============================================================ */
+
+/* Card / panel surface — matches §22 Cards/Panels spec */
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+/* Vertical stack with standard section gap */
+.section-gap {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}

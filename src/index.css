@@ -46,4 +46,50 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text-primary);
   font-family: 'Inter', sans-serif;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   Typography scale — DESIGN.md §22
+   ============================================================ */
+
+h1 {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 2rem;
+  margin: 0;
+}
+
+h2 {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 600;
+  font-size: 1.4rem;
+  margin: 0 0 0.5rem;
+}
+
+h3 {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin: 0 0 0.25rem;
+}
+
+p {
+  margin: 0 0 0.5rem;
+}
+
+code,
+pre,
+kbd {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
 }

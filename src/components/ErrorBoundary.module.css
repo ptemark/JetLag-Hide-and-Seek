@@ -1,0 +1,42 @@
+.container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  gap: 1rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.message {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  max-width: 480px;
+}
+
+.reloadBtn {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border: none;
+  border-radius: 4px;
+  padding: 0.6rem 1.4rem;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.reloadBtn:hover {
+  background: var(--color-accent-hover);
+}
+
+.reloadBtn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

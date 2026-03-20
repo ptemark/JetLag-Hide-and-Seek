@@ -1,0 +1,11 @@
+.header {
+  text-align: center;
+  padding: 1.5rem 0 1rem;
+}
+
+.logo {
+  width: 120px;
+  height: auto;
+  display: block;
+  margin: 0 auto 0.75rem;
+}

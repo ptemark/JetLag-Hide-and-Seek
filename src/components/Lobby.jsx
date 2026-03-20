@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AppHeader from './AppHeader.jsx';
 import PlayerForm from './PlayerForm.jsx';
 import GameForm from './GameForm.jsx';
 import WaitingRoom from './WaitingRoom.jsx';
@@ -37,8 +38,7 @@ export default function Lobby() {
 
   return (
     <div>
-      <h1>JetLag: The Game</h1>
-      <p>Hide and seek across transit networks.</p>
+      <AppHeader />
 
       {!playing && (
         <button onClick={() => setShowLeaderboard(v => !v)}>

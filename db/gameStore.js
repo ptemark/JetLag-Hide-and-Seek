@@ -168,9 +168,29 @@ export async function dbJoinGame(pool, { gameId, playerId, role, team = null }) 
   const res = await pool.query(
     `INSERT INTO game_players (game_id, player_id, role, team)
      VALUES ($1, $2, $3, $4)
+     ON CONFLICT (game_id, player_id) DO NOTHING
      RETURNING game_id, player_id, role, team, joined_at`,
     [gameId, playerId, role, assignedTeam],
   );
+
+  // If the player was already in the game, re-fetch the existing row.
+  if (res.rows.length === 0) {
+    const existing = await pool.query(
+      `SELECT game_id, player_id, role, team, joined_at
+       FROM game_players WHERE game_id = $1 AND player_id = $2`,
+      [gameId, playerId],
+    );
+    const row = existing.rows[0];
+    if (!row) return null;
+    return {
+      gameId: row.game_id,
+      playerId: row.player_id,
+      role: row.role,
+      team: row.team ?? null,
+      joinedAt: row.joined_at,
+    };
+  }
+
   const row = res.rows[0];
   return {
     gameId: row.game_id,

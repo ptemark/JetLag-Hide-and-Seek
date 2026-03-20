@@ -9,6 +9,9 @@ import {
   _getStore,
   _clearStore,
   cleanupStaleGames,
+  joinGame,
+  _getGamePlayers,
+  _clearGamePlayers,
 } from './games.js';
 import { handleRequest } from './router.js';
 
@@ -470,5 +473,101 @@ describe('POST /games/cleanup via router — auth enforcement', () => {
       if (originalKey === undefined) delete process.env.ADMIN_API_KEY;
       else process.env.ADMIN_API_KEY = originalKey;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// joinGame (in-process)
+// ---------------------------------------------------------------------------
+
+describe('joinGame (in-process)', () => {
+  beforeEach(() => _clearGamePlayers());
+
+  it('returns 200 with gameId, playerId, role when valid', () => {
+    const res = joinGame(
+      { params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'hider' } },
+      null,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.gameId).toBe('g1');
+    expect(res.body.playerId).toBe('p1');
+    expect(res.body.role).toBe('hider');
+    expect(res.body.team).toBeNull();
+  });
+
+  it('returns 400 when playerId is missing', () => {
+    const res = joinGame(
+      { params: { gameId: 'g1' }, body: { role: 'seeker' } },
+      null,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/playerId/i);
+  });
+
+  it('returns 400 when playerId is blank', () => {
+    const res = joinGame(
+      { params: { gameId: 'g1' }, body: { playerId: '  ', role: 'seeker' } },
+      null,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/playerId/i);
+  });
+
+  it('returns 400 when role is invalid', () => {
+    const res = joinGame(
+      { params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'admin' } },
+      null,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/role/i);
+  });
+
+  it('stores the player in the in-process game-players map', () => {
+    joinGame(
+      { params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } },
+      null,
+    );
+    const gamePlayers = _getGamePlayers();
+    expect(gamePlayers.get('g1')?.get('p1')).toEqual({ role: 'seeker', team: null });
+  });
+
+  it('is idempotent — second call returns the original record without duplication', () => {
+    const req = { params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'hider' } };
+    joinGame(req, null);
+    const res2 = joinGame(req, null);
+    expect(res2.status).toBe(200);
+    expect(res2.body.role).toBe('hider');
+    // Only one entry in the map
+    expect(_getGamePlayers().get('g1').size).toBe(1);
+  });
+
+  it('includes team in the response when provided', () => {
+    const res = joinGame(
+      { params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker', team: 'A' } },
+      null,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.team).toBe('A');
+  });
+});
+
+describe('joinGame (with pool)', () => {
+  it('calls dbJoinGame with pool and returns 200 on success', async () => {
+    // Pool rows must use snake_case column names as returned by Postgres.
+    const mockRow = { game_id: 'g1', player_id: 'p1', role: 'seeker', team: null, joined_at: new Date() };
+    const pool = {
+      query: vi.fn()
+        // seeker_teams lookup (dbJoinGame checks seeker_teams for auto-assign)
+        .mockResolvedValueOnce({ rows: [{ seeker_teams: 0 }] })
+        // INSERT ... ON CONFLICT DO NOTHING RETURNING
+        .mockResolvedValueOnce({ rows: [mockRow] }),
+    };
+    const res = await joinGame(
+      { params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } },
+      pool,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.playerId).toBe('p1');
+    expect(res.body.role).toBe('seeker');
   });
 });

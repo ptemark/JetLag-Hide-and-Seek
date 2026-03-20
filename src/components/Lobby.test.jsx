@@ -11,6 +11,7 @@ vi.mock('../api.js', () => ({
   registerPlayer: vi.fn(),
   createGame: vi.fn(),
   lookupGame: vi.fn(),
+  joinGame: vi.fn().mockResolvedValue({ gameId: 'g1', playerId: 'p1', role: 'seeker', team: null }),
   startGame: vi.fn(),
   submitQuestion: vi.fn(),
   listQuestions: vi.fn().mockResolvedValue([]),
@@ -36,6 +37,9 @@ const GAME   = { gameId: 'g1', size: 'medium', status: 'waiting', hostPlayerId: 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Restore joinGame to the default resolved value after any test that
+  // may have set mockRejectedValue (clearAllMocks does not reset implementations).
+  api.joinGame.mockResolvedValue({ gameId: 'g1', playerId: 'p1', role: 'seeker', team: null });
 });
 
 // ---------------------------------------------------------------------------
@@ -209,6 +213,66 @@ describe('GameForm', () => {
     await user.click(screen.getByRole('button', { name: /join game/i }));
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/game not found/i));
+  });
+
+  it('calls joinGame with correct args after createGame resolves', async () => {
+    const user = userEvent.setup();
+    api.createGame.mockResolvedValue(GAME);
+    api.joinGame.mockResolvedValue({ gameId: GAME.gameId, playerId: PLAYER.playerId, role: PLAYER.role, team: null });
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: /create game/i }));
+
+    await waitFor(() => expect(api.joinGame).toHaveBeenCalledWith({
+      gameId: GAME.gameId,
+      playerId: PLAYER.playerId,
+      role: PLAYER.role,
+    }));
+  });
+
+  it('calls joinGame with correct args after lookupGame resolves', async () => {
+    const user = userEvent.setup();
+    api.lookupGame.mockResolvedValue(GAME);
+    api.joinGame.mockResolvedValue({ gameId: GAME.gameId, playerId: PLAYER.playerId, role: PLAYER.role, team: null });
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await user.click(screen.getByRole('tab', { name: /join game/i }));
+    await user.type(screen.getByLabelText(/game id/i), 'g1');
+    await user.click(screen.getByRole('button', { name: /join game/i }));
+
+    await waitFor(() => expect(api.joinGame).toHaveBeenCalledWith({
+      gameId: GAME.gameId,
+      playerId: PLAYER.playerId,
+      role: PLAYER.role,
+    }));
+  });
+
+  it('shows error and does not call onGameReady when joinGame rejects after create', async () => {
+    const user = userEvent.setup();
+    const onGameReady = vi.fn();
+    api.createGame.mockResolvedValue(GAME);
+    api.joinGame.mockRejectedValue(new Error('join failed'));
+    render(<GameForm player={PLAYER} onGameReady={onGameReady} />);
+
+    await user.click(screen.getByRole('button', { name: /create game/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/join failed/i));
+    expect(onGameReady).not.toHaveBeenCalled();
+  });
+
+  it('shows error and does not call onGameReady when joinGame rejects after join lookup', async () => {
+    const user = userEvent.setup();
+    const onGameReady = vi.fn();
+    api.lookupGame.mockResolvedValue(GAME);
+    api.joinGame.mockRejectedValue(new Error('server unavailable'));
+    render(<GameForm player={PLAYER} onGameReady={onGameReady} />);
+
+    await user.click(screen.getByRole('tab', { name: /join game/i }));
+    await user.type(screen.getByLabelText(/game id/i), 'g1');
+    await user.click(screen.getByRole('button', { name: /join game/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/server unavailable/i));
+    expect(onGameReady).not.toHaveBeenCalled();
   });
 
   it('opens join tab when initialTab="join" is provided', () => {

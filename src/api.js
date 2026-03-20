@@ -290,3 +290,16 @@ export async function lockZone({ gameId, stationId, lat, lon, radiusM, playerId 
   if (!res.ok) throw new Error(`lockZone failed: ${res.status}`);
   return res.json();
 }
+
+export async function joinGame({ gameId, playerId, role, team = null }) {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId, role, team }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `joinGame failed: ${res.status}`);
+  }
+  return res.json();
+}

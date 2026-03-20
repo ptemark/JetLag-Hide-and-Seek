@@ -10,16 +10,21 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbGetGameZone, dbCleanupStaleGames } from '../db/gameStore.js';
+import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbGetGameZone, dbCleanupStaleGames, dbJoinGame } from '../db/gameStore.js';
 import { checkAdminAuth } from './auth.js';
 import { SCALE_DURATION_RANGES } from '../config/gameRules.js';
 export { SCALE_DURATION_RANGES };
 
 export const VALID_SIZES = Object.freeze(['small', 'medium', 'large']);
 export const VALID_STATUSES = Object.freeze(['waiting', 'hiding', 'seeking', 'finished']);
+// Player roles — duplicated here so callers can import from one module.
+export const VALID_ROLES = Object.freeze(['hider', 'seeker']);
 
 // In-process store — used when no DB pool is provided (tests / local dev).
 const _games = new Map();
+
+// In-process game-players store.  Maps gameId → Map<playerId, { role, team }>.
+const _gamePlayers = new Map();
 
 /**
  * Create a new game.
@@ -265,6 +270,49 @@ export async function cleanupStaleGames(req, pool = null, adminApiKey) {
   return { status: 200, body: { deletedCount: 0 } };
 }
 
+/**
+ * Record a player joining a game.
+ *
+ * POST /games/:gameId/join  { playerId, role, team? }  → { gameId, playerId, role, team }
+ *
+ * Idempotent — calling it twice for the same (gameId, playerId) pair returns
+ * the existing record rather than an error.
+ *
+ * @param {{ params: { gameId: string }, body: unknown }} req
+ * @param {import('pg').Pool|null} [pool]
+ * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
+ */
+export function joinGame(req, pool = null) {
+  const { gameId } = req.params ?? {};
+  const { playerId, role, team = null } = req.body ?? {};
+
+  if (!playerId || typeof playerId !== 'string' || playerId.trim().length === 0) {
+    return { status: 400, body: { error: 'playerId is required' } };
+  }
+  if (!VALID_ROLES.includes(role)) {
+    return { status: 400, body: { error: `role must be one of: ${VALID_ROLES.join(', ')}` } };
+  }
+
+  if (pool) {
+    return dbJoinGame(pool, { gameId, playerId, role, team }).then(result => ({
+      status: 200,
+      body: result,
+    }));
+  }
+
+  // In-process path.
+  if (!_gamePlayers.has(gameId)) {
+    _gamePlayers.set(gameId, new Map());
+  }
+  const existing = _gamePlayers.get(gameId).get(playerId);
+  if (existing) {
+    return { status: 200, body: { gameId, playerId, ...existing } };
+  }
+  const entry = { role, team };
+  _gamePlayers.get(gameId).set(playerId, entry);
+  return { status: 200, body: { gameId, playerId, role, team } };
+}
+
 /** Return a copy of the in-process game store (for testing). */
 export function _getStore() {
   return new Map(_games);
@@ -273,4 +321,14 @@ export function _getStore() {
 /** Clear the in-process store (for test isolation). */
 export function _clearStore() {
   _games.clear();
+}
+
+/** Return a copy of the in-process game-players store (for testing). */
+export function _getGamePlayers() {
+  return new Map(_gamePlayers);
+}
+
+/** Clear the in-process game-players store (for test isolation). */
+export function _clearGamePlayers() {
+  _gamePlayers.clear();
 }

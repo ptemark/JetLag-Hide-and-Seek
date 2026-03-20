@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createGame, lookupGame } from '../api.js';
+import { createGame, lookupGame, joinGame } from '../api.js';
 import Alert from './Alert.jsx';
 import styles from './GameForm.module.css';
 
@@ -44,6 +44,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
         lon_max: parseFloat(bounds.lon_max) || 0,
       };
       const game = await createGame({ size: scale, bounds: parsedBounds, seekerTeams, playerId: player.playerId });
+      await joinGame({ gameId: game.gameId, playerId: player.playerId, role: player.role });
       onGameReady(game);
     } catch (err) {
       setError(err.message);
@@ -62,6 +63,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
     setLoading(true);
     try {
       const game = await lookupGame(gameId.trim());
+      await joinGame({ gameId: game.gameId, playerId: player.playerId, role: player.role });
       onGameReady(game);
     } catch (err) {
       setError(err.message);

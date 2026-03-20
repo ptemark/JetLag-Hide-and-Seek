@@ -7,6 +7,7 @@ import CardPanel from './CardPanel.jsx';
 import ZoneSelector from './ZoneSelector.jsx';
 import ResultsScreen from './ResultsScreen.jsx';
 import { submitScore, listZones } from '../api.js';
+import { formatCountdown } from './gameUtils.js';
 import styles from './GameMap.module.css';
 
 const LOCATION_INTERVAL_MS = 10_000;
@@ -21,21 +22,6 @@ const ZONE_FILL = 'rgba(240,135,48,0.15)';
 const SEEKER_MARKER_COLOR = '#F08730'; // --color-accent
 const HIDER_MARKER_COLOR = '#C83A18';  // --color-sunset-4 (End Game only)
 const MAX_RECONNECT_ATTEMPTS = 6; // 1 s, 2 s, 4 s, 8 s, 16 s, 30 s
-
-/**
- * Format a future ISO timestamp as a MM:SS countdown string.
- * Returns '0:00' if the deadline has passed, or null if iso is falsy.
- * @param {string|null} iso
- */
-function formatCountdown(iso) {
-  if (!iso) return null;
-  const ms = new Date(iso) - Date.now();
-  if (ms <= 0) return '0:00';
-  const totalSecs = Math.floor(ms / 1000);
-  const mins = Math.floor(totalSecs / 60);
-  const secs = totalSecs % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
 
 /**
  * Compute the centre {lat, lng} of a bounds object.
@@ -94,7 +80,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [endGameActive, setEndGameActive] = useState(false); // true when End Game is in progress
   const [phase, setPhase] = useState(game.status);
   const [captureMsg, setCaptureMsg] = useState(null);
-  const [qaRefresh, setQaRefresh] = useState(0);   // increments on question_answered WS event
+  const [qaRefresh, setQaRefresh] = useState(0);   // increments on question_answered / question_pending / question_expired WS events
   const [lockedZone, setLockedZone] = useState(null); // zone locked by hider
   const [phaseEndsAt, setPhaseEndsAt] = useState(null);           // ISO from timer_sync
   const [pendingQuestionExpiresAt, setPendingQuestionExpiresAt] = useState(null); // ISO from question_pending
@@ -364,6 +350,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setPendingQuestionExpiresAt(null);
       } else if (msg.type === 'question_expired') {
         setPendingQuestionExpiresAt(null);
+        setQaRefresh((n) => n + 1);
       } else if (msg.type === 'zone_locked') {
         setLockedZone(msg.zone ?? null);
       } else if (msg.type === 'player_transit') {
@@ -376,6 +363,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setPhaseEndsAt(msg.phaseEndsAt ?? null);
       } else if (msg.type === 'question_pending') {
         setPendingQuestionExpiresAt(msg.expiresAt ?? null);
+        setQaRefresh((n) => n + 1);
       } else if (msg.type === 'curse_active') {
         setCurseEndsAt(msg.curseEndsAt ?? null);
       } else if (msg.type === 'false_zone' && msg.zone) {

@@ -18,3 +18,14 @@
   font-style: italic;
   margin: 0.25rem 0 0;
 }
+
+.expiry {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin: 0.25rem 0 0;
+}
+
+.expiry time {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--color-sunset-3);
+}

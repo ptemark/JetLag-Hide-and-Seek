@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { listQuestions, submitAnswer, uploadQuestionPhoto } from '../api.js';
 import { tentacleHint, measuringHint, matchingHint, transitHint, thermometerHint } from './questionHints.js';
+import { formatCountdown } from './gameUtils.js';
 import styles from './AnswerPanel.module.css';
 
 // Maximum photo size accepted by the API (functions/questions.js enforces 500 KB server-side).
 const MAX_PHOTO_BYTES = 500_000;
+// Tick interval for per-question expiry countdowns (ms).
+const COUNTDOWN_TICK_MS = 1_000;
 
 /**
  * AnswerPanel — hider UI for viewing and answering pending questions.
@@ -23,6 +26,8 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
   const [submitting, setSubmitting] = useState({}); // { [questionId]: bool }
   const [errors, setErrors] = useState({});         // { [questionId]: string }
   const [answered, setAnswered] = useState(new Set());
+  // Per-question countdown strings derived from expiresAt, updated every second.
+  const [expiryCounts, setExpiryCounts] = useState({});
 
   // Reload question list whenever the component mounts or refreshTrigger changes.
   useEffect(() => {
@@ -31,6 +36,22 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
       .then((data) => setQuestions(data.questions ?? []))
       .catch((err) => setLoadError(err.message));
   }, [player.playerId, refreshTrigger]);
+
+  // Update per-question countdown every second while there are pending questions with expiresAt.
+  useEffect(() => {
+    function tick() {
+      setExpiryCounts(
+        Object.fromEntries(
+          questions
+            .filter((q) => q.status === 'pending' && q.expiresAt)
+            .map((q) => [q.questionId, formatCountdown(q.expiresAt)]),
+        ),
+      );
+    }
+    tick();
+    const id = setInterval(tick, COUNTDOWN_TICK_MS);
+    return () => clearInterval(id);
+  }, [questions]);
 
   function setAnswerText(questionId, value) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -118,6 +139,11 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
           {q.category === 'transit' && (
             <p data-testid="transit-hint" className={styles.hintText}>
               {transitHint(q.transitNearestStationName, q.transitNearestStationDistanceKm)}
+            </p>
+          )}
+          {expiryCounts[q.questionId] != null && (
+            <p className={styles.expiry}>
+              Answer by: <time dateTime={q.expiresAt}>{expiryCounts[q.questionId]}</time>
             </p>
           )}
           <form

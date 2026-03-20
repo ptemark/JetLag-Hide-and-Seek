@@ -693,6 +693,36 @@ describe('AnswerPanel', () => {
     await waitFor(() => screen.getByLabelText(/your answer/i));
     expect(screen.queryByTestId('matching-hint')).not.toBeInTheDocument();
   });
+
+  // Task 134 — per-question expiry countdown
+  it('renders "Answer by:" for a pending question that has expiresAt', async () => {
+    const expiresAt = new Date(Date.now() + 3 * 60 * 1000 + 5 * 1000).toISOString();
+    const q = { ...QUESTION, expiresAt };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.getByText(/answer by:/i)).toBeInTheDocument();
+  });
+
+  it('does not render "Answer by:" when a pending question has no expiresAt', async () => {
+    const q = { ...QUESTION }; // no expiresAt field
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.queryByText(/answer by:/i)).not.toBeInTheDocument();
+  });
+
+  it('cleans up countdown interval on unmount (no leaked timers)', async () => {
+    const clearSpy = vi.spyOn(globalThis, 'clearInterval');
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const q = { ...QUESTION, expiresAt };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    const { unmount } = render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    unmount();
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
+  });
 });
 
 // ── QuestionPanel matching inputs ─────────────────────────────────────────────

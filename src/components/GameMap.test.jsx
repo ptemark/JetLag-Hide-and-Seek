@@ -1301,4 +1301,43 @@ describe('GameMap', () => {
     const url = mockL.tileLayer.mock.calls[0][0];
     expect(url).toContain('cartocdn.com');
   });
+
+  // ---------------------------------------------------------------------------
+  // Task 134 — question_pending and question_expired refresh AnswerPanel
+  // ---------------------------------------------------------------------------
+
+  it('question_pending WS event triggers AnswerPanel re-fetch (qaRefresh incremented)', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    api.listQuestions.mockClear();
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    // Initial fetch on mount
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({
+          type: 'question_pending',
+          gameId: 'g1',
+          questionId: 'q1',
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        }),
+      });
+    });
+    // AnswerPanel re-fetches because refreshTrigger was incremented
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledTimes(2));
+  });
+
+  it('question_expired WS event triggers AnswerPanel re-fetch (qaRefresh incremented)', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    api.listQuestions.mockClear();
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_expired', questionId: 'q1' }),
+      });
+    });
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledTimes(2));
+  });
 });

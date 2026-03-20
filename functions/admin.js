@@ -37,6 +37,10 @@ export async function getAdminStatus(req, opts = {}) {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
 
+  // The router passes a pg Pool as the second argument; the admin handler
+  // expects an opts object. Pools (and null) are not opts objects.
+  if (!opts || typeof opts.query === 'function') opts = {};
+
   const adminApiKey =
     opts.adminApiKey !== undefined
       ? opts.adminApiKey

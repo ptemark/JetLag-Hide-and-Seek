@@ -4,11 +4,6 @@
   border-radius: 0 4px 4px 0;
   padding: 0.5rem 0.75rem;
   color: var(--color-text-primary);
+  /* shake keyframe defined globally in src/index.css */
   animation: shake 300ms ease-in-out;
-}
-
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25%       { transform: translateX(-4px); }
-  75%       { transform: translateX(4px); }
 }

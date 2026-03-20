@@ -143,6 +143,7 @@ input[type="checkbox"] {
   border-radius: 6px;
   padding: 1rem 1.25rem;
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  animation: fadeSlideIn 200ms ease-out;
 }
 
 /* Vertical stack with standard section gap */
@@ -150,4 +151,37 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+}
+
+/* ============================================================
+   Keyframe animations — DESIGN.md §22 Motion & Feedback
+   ============================================================ */
+
+/* Panel / card entry: fade up from 8px below */
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Alert shake: ±4px horizontal wobble */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25%       { transform: translateX(-4px); }
+  75%       { transform: translateX(4px); }
+}
+
+/* Respect the user's motion preference — disable all animations */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

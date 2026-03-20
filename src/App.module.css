@@ -1,0 +1,13 @@
+.root {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  width: 100%;
+}
+
+@media (min-width: 600px) {
+  .root {
+    max-width: 560px;
+    font-size: 1.05rem;
+  }
+}

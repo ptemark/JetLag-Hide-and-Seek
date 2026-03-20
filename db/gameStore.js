@@ -654,10 +654,11 @@ export async function dbExpireStaleQuestions(pool, gameId) {
  */
 export async function dbSubmitAnswer(pool, { questionId, responderId, text }) {
   // Verify the question exists and is still pending before inserting the answer.
-  const check = await pool.query('SELECT id, game_id, status FROM questions WHERE id = $1', [questionId]);
+  const check = await pool.query('SELECT id, game_id, status, category FROM questions WHERE id = $1', [questionId]);
   if (check.rows.length === 0) return null;
   if (check.rows[0].status !== 'pending') return { questionExpired: true };
   const questionGameId = check.rows[0].game_id;
+  const questionCategory = check.rows[0].category;
 
   const answerRes = await pool.query(
     `INSERT INTO answers (question_id, responder_id, text)
@@ -674,6 +675,7 @@ export async function dbSubmitAnswer(pool, { questionId, responderId, text }) {
     answerId: row.id,
     questionId: row.question_id,
     gameId: questionGameId,
+    category: questionCategory,
     responderId: row.responder_id,
     text: row.text,
     createdAt: row.created_at,

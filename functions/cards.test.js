@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   getCards,
   playCard,
@@ -11,6 +11,7 @@ import {
   _clearCards,
 } from './cards.js';
 import { HAND_LIMIT } from '../db/gameStore.js';
+import { CARD_DRAW_WEIGHTS } from '../config/gameRules.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -486,6 +487,111 @@ describe('powerup card (with pool)', () => {
 // ---------------------------------------------------------------------------
 // Time bonus card (with mock DB pool)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Weighted card draw — randomCardDescriptor / drawCardInProcess
+// ---------------------------------------------------------------------------
+
+describe('randomCardDescriptor — weighted draw', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('uses photo weights: time_bonus drawn at higher rate than equal probability', () => {
+    // photo weights: time_bonus=0.55, powerup=0.30, curse=0.15
+    // Over 1000 samples, time_bonus count should exceed 1/3 * 1000 = 333 by a meaningful margin.
+    // Tolerance: expect ≥ 420 (well below 550 expected - 3*sqrt(550*0.45) ≈ 106)
+    const SAMPLES = 1000;
+    let timeBonusCount = 0;
+    for (let i = 0; i < SAMPLES; i++) {
+      if (randomCardDescriptor('photo').type === 'time_bonus') timeBonusCount++;
+    }
+    expect(timeBonusCount).toBeGreaterThan(420);
+    expect(timeBonusCount).toBeLessThan(680); // sanity upper bound
+  });
+
+  it('uses tentacle weights: curse drawn at higher rate than equal probability', () => {
+    // tentacle weights: time_bonus=0.25, powerup=0.30, curse=0.45
+    const SAMPLES = 1000;
+    let curseCount = 0;
+    for (let i = 0; i < SAMPLES; i++) {
+      if (randomCardDescriptor('tentacle').type === 'curse') curseCount++;
+    }
+    expect(curseCount).toBeGreaterThan(330); // above equal-probability floor
+    expect(curseCount).toBeLessThan(570); // sanity upper bound
+  });
+
+  it('falls back to equal weights for unknown category', () => {
+    const SAMPLES = 3000;
+    const counts = { time_bonus: 0, powerup: 0, curse: 0 };
+    for (let i = 0; i < SAMPLES; i++) {
+      counts[randomCardDescriptor('unknown_category').type]++;
+    }
+    // Each type should be roughly 1000 ± 200 (very conservative tolerance)
+    for (const type of Object.keys(counts)) {
+      expect(counts[type]).toBeGreaterThan(800);
+      expect(counts[type]).toBeLessThan(1200);
+    }
+  });
+
+  it('falls back to equal weights when no category is provided', () => {
+    const SAMPLES = 3000;
+    const counts = { time_bonus: 0, powerup: 0, curse: 0 };
+    for (let i = 0; i < SAMPLES; i++) {
+      counts[randomCardDescriptor().type]++;
+    }
+    for (const type of Object.keys(counts)) {
+      expect(counts[type]).toBeGreaterThan(800);
+      expect(counts[type]).toBeLessThan(1200);
+    }
+  });
+
+  it('produces a valid card type for every configured category', () => {
+    for (const category of Object.keys(CARD_DRAW_WEIGHTS)) {
+      const card = randomCardDescriptor(category);
+      expect(CARD_TYPES).toContain(card.type);
+      expect(typeof card.effect).toBe('object');
+    }
+  });
+});
+
+describe('drawCardInProcess — weighted draw by questionCategory', () => {
+  beforeEach(() => _clearCards());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('photo category: draws time_bonus cards at configured higher rate over 1000 iterations', () => {
+    const SAMPLES = 1000;
+    let timeBonusCount = 0;
+    for (let i = 0; i < SAMPLES; i++) {
+      _clearCards();
+      const card = drawCardInProcess({ gameId: 'g1', playerId: 'p1', questionCategory: 'photo' });
+      if (card && card.type === 'time_bonus') timeBonusCount++;
+    }
+    // photo time_bonus weight is 0.55 → expect well above equal-probability floor of 333
+    expect(timeBonusCount).toBeGreaterThan(420);
+  });
+
+  it('unknown category falls back to equal weights', () => {
+    const SAMPLES = 3000;
+    const counts = { time_bonus: 0, powerup: 0, curse: 0 };
+    for (let i = 0; i < SAMPLES; i++) {
+      _clearCards();
+      const card = drawCardInProcess({ gameId: 'g1', playerId: 'p1', questionCategory: 'unknown' });
+      if (card) counts[card.type]++;
+    }
+    for (const type of Object.keys(counts)) {
+      expect(counts[type]).toBeGreaterThan(800);
+      expect(counts[type]).toBeLessThan(1200);
+    }
+  });
+
+  it('each configured category produces a valid card type', () => {
+    for (const category of Object.keys(CARD_DRAW_WEIGHTS)) {
+      _clearCards();
+      const card = drawCardInProcess({ gameId: 'g1', playerId: 'p1', questionCategory: category });
+      expect(card).not.toBeNull();
+      expect(CARD_TYPES).toContain(card.type);
+    }
+  });
+});
 
 describe('time_bonus card (with pool)', () => {
   it('fires notify for time_bonus card when pool is provided', async () => {

@@ -27,3 +27,34 @@ export const SCALE_DURATIONS = Object.freeze({
   medium: 60  * 60_000,
   large:  180 * 60_000,
 });
+
+/**
+ * Card draw probability weights per question category (RULES.md §Cards).
+ *
+ * Each entry is a { time_bonus, powerup, curse } triple whose values sum to 1.0.
+ *
+ * Design rationale:
+ *   photo      — answering requires the hider to send a photo (high effort)
+ *                → reward with more time_bonus probability
+ *   tentacle   — adversarial mechanic that checks proximity
+ *                → skewed toward curse to reflect the threatening nature
+ *   matching / measuring / transit / thermometer — balanced draws
+ */
+export const CARD_DRAW_WEIGHTS = Object.freeze({
+  matching:    Object.freeze({ time_bonus: 0.40, powerup: 0.35, curse: 0.25 }),
+  measuring:   Object.freeze({ time_bonus: 0.35, powerup: 0.35, curse: 0.30 }),
+  transit:     Object.freeze({ time_bonus: 0.35, powerup: 0.35, curse: 0.30 }),
+  photo:       Object.freeze({ time_bonus: 0.55, powerup: 0.30, curse: 0.15 }),
+  thermometer: Object.freeze({ time_bonus: 0.35, powerup: 0.35, curse: 0.30 }),
+  tentacle:    Object.freeze({ time_bonus: 0.25, powerup: 0.30, curse: 0.45 }),
+});
+
+/**
+ * Equal-probability fallback used when questionCategory is omitted or unrecognised.
+ * Each card type has a 1/3 probability.
+ */
+export const CARD_DRAW_WEIGHTS_DEFAULT = Object.freeze({
+  time_bonus: 1 / 3,
+  powerup:    1 / 3,
+  curse:      1 / 3,
+});

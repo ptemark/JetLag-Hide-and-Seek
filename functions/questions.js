@@ -822,7 +822,7 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
     // When the draw succeeds, notify the managed server so the hider's CardPanel can refresh.
     if (row.gameId) {
       gameId = row.gameId;
-      const { type, effect } = randomCardDescriptor();
+      const { type, effect } = randomCardDescriptor(row.category);
       dbDrawCard(pool, { gameId: row.gameId, playerId: responderId, type, effect })
         .then((drawnCard) => {
           if (drawnCard && serverUrl && fetchFn) {
@@ -863,7 +863,7 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
     // Draw a card for the answering player in the in-process store.
     // When the draw succeeds, notify the managed server so the hider's CardPanel can refresh.
     if (gameId) {
-      const drawnCard = drawCardInProcess({ gameId, playerId: responderId });
+      const drawnCard = drawCardInProcess({ gameId, playerId: responderId, questionCategory: question.category });
       if (drawnCard && serverUrl && fetchFn) {
         fetchFn(`${serverUrl}/internal/notify`, {
           method: 'POST',

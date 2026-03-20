@@ -22,10 +22,26 @@ import {
   dbSetCurse,
   HAND_LIMIT,
 } from '../db/gameStore.js';
+import { CARD_DRAW_WEIGHTS, CARD_DRAW_WEIGHTS_DEFAULT } from '../config/gameRules.js';
 
 // ── Card catalogue ────────────────────────────────────────────────────────────
 
 export const CARD_TYPES = ['time_bonus', 'powerup', 'curse'];
+
+/**
+ * Select a card type using per-category probability weights.
+ * Falls back to equal weights when questionCategory is omitted or unrecognised.
+ *
+ * @param {string|undefined} questionCategory
+ * @returns {string}
+ */
+function weightedCardType(questionCategory) {
+  const weights = CARD_DRAW_WEIGHTS[questionCategory] ?? CARD_DRAW_WEIGHTS_DEFAULT;
+  const rand = Math.random();
+  if (rand < weights.time_bonus) return 'time_bonus';
+  if (rand < weights.time_bonus + weights.powerup) return 'powerup';
+  return 'curse';
+}
 
 /**
  * Return the canonical effect payload for a given card type.
@@ -43,13 +59,16 @@ export function cardEffect(type) {
 }
 
 /**
- * Pick a random card type and build a card descriptor.
+ * Pick a card type and build a card descriptor.
+ * When questionCategory is provided, uses per-category weights from CARD_DRAW_WEIGHTS.
+ * Falls back to equal weights when category is omitted or unrecognised.
  * Exported for use by the questions handler (card-draw trigger).
  *
+ * @param {string} [questionCategory]
  * @returns {{ type: string, effect: object }}
  */
-export function randomCardDescriptor() {
-  const type = CARD_TYPES[Math.floor(Math.random() * CARD_TYPES.length)];
+export function randomCardDescriptor(questionCategory) {
+  const type = weightedCardType(questionCategory);
   return { type, effect: cardEffect(type) };
 }
 
@@ -273,16 +292,16 @@ export async function playCard(req, pool = null, gameServerUrl, fetchFn = global
  * no DB pool is available.
  * Returns null if the hand is already full (HAND_LIMIT).
  *
- * @param {{ gameId: string, playerId: string }} options
+ * @param {{ gameId: string, playerId: string, questionCategory?: string }} options
  * @returns {{ cardId: string, gameId: string, playerId: string, type: string, effect: object, status: string, drawnAt: string } | null}
  */
-export function drawCardInProcess({ gameId, playerId }) {
+export function drawCardInProcess({ gameId, playerId, questionCategory }) {
   const handSize = [..._cards.values()]
     .filter(c => c.gameId === gameId && c.playerId === playerId && c.status === 'in_hand')
     .length;
   if (handSize >= HAND_LIMIT) return null;
 
-  const { type, effect } = randomCardDescriptor();
+  const { type, effect } = randomCardDescriptor(questionCategory);
   const card = {
     cardId: randomUUID(),
     gameId,

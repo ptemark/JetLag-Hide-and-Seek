@@ -93,3 +93,41 @@ a {
 a:hover {
   text-decoration: underline;
 }
+
+/* ============================================================
+   Form element base styles — DESIGN.md §22
+   ============================================================ */
+
+input,
+select,
+textarea {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  color: var(--color-text-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-color: var(--color-accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text-secondary);
+}
+
+/* Restore natural width for checkbox/radio — they should not span 100% */
+input[type="radio"],
+input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--color-accent);
+}

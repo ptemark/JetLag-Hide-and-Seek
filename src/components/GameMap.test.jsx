@@ -24,6 +24,8 @@ const { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockPolyl
     bindTooltip: vi.fn().mockReturnThis(),
     addTo: vi.fn().mockReturnThis(),
     setLatLng: vi.fn(),
+    setStyle: vi.fn(),
+    setTooltipContent: vi.fn(),
     remove: vi.fn(),
   };
   const mockMap = {
@@ -89,6 +91,9 @@ describe('GameMap', () => {
     mockMap.setView.mockReturnValue(mockMap);
     mockMarker.bindTooltip.mockReturnThis();
     mockMarker.addTo.mockReturnThis();
+    mockMarker.setLatLng.mockReset();
+    mockMarker.setStyle.mockReset();
+    mockMarker.setTooltipContent.mockReset();
     mockPolyline.addTo.mockReturnThis();
     mockL.map.mockReturnValue(mockMap);
     mockL.tileLayer.mockReturnValue(mockTileLayer);
@@ -525,6 +530,60 @@ describe('GameMap', () => {
       });
     });
     expect(screen.getByTestId('map-container')).toBeInTheDocument();
+  });
+
+  it('updates existing marker tooltip to include 🚌 when player_transit fires after marker created', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => { MockWebSocket.last.readyState = 1; MockWebSocket.last.onopen?.(); });
+    // First: player_location creates the marker for p2
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', gameId: 'g1', playerId: 'p2', lat: 51.05, lon: -0.05 }),
+      });
+    });
+    mockMarker.setTooltipContent.mockReset();
+    // Then: player_transit fires — existing marker should update tooltip and style
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_transit', gameId: 'g1', playerId: 'p2', onTransit: true }),
+      });
+    });
+    expect(mockMarker.setTooltipContent).toHaveBeenCalled();
+    const label = mockMarker.setTooltipContent.mock.calls[0][0];
+    expect(label).toContain('🚌');
+    expect(mockMarker.setStyle).toHaveBeenCalledWith({ fillOpacity: 0.3 });
+  });
+
+  it('removes 🚌 from marker tooltip when player_transit fires with onTransit false', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => { MockWebSocket.last.readyState = 1; MockWebSocket.last.onopen?.(); });
+    // Create marker with onTransit: true
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', gameId: 'g1', playerId: 'p2', lat: 51.05, lon: -0.05 }),
+      });
+    });
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_transit', gameId: 'g1', playerId: 'p2', onTransit: true }),
+      });
+    });
+    mockMarker.setTooltipContent.mockReset();
+    mockMarker.setStyle.mockReset();
+    // Now toggle off transit
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_transit', gameId: 'g1', playerId: 'p2', onTransit: false }),
+      });
+    });
+    expect(mockMarker.setTooltipContent).toHaveBeenCalled();
+    const label = mockMarker.setTooltipContent.mock.calls[0][0];
+    expect(label).not.toContain('🚌');
+    expect(mockMarker.setStyle).toHaveBeenCalledWith({ fillOpacity: 0.7 });
   });
 
   // ---------------------------------------------------------------------------

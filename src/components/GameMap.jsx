@@ -21,6 +21,9 @@ const ZONE_COLOR = '#F08730';          // --color-sunset-2 / --color-accent
 const ZONE_FILL = 'rgba(240,135,48,0.15)';
 const SEEKER_MARKER_COLOR = '#F08730'; // --color-accent
 const HIDER_MARKER_COLOR = '#C83A18';  // --color-sunset-4 (End Game only)
+const BOUNDS_BORDER_COLOR = '#9EB3C8'; // --color-text-secondary — subtle game-area outline on dark map
+const FALSE_ZONE_COLOR = '#9EB3C8';    // --color-text-secondary — muted decoy circle (distinct from real zones)
+const TRAIL_COLOR = '#F5C84A';         // --color-sunset-1 — warm yellow hider journey trail
 const MAX_RECONNECT_ATTEMPTS = 6; // 1 s, 2 s, 4 s, 8 s, 16 s, 30 s
 
 /**
@@ -120,7 +123,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     if (bounds.lat_min != null) {
       L.rectangle(
         [[bounds.lat_min, bounds.lon_min], [bounds.lat_max, bounds.lon_max]],
-        { color: '#3388ff', weight: 2, fill: false },
+        { color: BOUNDS_BORDER_COLOR, weight: 2, fill: false },
       ).addTo(map);
     }
 
@@ -164,7 +167,14 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     // Add or move existing markers
     for (const [pid, pos] of Object.entries(players)) {
       if (markersRef.current[pid]) {
+        const isMe = pid === player.playerId;
+        const isOnTransit = pos.onTransit ?? false;
+        const transitIcon = isOnTransit ? ' 🚌' : '';
+        const baseLabel = isMe ? `You${myTeam ? ` (Team ${myTeam})` : ''}` : pid;
+        const label = `${baseLabel}${transitIcon}`;
         markersRef.current[pid].setLatLng([pos.lat, pos.lon]);
+        markersRef.current[pid].setStyle({ fillOpacity: isOnTransit ? 0.3 : 0.7 });
+        markersRef.current[pid].setTooltipContent(label);
       } else {
         const isMe = pid === player.playerId;
         const color = markerColor(pid);
@@ -202,8 +212,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       if (!falseZoneLayersRef.current[decoyId]) {
         const circle = L.circle([zone.lat, zone.lon], {
           radius: zone.radiusM ?? zone.radius ?? 500,
-          color: '#8b5cf6',
-          fillColor: '#8b5cf6',
+          color: FALSE_ZONE_COLOR,
+          fillColor: FALSE_ZONE_COLOR,
           fillOpacity: 0.1,
           weight: 2,
           dashArray: '6, 6',
@@ -268,7 +278,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       trailPolylineRef.current.setLatLngs(latlngs);
     } else if (latlngs.length >= 2) {
       trailPolylineRef.current = L.polyline(latlngs, {
-        color: '#0000cc',
+        color: TRAIL_COLOR,
         weight: 3,
         opacity: 0.6,
         dashArray: null,

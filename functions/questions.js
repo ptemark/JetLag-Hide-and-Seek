@@ -88,7 +88,8 @@ async function fetchTentacleData({ gameId, targetLat, targetLon, radiusKm }, gam
       withinRadius: data.withinRadius ?? null,
       distanceKm:   data.distanceKm  ?? null,
     };
-  } catch {
+  } catch (err) {
+    console.error('[questions] hint fetch failed', { type: 'tentacle', gameId, error: err.message });
     return { withinRadius: null, distanceKm: null };
   }
 }
@@ -126,7 +127,8 @@ async function fetchMeasuringData({ gameId, seekerId, targetLat, targetLon }, ga
       seekerDistanceKm: data.seekerDistanceKm ?? null,
       hiderIsCloser:    data.hiderIsCloser    ?? null,
     };
-  } catch {
+  } catch (err) {
+    console.error('[questions] hint fetch failed', { type: 'measuring', gameId, error: err.message });
     return { hiderDistanceKm: null, seekerDistanceKm: null, hiderIsCloser: null };
   }
 }
@@ -235,7 +237,8 @@ async function fetchTransitData({ gameId }, gameServerUrl, adminApiKey, fetchFn)
       nearestStationLon:        nearest.lon,
       nearestStationDistanceKm: nearestDist,
     };
-  } catch {
+  } catch (err) {
+    console.error('[questions] hint fetch failed', { type: 'transit', gameId, error: err.message });
     return nullResult;
   }
 }
@@ -350,7 +353,8 @@ async function fetchMatchingData({ gameId, seekerId, featureType }, gameServerUr
       ? hiderFeature.id === seekerFeature.id
       : null;
     return { matchingHiderFeatureName, matchingSeekerFeatureName, matchingFeaturesMatch };
-  } catch {
+  } catch (err) {
+    console.error('[questions] hint fetch failed', { type: 'matching', gameId, error: err.message });
     return nullResult;
   }
 }
@@ -399,7 +403,7 @@ function notifyQuestionPending({ gameId, questionId, expiresAt }, gameServerUrl,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'question_pending', gameId, questionId, expiresAt }),
-    })).catch(() => { /* intentionally silent */ });
+    })).catch((err) => { console.error('[questions] notify failed', { gameId, questionId, error: err.message }); });
   }
 }
 
@@ -430,7 +434,8 @@ async function fetchThermometerData({ gameId, seekerId }, gameServerUrl, adminAp
       currentDistanceM:  data.currentDistanceM  ?? null,
       previousDistanceM: data.previousDistanceM ?? null,
     };
-  } catch {
+  } catch (err) {
+    console.error('[questions] hint fetch failed', { type: 'thermometer', gameId, error: err.message });
     return { currentDistanceM: null, previousDistanceM: null };
   }
 }
@@ -831,10 +836,10 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
                 cardId: drawnCard.cardId,
                 cardType: drawnCard.type,
               }),
-            }).catch(() => { /* intentionally silent */ });
+            }).catch((err) => { console.error('[questions] notify failed', { type: 'card_drawn', gameId: drawnCard.gameId, error: err.message }); });
           }
         })
-        .catch(() => { /* silent */ });
+        .catch((err) => { console.error('[questions] card draw failed', { gameId: row.gameId, error: err.message }); });
     }
   } else {
     if (!_questions.has(questionId)) {
@@ -870,7 +875,7 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
             cardId: drawnCard.cardId,
             cardType: drawnCard.type,
           }),
-        }).catch(() => { /* intentionally silent */ });
+        }).catch((err) => { console.error('[questions] notify failed', { type: 'card_drawn', gameId, error: err.message }); });
       }
     }
   }
@@ -887,7 +892,7 @@ export async function submitAnswer(req, pool = null, gameServerUrl, fetchFn = gl
         responderId,
         gameId,
       }),
-    }).catch(() => { /* intentionally silent */ });
+    }).catch((err) => { console.error('[questions] notify failed', { type: 'question_answered', questionId, gameId, error: err.message }); });
   }
 
   return { status: 201, body: answer };

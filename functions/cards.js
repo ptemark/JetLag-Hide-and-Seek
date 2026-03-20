@@ -124,7 +124,7 @@ function notifyTimeBonus({ gameId, minutesAdded }, gameServerUrl, fetchFn) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'time_bonus', gameId, minutesAdded }),
-    })).catch(() => { /* intentionally silent */ });
+    })).catch((err) => { console.error('[cards] notify failed', { type: 'time_bonus', gameId, error: err.message }); });
   }
 }
 
@@ -145,7 +145,7 @@ function notifyFalseZone({ gameId }, gameServerUrl, fetchFn) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'false_zone', gameId }),
-    })).catch(() => { /* intentionally silent */ });
+    })).catch((err) => { console.error('[cards] notify failed', { type: 'false_zone', gameId, error: err.message }); });
   }
 }
 
@@ -175,7 +175,7 @@ async function activateCurse({ gameId, durationMs }, pool, gameServerUrl, fetchF
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'curse_active', gameId, curseEndsAt }),
-    })).catch(() => { /* intentionally silent */ });
+    })).catch((err) => { console.error('[cards] notify failed', { type: 'curse_active', gameId, error: err.message }); });
   }
 
   return curseEndsAt;

@@ -144,7 +144,7 @@ function notifyGameStart({ gameId, scale, hidingDurationMs, seekingDurationMs },
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       },
-    )).catch(() => { /* intentionally silent */ });
+    )).catch((err) => { console.error('[games] notify failed', { type: 'game_start', gameId, error: err.message }); });
   }
 }
 

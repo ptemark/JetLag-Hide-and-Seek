@@ -1,0 +1,264 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, within, waitFor, fireEvent, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+
+// Mock the API module — GameForm uses createGame, lookupGame, joinGame.
+vi.mock('../api.js', () => ({
+  createGame: vi.fn(),
+  lookupGame: vi.fn(),
+  joinGame: vi.fn().mockResolvedValue({ gameId: 'g1', playerId: 'p1', role: 'seeker', team: null }),
+}));
+
+import GameForm from './GameForm.jsx';
+import { centerRadiusToBounds } from './gameUtils.js';
+import * as api from '../api.js';
+
+const PLAYER = { playerId: 'p1', name: 'Alice', role: 'seeker' };
+
+// Two realistic Nominatim results used across several tests.
+const NOMINATIM_RESULTS = [
+  {
+    display_name: 'London, Greater London, England, United Kingdom',
+    lat: '51.5074',
+    lon: '-0.1278',
+  },
+  {
+    display_name: 'London, Ontario, Canada',
+    lat: '42.9849',
+    lon: '-81.2453',
+  },
+];
+
+// userEvent with zero keystroke delay — keystrokes fire synchronously so the
+// 500 ms debounce starts immediately, not after typing delays stack up.
+function setupUser() {
+  return userEvent.setup({ delay: null });
+}
+
+// Type a search query and wait for the results listbox to appear (real timer).
+// The debounce fires after 500 ms of real time; waitFor covers that window.
+async function typeAndWaitForResults(user, query) {
+  await user.type(
+    screen.getByLabelText(/search for a city, town or country/i),
+    query,
+  );
+  await waitFor(
+    () => expect(screen.getByRole('listbox', { name: /location results/i })).toBeInTheDocument(),
+    { timeout: 2000 },
+  );
+}
+
+// Click the first result button.  Scoped to the results listbox so that native
+// <option> elements inside the <select> dropdowns are not mistakenly matched.
+// Wrapped in act() so React flushes all resulting state updates before returning.
+async function selectFirstResult() {
+  const listbox = screen.getByRole('listbox', { name: /location results/i });
+  await act(async () => {
+    fireEvent.click(within(listbox).getAllByRole('option')[0]);
+  });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => NOMINATIM_RESULTS,
+  });
+  api.joinGame.mockResolvedValue({ gameId: 'g1', playerId: 'p1', role: 'seeker', team: null });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// (f) Pure helper — no component required
+// ---------------------------------------------------------------------------
+
+describe('centerRadiusToBounds', () => {
+  it('computes lat/lon deltas within 1% of expected for London (51.5°N)', () => {
+    const center = { lat: 51.5074, lon: -0.1278 };
+    const radiusKm = 15;
+    const result = centerRadiusToBounds(center, radiusKm);
+
+    const expectedLatDelta = radiusKm / 111;
+    const expectedLonDelta = radiusKm / (111 * Math.cos(center.lat * (Math.PI / 180)));
+
+    expect(result.lat_min).toBeCloseTo(center.lat - expectedLatDelta, 10);
+    expect(result.lat_max).toBeCloseTo(center.lat + expectedLatDelta, 10);
+    expect(result.lon_min).toBeCloseTo(center.lon - expectedLonDelta, 10);
+    expect(result.lon_max).toBeCloseTo(center.lon + expectedLonDelta, 10);
+
+    const actualLatDelta = result.lat_max - center.lat;
+    const actualLonDelta = result.lon_max - center.lon;
+    expect(Math.abs(actualLatDelta - expectedLatDelta) / expectedLatDelta).toBeLessThan(0.01);
+    expect(Math.abs(actualLonDelta - expectedLonDelta) / expectedLonDelta).toBeLessThan(0.01);
+  });
+
+  it('handles equatorial lat — lon delta equals lat delta at 0°', () => {
+    const center = { lat: 0, lon: 0 };
+    const radiusKm = 10;
+    const result = centerRadiusToBounds(center, radiusKm);
+    const delta = radiusKm / 111;
+    expect(result.lat_max - result.lat_min).toBeCloseTo(delta * 2, 10);
+    expect(result.lon_max - result.lon_min).toBeCloseTo(delta * 2, 10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GameForm — location search
+// ---------------------------------------------------------------------------
+
+describe('GameForm — location search (Task 142)', () => {
+  // (a) Search input renders with the label specified in the task.
+  it('renders location search input with correct label', () => {
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+    expect(
+      screen.getByLabelText(/search for a city, town or country/i)
+    ).toBeInTheDocument();
+  });
+
+  // (b) Typing triggers a debounced Nominatim fetch — not before 500 ms.
+  it('does not call fetch immediately; calls it once the 500 ms debounce fires', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await user.type(
+      screen.getByLabelText(/search for a city, town or country/i),
+      'London',
+    );
+
+    // Immediately after typing the debounce has not elapsed.
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    // After 500 ms real time the debounce fires and fetch resolves.
+    await waitFor(
+      () => {
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(global.fetch).toHaveBeenCalledWith(
+          expect.stringContaining('nominatim.openstreetmap.org/search')
+        );
+        expect(global.fetch).toHaveBeenCalledWith(
+          expect.stringContaining(encodeURIComponent('London'))
+        );
+      },
+      { timeout: 2000 },
+    );
+  });
+
+  // (c) Result dropdown appears and shows display_name text.
+  it('shows result dropdown with display_name entries after fetch resolves', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await typeAndWaitForResults(user, 'London');
+
+    expect(screen.getByText(/London, Greater London/i)).toBeInTheDocument();
+    expect(screen.getByText(/London, Ontario/i)).toBeInTheDocument();
+  });
+
+  // (d) Selecting a result populates the four bounds fields.
+  it('populates bounds fields when a result is selected', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await typeAndWaitForResults(user, 'London');
+    await selectFirstResult();
+
+    // Default scale is medium → radius 15 km.
+    const expected = centerRadiusToBounds(
+      { lat: parseFloat('51.5074'), lon: parseFloat('-0.1278') },
+      15,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/lat min/i)).toHaveValue(expected.lat_min);
+      expect(screen.getByLabelText(/lat max/i)).toHaveValue(expected.lat_max);
+      expect(screen.getByLabelText(/lon min/i)).toHaveValue(expected.lon_min);
+      expect(screen.getByLabelText(/lon max/i)).toHaveValue(expected.lon_max);
+    });
+  });
+
+  // (e) Changing scale after selecting a location recomputes bounds.
+  it('recomputes bounds when scale changes after a location is selected', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await typeAndWaitForResults(user, 'London');
+    await selectFirstResult();
+
+    // Change scale to large → radius 50 km.
+    await user.selectOptions(screen.getByLabelText(/scale/i), 'large');
+
+    const expected = centerRadiusToBounds(
+      { lat: parseFloat('51.5074'), lon: parseFloat('-0.1278') },
+      50,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/lat min/i)).toHaveValue(expected.lat_min);
+      expect(screen.getByLabelText(/lat max/i)).toHaveValue(expected.lat_max);
+    });
+  });
+
+  it('does not recompute bounds when scale changes before any location is selected', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await user.selectOptions(screen.getByLabelText(/scale/i), 'large');
+
+    // No location selected — bounds remain empty (null for number inputs).
+    expect(screen.getByLabelText(/lat min/i)).toHaveValue(null);
+    expect(screen.getByLabelText(/lat max/i)).toHaveValue(null);
+  });
+
+  it('closes the dropdown and fills the search input on result selection', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await typeAndWaitForResults(user, 'London');
+    await selectFirstResult();
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('listbox', { name: /location results/i })
+      ).not.toBeInTheDocument()
+    );
+
+    const expectedText = NOMINATIM_RESULTS[0].display_name.slice(0, 60);
+    expect(
+      screen.getByLabelText(/search for a city, town or country/i)
+    ).toHaveValue(expectedText);
+  });
+
+  it('does not fire fetch when the search query is empty or whitespace', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await user.type(
+      screen.getByLabelText(/search for a city, town or country/i),
+      '   ',
+    );
+
+    // Wait long enough that the debounce would have fired for a real query.
+    await waitFor(
+      () => expect(global.fetch).not.toHaveBeenCalled(),
+      { timeout: 2000 },
+    );
+  });
+
+  it('clears the result list when the search input is cleared', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await typeAndWaitForResults(user, 'London');
+
+    await user.clear(screen.getByLabelText(/search for a city, town or country/i));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('listbox', { name: /location results/i })
+      ).not.toBeInTheDocument()
+    );
+  });
+});

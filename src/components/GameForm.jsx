@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createGame, lookupGame, joinGame } from '../api.js';
+import { centerRadiusToBounds } from './gameUtils.js';
 import Alert from './Alert.jsx';
 import styles from './GameForm.module.css';
 
@@ -7,10 +8,24 @@ const SCALES = ['small', 'medium', 'large'];
 
 const EMPTY_BOUNDS = { lat_min: '', lat_max: '', lon_min: '', lon_max: '' };
 
+// Nominatim free geocoding API — no key required. Rate-limited to ≤ 1 req/s
+// via the 500 ms debounce below (DESIGN.md §25).
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const NOMINATIM_LIMIT = 5;
+
+// Debounce delay keeps Nominatim requests ≤ 1/s (DESIGN.md §25).
+const SEARCH_DEBOUNCE_MS = 500;
+
+// Truncate long place names in the results dropdown for legibility.
+const DISPLAY_NAME_MAX_CHARS = 60;
+
+// Default zone radii by scale (DESIGN.md §25 Default radii by scale).
+const SCALE_DEFAULT_RADIUS_KM = { small: 5, medium: 15, large: 50 };
+
 /**
  * GameForm — lets a registered player create a new game or join an existing one.
  *
- * Create tab: scale selector + map bounds picker (4 numeric fields) + seeker teams toggle.
+ * Create tab: scale selector + location search + map bounds (Advanced collapsible) + seeker teams toggle.
  * Join tab: game ID input.
  *
  * Props:
@@ -27,6 +42,52 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
   const [gameId, setGameId] = useState(initialGameId);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Location search state
+  const [locationQuery, setLocationQuery] = useState('');
+  const [locationResults, setLocationResults] = useState([]);
+  const [center, setCenter] = useState(null); // { lat, lon } or null
+
+  // Debounced Nominatim search — fires 500 ms after the user stops typing.
+  useEffect(() => {
+    if (!locationQuery.trim()) {
+      setLocationResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchNominatim(locationQuery.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [locationQuery]);
+
+  async function fetchNominatim(q) {
+    const url = `${NOMINATIM_URL}?q=${encodeURIComponent(q)}&format=json&limit=${NOMINATIM_LIMIT}&addressdetails=0`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      setLocationResults(data);
+    } catch {
+      // Network failure silently ignored; the user can retype to retry.
+    }
+  }
+
+  function handleLocationSelect(result) {
+    const newCenter = { lat: parseFloat(result.lat), lon: parseFloat(result.lon) };
+    const newRadiusKm = SCALE_DEFAULT_RADIUS_KM[scale];
+    setCenter(newCenter);
+    setBounds(centerRadiusToBounds(newCenter, newRadiusKm));
+    setLocationResults([]);
+    setLocationQuery(result.display_name.slice(0, DISPLAY_NAME_MAX_CHARS));
+  }
+
+  function handleScaleChange(newScale) {
+    setScale(newScale);
+    if (center) {
+      const newRadiusKm = SCALE_DEFAULT_RADIUS_KM[newScale];
+      setBounds(centerRadiusToBounds(center, newRadiusKm));
+    }
+  }
 
   function setBound(key, value) {
     setBounds(prev => ({ ...prev, [key]: value }));
@@ -103,7 +164,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
             <select
               id="game-scale"
               value={scale}
-              onChange={e => setScale(e.target.value)}
+              onChange={e => handleScaleChange(e.target.value)}
             >
               {SCALES.map(s => (
                 <option key={s} value={s}>
@@ -125,51 +186,83 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
             </select>
           </div>
 
-          <fieldset>
-            <legend>Map Bounds</legend>
-            <div className={styles.fieldsGrid}>
-            <label>
-              Lat min
-              <input
-                type="number"
-                aria-label="Lat min"
-                value={bounds.lat_min}
-                onChange={e => setBound('lat_min', e.target.value)}
-                step="any"
-              />
-            </label>
-            <label>
-              Lat max
-              <input
-                type="number"
-                aria-label="Lat max"
-                value={bounds.lat_max}
-                onChange={e => setBound('lat_max', e.target.value)}
-                step="any"
-              />
-            </label>
-            <label>
-              Lon min
-              <input
-                type="number"
-                aria-label="Lon min"
-                value={bounds.lon_min}
-                onChange={e => setBound('lon_min', e.target.value)}
-                step="any"
-              />
-            </label>
-            <label>
-              Lon max
-              <input
-                type="number"
-                aria-label="Lon max"
-                value={bounds.lon_max}
-                onChange={e => setBound('lon_max', e.target.value)}
-                step="any"
-              />
-            </label>
-            </div>
-          </fieldset>
+          <div className={styles.locationSearch}>
+            <label htmlFor="location-search">Search for a city, town or country…</label>
+            <input
+              id="location-search"
+              type="text"
+              value={locationQuery}
+              onChange={e => setLocationQuery(e.target.value)}
+              autoComplete="off"
+              placeholder="e.g. London, Tokyo, New York"
+            />
+            {locationResults.length > 0 && (
+              <ul role="listbox" className={styles.resultsList} aria-label="Location results">
+                {locationResults.map((r, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    className={styles.resultsItem}
+                    onClick={() => handleLocationSelect(r)}
+                  >
+                    {r.display_name.slice(0, DISPLAY_NAME_MAX_CHARS)}
+                    {r.display_name.length > DISPLAY_NAME_MAX_CHARS ? '…' : ''}
+                  </button>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <details>
+            <summary className={styles.advancedSummary}>Advanced</summary>
+            <fieldset>
+              <legend>Map Bounds</legend>
+              <div className={styles.fieldsGrid}>
+                <label>
+                  Lat min
+                  <input
+                    type="number"
+                    aria-label="Lat min"
+                    value={bounds.lat_min}
+                    onChange={e => setBound('lat_min', e.target.value)}
+                    step="any"
+                  />
+                </label>
+                <label>
+                  Lat max
+                  <input
+                    type="number"
+                    aria-label="Lat max"
+                    value={bounds.lat_max}
+                    onChange={e => setBound('lat_max', e.target.value)}
+                    step="any"
+                  />
+                </label>
+                <label>
+                  Lon min
+                  <input
+                    type="number"
+                    aria-label="Lon min"
+                    value={bounds.lon_min}
+                    onChange={e => setBound('lon_min', e.target.value)}
+                    step="any"
+                  />
+                </label>
+                <label>
+                  Lon max
+                  <input
+                    type="number"
+                    aria-label="Lon max"
+                    value={bounds.lon_max}
+                    onChange={e => setBound('lon_max', e.target.value)}
+                    step="any"
+                  />
+                </label>
+              </div>
+            </fieldset>
+          </details>
 
           {error && <Alert>{error}</Alert>}
 

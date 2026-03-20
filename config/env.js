@@ -98,6 +98,16 @@ const ENV = {
    */
   endGameTimeoutMs: number('END_GAME_TIMEOUT_MS', 600_000),
 
+  /**
+   * Maximum distance in metres between a seeker spotter and the hider's last
+   * reported GPS position for a `spot_hider` claim to be confirmed.
+   * RULES.md §End Game specifies ~2 m physical spotting distance, but GPS
+   * accuracy on consumer devices is typically 5–30 m; the default of 30 m is
+   * the GPS-practical range. Increase for looser GPS environments; decrease
+   * for venues with high-accuracy positioning.
+   */
+  spotRadiusM: number('SPOT_RADIUS_M', 30),
+
   features: {
     /** Enable experimental two-team seeker mode */
     twoTeams: parseBool(getEnvVar('VITE_FEATURE_TWO_TEAMS', 'false')),

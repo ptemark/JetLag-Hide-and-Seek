@@ -125,4 +125,12 @@ describe('ENV shape and defaults', () => {
   it('autoScaling.cooldownMs defaults to 60000', () => {
     expect(ENV.autoScaling.cooldownMs).toBe(60_000);
   });
+
+  it('spotRadiusM is a number', () => {
+    expect(typeof ENV.spotRadiusM).toBe('number');
+  });
+
+  it('spotRadiusM defaults to 30 when SPOT_RADIUS_M env var is not set', () => {
+    expect(ENV.spotRadiusM).toBe(30);
+  });
 });

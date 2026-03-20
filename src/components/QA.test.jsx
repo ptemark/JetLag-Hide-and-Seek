@@ -460,6 +460,49 @@ describe('AnswerPanel', () => {
     expect(api.uploadQuestionPhoto).not.toHaveBeenCalled();
   });
 
+  it('proceeds to FileReader without error when selected photo is under 500 KB', async () => {
+    const user = userEvent.setup();
+    const photoQuestion = { ...QUESTION, questionId: 'q-photo', category: 'photo' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [photoQuestion] });
+
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/photo upload/i));
+
+    const readSpy = vi.spyOn(StubFileReader.prototype, 'readAsDataURL');
+    const smallFile = new File([new Uint8Array(100)], 'small.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText(/photo upload/i), smallFile);
+
+    expect(readSpy).toHaveBeenCalledWith(smallFile);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    readSpy.mockRestore();
+  });
+
+  it('shows error and does not call uploadQuestionPhoto when selected photo exceeds 500 KB', async () => {
+    const user = userEvent.setup();
+    const photoQuestion = { ...QUESTION, questionId: 'q-photo', category: 'photo' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [photoQuestion] });
+    api.submitAnswer.mockResolvedValue({ answerId: 'a1', questionId: 'q-photo' });
+
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/photo upload/i));
+
+    const readSpy = vi.spyOn(StubFileReader.prototype, 'readAsDataURL');
+    const largeFile = new File([new Uint8Array(600_000)], 'large.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText(/photo upload/i), largeFile);
+
+    expect(readSpy).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Photo must be under 500 KB'),
+    );
+
+    // Submit the form to confirm uploadQuestionPhoto is never reached.
+    await user.type(screen.getByLabelText(/your answer/i), 'answer text');
+    await user.click(screen.getByRole('button', { name: /submit answer/i }));
+    await waitFor(() => expect(api.submitAnswer).toHaveBeenCalled());
+    expect(api.uploadQuestionPhoto).not.toHaveBeenCalled();
+    readSpy.mockRestore();
+  });
+
   // ── Thermometer hints ──────────────────────────────────────────────────────
 
   it('shows "warmer" thermometer hint when current distance < previous distance', async () => {

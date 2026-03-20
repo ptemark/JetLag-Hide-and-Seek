@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { listQuestions, submitAnswer, uploadQuestionPhoto } from '../api.js';
 import { tentacleHint, measuringHint, matchingHint, transitHint, thermometerHint } from './questionHints.js';
 
+// Maximum photo size accepted by the API (functions/questions.js enforces 500 KB server-side).
+const MAX_PHOTO_BYTES = 500_000;
+
 /**
  * AnswerPanel — hider UI for viewing and answering pending questions.
  *
@@ -35,6 +38,10 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
   function handlePhotoChange(questionId, file) {
     if (!file) {
       setPhotos((prev) => ({ ...prev, [questionId]: null }));
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      setErrors((prev) => ({ ...prev, [questionId]: 'Photo must be under 500 KB' }));
       return;
     }
     const reader = new FileReader();

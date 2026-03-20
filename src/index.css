@@ -1,0 +1,49 @@
+/* ============================================================
+   JetLag: The Game — Global CSS tokens and base styles
+   Colour palette from DESIGN.md §22
+   ============================================================ */
+
+:root {
+  /* Background layers */
+  --color-bg: #1B2A3A;
+  --color-surface: #243447;
+  --color-surface-2: #2D3F55;
+
+  /* Borders / dividers */
+  --color-border: #3A5068;
+
+  /* Text */
+  --color-text-primary: #F0EAD6;
+  --color-text-secondary: #9EB3C8;
+
+  /* Sunset gradient bands (inner → outer) */
+  --color-sunset-1: #F5C84A;
+  --color-sunset-2: #F08730;
+  --color-sunset-3: #E05828;
+  --color-sunset-4: #C83A18;
+
+  /* Interactive / semantic */
+  --color-accent: #F08730;
+  --color-accent-hover: #E05828;
+  --color-success: #4CAF82;
+  --color-error: #E05828;
+
+  /* Highlight white */
+  --color-white: #FDFAF4;
+}
+
+/* Universal box-sizing reset */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Base body styles */
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: 'Inter', sans-serif;
+}

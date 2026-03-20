@@ -270,8 +270,11 @@ export function createServer({
       return;
     }
 
-    // POST /internal/games/:gameId/zones — register hiding zones for a game so
-    // the capture detector can evaluate seeker proximity each tick.
+    // POST /internal/games/:gameId/zones — register the single hiding zone for
+    // a game so the capture detector can evaluate seeker proximity each tick.
+    // One zone per game is intentional (RULES.md §Zone Model); the body carries
+    // `zones` as a one-element array for historical compatibility with the
+    // serverless caller in functions/gameZone.js.
     const zonesMatch = req.method === 'POST'
       && urlPath.match(/^\/internal\/games\/(?<gameId>[^/]+)\/zones$/);
     if (zonesMatch) {
@@ -280,12 +283,13 @@ export function createServer({
       req.on('end', () => {
         try {
           const { zones } = JSON.parse(body);
-          if (Array.isArray(zones)) {
-            gameStateManager.setGameZones(zonesMatch.groups.gameId, zones);
+          if (Array.isArray(zones) && zones.length > 0) {
+            // Only the first element matters — single-zone model.
+            gameStateManager.setGameZone(zonesMatch.groups.gameId, zones[0]);
             res.writeHead(204);
           } else {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'zones must be an array' }));
+            res.end(JSON.stringify({ error: 'zones must be a non-empty array' }));
             return;
           }
         } catch {
@@ -395,11 +399,13 @@ export function createServer({
                 _lastTimerSyncAt.set(gameId, Date.now());
               }
             } else if (eventType === 'false_zone') {
-              // Generate a decoy zone near one of the game's registered zones and
+              // Generate a decoy zone near the game's single hiding zone and
               // broadcast it to all players.  Track expiry for cleanup.
+              // getGameZones returns a one-element array (single-zone model is
+              // intentional — RULES.md §Zone Model).
               const zones = gameStateManager.getGameZones(gameId);
               if (zones.length > 0) {
-                const baseZone = zones[Math.floor(Math.random() * zones.length)];
+                const baseZone = zones[0];
                 const decoyId = randomUUID();
                 const decoyZone = generateDecoyZone(baseZone, decoyId);
                 const expiresAt = Date.now() + FALSE_ZONE_DURATION_MS;

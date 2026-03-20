@@ -12,7 +12,9 @@ export class GameStateManager {
 
   createGame(gameId, { status = 'waiting', seekerTeams = 0, bounds = null } = {}) {
     if (this._games.has(gameId)) return;
-    this._games.set(gameId, { status, seekerTeams, players: new Map(), zones: [], endGameActive: false, bounds });
+    // One real hiding zone per game is the invariant (RULES.md §Zone Model).
+    // `zone` is null until the hider locks their station; never an array.
+    this._games.set(gameId, { status, seekerTeams, players: new Map(), zone: null, endGameActive: false, bounds });
   }
 
   setSeekerTeams(gameId, seekerTeams) {
@@ -141,15 +143,34 @@ export class GameStateManager {
     return true;
   }
 
-  setGameZones(gameId, zones) {
+  /**
+   * Store the single hiding zone for a game.
+   * One zone per game is the invariant (RULES.md §Zone Model).
+   * A second call replaces the first — zones do not accumulate.
+   *
+   * @param {string} gameId
+   * @param {{ stationId: string, lat: number, lon: number, radiusM: number }} zone
+   * @returns {boolean} false when the game does not exist
+   */
+  setGameZone(gameId, zone) {
     const game = this._games.get(gameId);
     if (!game) return false;
-    game.zones = zones;
+    game.zone = zone;
     return true;
   }
 
+  /**
+   * Return the game's hiding zone wrapped in a one-element array, or an empty
+   * array when no zone has been set.  The array form keeps broadcast code that
+   * iterates zones backward-compatible without implying that multiple zones are
+   * valid.
+   *
+   * @param {string} gameId
+   * @returns {Array<{ stationId: string, lat: number, lon: number, radiusM: number }>}
+   */
   getGameZones(gameId) {
-    return this._games.get(gameId)?.zones ?? [];
+    const zone = this._games.get(gameId)?.zone;
+    return zone != null ? [zone] : [];
   }
 
   setGameBounds(gameId, bounds) {

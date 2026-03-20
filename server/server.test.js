@@ -923,7 +923,7 @@ describe('POST /internal/games/:gameId/start', () => {
     srv.gameStateManager.createGame(gameId);
     srv.gameStateManager.addPlayerToGame(gameId, 'hider-1', 'hider');
     srv.gameStateManager.addPlayerToGame(gameId, 'seeker-1', 'seeker');
-    srv.gameStateManager.setGameZones(gameId, [{ stationId: 'st1', lat: 51.5, lon: -0.1, radiusM: 500 }]);
+    srv.gameStateManager.setGameZone(gameId, { stationId: 'st1', lat: 51.5, lon: -0.1, radiusM: 500 });
   }
 
   it('responds 204 and starts the game in HIDING phase', async () => {
@@ -1175,7 +1175,7 @@ describe('POST /internal/games/:gameId/start', () => {
     server.gameStateManager.createGame('full-game');
     server.gameStateManager.addPlayerToGame('full-game', 'h1', 'hider');
     server.gameStateManager.addPlayerToGame('full-game', 's1', 'seeker');
-    server.gameStateManager.setGameZones('full-game', [{ stationId: 'st1', lat: 51.5, lon: -0.1, radiusM: 500 }]);
+    server.gameStateManager.setGameZone('full-game', { stationId: 'st1', lat: 51.5, lon: -0.1, radiusM: 500 });
 
     const res = await fetch(`http://localhost:${port}/internal/games/full-game/start`, {
       method: 'POST',
@@ -1384,7 +1384,7 @@ describe('createServer — hider timeout victory', () => {
     s.gameStateManager.addPlayerToGame('end-game-phase1', 'hider1', 'hider');
     s.gameStateManager.updatePlayerLocation('end-game-phase1', 'hider1', 0, 0);
     s.gameStateManager.updatePlayerLocation('end-game-phase1', 'p1', 0, 0);
-    s.gameStateManager.setGameZones('end-game-phase1', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+    s.gameStateManager.setGameZone('end-game-phase1', { stationId: 's1', lat: 0, lon: 0, radiusM: 1000 });
 
     mockWs.send.mockClear();
 
@@ -1419,7 +1419,7 @@ describe('createServer — hider timeout victory', () => {
     s.gameStateManager.addPlayerToGame('eg-timer-game', 'eg-hider1', 'hider');
     s.gameStateManager.updatePlayerLocation('eg-timer-game', 'eg-hider1', 0, 0);
     s.gameStateManager.updatePlayerLocation('eg-timer-game', 'eg-timer-p1', 0, 0);
-    s.gameStateManager.setGameZones('eg-timer-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+    s.gameStateManager.setGameZone('eg-timer-game', { stationId: 's1', lat: 0, lon: 0, radiusM: 1000 });
 
     mockWs.send.mockClear();
     const now = Date.now();
@@ -1454,7 +1454,7 @@ describe('createServer — hider timeout victory', () => {
     s.gameStateManager.addPlayerToGame('eg-tick-game', 'eg-tick-hider', 'hider');
     s.gameStateManager.updatePlayerLocation('eg-tick-game', 'eg-tick-hider', 0, 0);
     s.gameStateManager.updatePlayerLocation('eg-tick-game', 'eg-tick-p1', 0, 0);
-    s.gameStateManager.setGameZones('eg-tick-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+    s.gameStateManager.setGameZone('eg-tick-game', { stationId: 's1', lat: 0, lon: 0, radiusM: 1000 });
 
     // Trigger End Game.
     const gameState = s.gameStateManager.getGameState('eg-tick-game');
@@ -1486,7 +1486,7 @@ describe('createServer — hider timeout victory', () => {
     s.gameStateManager.addPlayerToGame('eg-timeout-game', 'hider1', 'hider');
     s.gameStateManager.updatePlayerLocation('eg-timeout-game', 'hider1', 0, 0);
     s.gameStateManager.updatePlayerLocation('eg-timeout-game', 'p1', 0, 0);
-    s.gameStateManager.setGameZones('eg-timeout-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+    s.gameStateManager.setGameZone('eg-timeout-game', { stationId: 's1', lat: 0, lon: 0, radiusM: 1000 });
 
     // Trigger End Game (phase 1).
     const gameState = s.gameStateManager.getGameState('eg-timeout-game');
@@ -1518,7 +1518,7 @@ describe('createServer — hider timeout victory', () => {
     s.gameStateManager.addPlayerToGame('spot-end-game', 'hider1', 'hider');
     s.gameStateManager.updatePlayerLocation('spot-end-game', 'hider1', 0, 0);
     s.gameStateManager.updatePlayerLocation('spot-end-game', 'p1', 0, 0);
-    s.gameStateManager.setGameZones('spot-end-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+    s.gameStateManager.setGameZone('spot-end-game', { stationId: 's1', lat: 0, lon: 0, radiusM: 1000 });
 
     // Trigger End Game (phase 1).
     const gameState = s.gameStateManager.getGameState('spot-end-game');
@@ -1555,7 +1555,7 @@ describe('createServer — hider timeout victory', () => {
     s.gameStateManager.addPlayerToGame('no-double-hider', 'hider1', 'hider');
     s.gameStateManager.updatePlayerLocation('no-double-hider', 'hider1', 0, 0);
     s.gameStateManager.updatePlayerLocation('no-double-hider', 'p1', 0, 0);
-    s.gameStateManager.setGameZones('no-double-hider', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+    s.gameStateManager.setGameZone('no-double-hider', { stationId: 's1', lat: 0, lon: 0, radiusM: 1000 });
 
     // Trigger End Game (phase 1).
     const gameState = s.gameStateManager.getGameState('no-double-hider');
@@ -1589,7 +1589,7 @@ describe('createServer — hider timeout victory', () => {
     s.gameStateManager.addPlayerToGame('custom-timeout-game', 'hider1', 'hider');
     s.gameStateManager.updatePlayerLocation('custom-timeout-game', 'hider1', 0, 0);
     s.gameStateManager.updatePlayerLocation('custom-timeout-game', 'p1', 0, 0);
-    s.gameStateManager.setGameZones('custom-timeout-game', [{ stationId: 's1', lat: 0, lon: 0, radiusM: 1000 }]);
+    s.gameStateManager.setGameZone('custom-timeout-game', { stationId: 's1', lat: 0, lon: 0, radiusM: 1000 });
 
     // Trigger End Game (phase 1).
     const gameState = s.gameStateManager.getGameState('custom-timeout-game');
@@ -1688,9 +1688,7 @@ describe('createServer — time bonus notify', () => {
 
     // Register a zone so the server has something to offset.
     s.gameStateManager.createGame('fz-game');
-    s.gameStateManager.setGameZones('fz-game', [
-      { stationId: 's1', name: 'Station A', lat: 51.5, lon: -0.1, radiusM: 500 },
-    ]);
+    s.gameStateManager.setGameZone('fz-game', { stationId: 's1', name: 'Station A', lat: 51.5, lon: -0.1, radiusM: 500 });
     mockWs.send.mockClear();
 
     await sendNotify(s, { type: 'false_zone', gameId: 'fz-game' });
@@ -1739,9 +1737,7 @@ describe('false_zone_expiry StateDispatcher task', () => {
     mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'fze-game' }));
 
     s.gameStateManager.createGame('fze-game');
-    s.gameStateManager.setGameZones('fze-game', [
-      { stationId: 's1', name: 'Station A', lat: 51.5, lon: -0.1, radiusM: 500 },
-    ]);
+    s.gameStateManager.setGameZone('fze-game', { stationId: 's1', name: 'Station A', lat: 51.5, lon: -0.1, radiusM: 500 });
     s.gameStateManager.setGameStatus('fze-game', 'seeking');
 
     // Register a false zone via the notify endpoint (fake timers active so Date.now() is frozen).
@@ -1774,9 +1770,7 @@ describe('false_zone_expiry StateDispatcher task', () => {
     mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'fze-early' }));
 
     s.gameStateManager.createGame('fze-early');
-    s.gameStateManager.setGameZones('fze-early', [
-      { stationId: 's1', name: 'Station A', lat: 51.5, lon: -0.1, radiusM: 500 },
-    ]);
+    s.gameStateManager.setGameZone('fze-early', { stationId: 's1', name: 'Station A', lat: 51.5, lon: -0.1, radiusM: 500 });
     s.gameStateManager.setGameStatus('fze-early', 'seeking');
 
     await sendNotify(s, { type: 'false_zone', gameId: 'fze-early' });

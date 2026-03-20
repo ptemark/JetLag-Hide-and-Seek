@@ -7,7 +7,7 @@
  *
  * Persists the chosen hiding zone to the `game_zones` table and notifies the
  * managed game server via POST /internal/notify so it can:
- *   1. Call GameStateManager.setGameZones() with the chosen zone.
+ *   1. Call GameStateManager.setGameZone() with the chosen zone.
  *   2. Broadcast a `zone_locked` WebSocket event to all players in the game.
  *
  * The notification is fire-and-forget — a network failure to reach the managed

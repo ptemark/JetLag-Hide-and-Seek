@@ -353,4 +353,41 @@ describe('GameStateManager', () => {
     gsm.createGame('g1', { bounds });
     expect(gsm.getGameBounds('g1')).toEqual(bounds);
   });
+
+  // -------------------------------------------------------------------------
+  // setGameZone / getGameZones — Task 131 (single-zone model)
+  // -------------------------------------------------------------------------
+
+  it('getGameZones returns empty array for a game with no zone set', () => {
+    gsm.createGame('g1');
+    expect(gsm.getGameZones('g1')).toEqual([]);
+  });
+
+  it('getGameZones returns empty array for unknown game', () => {
+    expect(gsm.getGameZones('unknown')).toEqual([]);
+  });
+
+  it('setGameZone stores the zone and getGameZones returns it wrapped in an array', () => {
+    gsm.createGame('g1');
+    const zone = { stationId: 's1', lat: 51.5, lon: -0.1, radiusM: 500 };
+    const result = gsm.setGameZone('g1', zone);
+    expect(result).toBe(true);
+    expect(gsm.getGameZones('g1')).toEqual([zone]);
+  });
+
+  it('calling setGameZone twice replaces the first zone (no accumulation)', () => {
+    gsm.createGame('g1');
+    const zone1 = { stationId: 's1', lat: 51.5, lon: -0.1, radiusM: 500 };
+    const zone2 = { stationId: 's2', lat: 51.6, lon: -0.2, radiusM: 600 };
+    gsm.setGameZone('g1', zone1);
+    gsm.setGameZone('g1', zone2);
+    const result = gsm.getGameZones('g1');
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(zone2);
+  });
+
+  it('setGameZone returns false for unknown game', () => {
+    const zone = { stationId: 's1', lat: 51.5, lon: -0.1, radiusM: 500 };
+    expect(gsm.setGameZone('unknown', zone)).toBe(false);
+  });
 });

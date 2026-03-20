@@ -86,10 +86,7 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
               disabled={!!locked || loading}
               onClick={() => setStaged(zone)}
               aria-pressed={staged?.stationId === zone.stationId}
-              style={{
-                fontWeight: staged?.stationId === zone.stationId ? 'bold' : 'normal',
-                cursor: locked ? 'not-allowed' : 'pointer',
-              }}
+              className={[styles.zoneBtn, staged?.stationId === zone.stationId ? styles.zoneBtnSelected : ''].filter(Boolean).join(' ')}
             >
               {zone.name ?? zone.stationId} ({zone.radiusM} m)
             </button>

@@ -49,3 +49,29 @@
 .zoneItem {
   margin-bottom: 0.5rem;
 }
+
+/* Zone list button — base style; selected state handled by .zoneBtnSelected */
+.zoneBtn {
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.375rem 0.75rem;
+  width: 100%;
+  text-align: left;
+  color: var(--color-text-primary);
+  min-height: 44px;
+  font-family: 'Inter', sans-serif;
+}
+
+.zoneBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Applied when this zone is staged (selected but not yet confirmed) */
+.zoneBtnSelected {
+  font-weight: bold;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}

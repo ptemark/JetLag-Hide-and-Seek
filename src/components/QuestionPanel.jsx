@@ -147,7 +147,7 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
     <section aria-label="Question panel">
       <h3>Ask a Question</h3>
       {isCurseActive && (
-        <p role="status" data-testid="curse-banner" style={{ background: '#fee2e2', padding: '0.25rem 0.5rem' }}>
+        <p role="status" data-testid="curse-banner" className={styles.curseBanner}>
           Questions blocked by curse — {curseCountdown} remaining
         </p>
       )}

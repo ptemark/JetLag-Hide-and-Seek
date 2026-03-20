@@ -487,7 +487,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
 
   return (
     <div aria-label="Game map">
-      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0' }}>
+      <div className={styles.gameHeader}>
         <span>
           Game: <code>{game.gameId}</code> · Phase: <strong>{phase}</strong>
         </span>
@@ -503,33 +503,33 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {joinError && (
-        <p role="alert" data-testid="join-error-banner" style={{ background: '#fecaca', padding: '0.5rem', fontWeight: 'bold' }}>
+        <p role="alert" data-testid="join-error-banner" className={styles.alertBanner}>
           {joinError}
         </p>
       )}
 
       {outOfZone && player.role === 'hider' && (
-        <p role="alert" data-testid="out-of-zone-banner" style={{ background: '#fef3c7', padding: '0.5rem', fontWeight: 'bold' }}>
+        <p role="alert" data-testid="out-of-zone-banner" className={styles.warningBanner}>
           Warning: You are outside your hiding zone — return immediately!
         </p>
       )}
 
       {hiderOutOfZone && player.role === 'seeker' && (
-        <p role="status" data-testid="hider-out-of-zone-banner" style={{ background: '#dcfce7', padding: '0.5rem', fontWeight: 'bold' }}>
+        <p role="status" data-testid="hider-out-of-zone-banner" className={styles.infoBanner}>
           The hider has left their hiding zone!
         </p>
       )}
 
       {movementLocked && player.role === 'hider' && (
-        <p role="alert" data-testid="movement-locked-banner" style={{ background: '#fecaca', padding: '0.5rem', fontWeight: 'bold' }}>
+        <p role="alert" data-testid="movement-locked-banner" className={styles.alertBanner}>
           Movement locked — you cannot move during End Game!
         </p>
       )}
 
       {locationRejected && (
-        <p role="alert" data-testid="location-rejected-banner" style={{ background: '#fecaca', padding: '0.5rem', fontWeight: 'bold' }}>
+        <p role="alert" data-testid="location-rejected-banner" className={styles.alertBanner}>
           Your location is outside game bounds
-          <button onClick={() => setLocationRejected(false)} style={{ marginLeft: '0.5rem' }} aria-label="Dismiss">✕</button>
+          <button onClick={() => setLocationRejected(false)} className={styles.dismissBtn} aria-label="Dismiss">✕</button>
         </p>
       )}
 
@@ -546,7 +546,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {captureMsg && (
-        <p role="alert" style={{ background: '#ffe', padding: '0.5rem', fontWeight: 'bold' }}>
+        <p role="alert" className={styles.captureBanner}>
           {captureMsg}
         </p>
       )}
@@ -597,7 +597,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       </div>
 
       {spotResult === 'rejected' && player.role === 'seeker' && phase === 'seeking' && (
-        <span data-testid="spot-rejected-msg" style={{ color: 'var(--color-error)', fontSize: '0.875rem' }}>
+        <span data-testid="spot-rejected-msg" className={styles.spotRejectedMsg}>
           {spotDistance.distanceM != null && spotDistance.spotRadiusM != null
             ? `You are ${Math.round(spotDistance.distanceM)} m away; need to be within ${spotDistance.spotRadiusM} m`
             : 'You are not close enough to the hider yet.'}
@@ -605,7 +605,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {player.role === 'seeker' && phase === 'seeking' && (
-        <div style={{ padding: '0.5rem 0' }}>
+        <div className={styles.transitToggleWrapper}>
           <button
             type="button"
             data-testid="transit-toggle"
@@ -621,14 +621,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
                 }));
               }
             }}
-            style={{
-              background: myOnTransit ? '#fbbf24' : '#d1fae5',
-              border: '1px solid #999',
-              borderRadius: '0.375rem',
-              padding: '0.375rem 0.75rem',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-            }}
+            className={`${styles.transitToggle} ${myOnTransit ? styles.transitToggleOn : styles.transitToggleOff}`}
           >
             {myOnTransit ? '🚌 On Transit' : '🚶 Off Transit'}
           </button>

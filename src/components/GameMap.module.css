@@ -68,3 +68,100 @@
   font-size: 1.1rem;
   padding: 0.25rem 0;
 }
+
+/* ── Game header bar ────────────────────────────────────────────────────────── */
+.gameHeader {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+}
+
+/* ── Status banners ─────────────────────────────────────────────────────────── */
+
+/* Error/alert banner — uses sunset-4 (error colour) tint, matches DESIGN.md §22 alert style */
+.alertBanner {
+  background: rgba(200, 58, 24, 0.15);
+  border-left: 3px solid var(--color-error);
+  color: var(--color-text-primary);
+  border-radius: 0 4px 4px 0;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+}
+
+/* Warning banner — amber tint using sunset-1 */
+.warningBanner {
+  background: rgba(245, 200, 74, 0.15);
+  border-left: 3px solid var(--color-sunset-1);
+  color: var(--color-text-primary);
+  border-radius: 0 4px 4px 0;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+}
+
+/* Info/success banner — green tint using success colour */
+.infoBanner {
+  background: rgba(76, 175, 130, 0.15);
+  border-left: 3px solid var(--color-success);
+  color: var(--color-text-primary);
+  border-radius: 0 4px 4px 0;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+}
+
+/* Capture result banner — neutral accent tint */
+.captureBanner {
+  background: rgba(240, 135, 48, 0.15);
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text-primary);
+  border-radius: 0 4px 4px 0;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+}
+
+/* Dismiss (✕) button inside a banner */
+.dismissBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  margin-left: 0.5rem;
+  color: inherit;
+  padding: 0 0.25rem;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Small error text shown below the spot-hider button */
+.spotRejectedMsg {
+  display: block;
+  color: var(--color-error);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+/* ── Transit toggle ─────────────────────────────────────────────────────────── */
+.transitToggleWrapper {
+  padding: 0.5rem 0;
+}
+
+.transitToggle {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.375rem 0.75rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* On-transit state: warm amber background to signal caution */
+.transitToggleOn {
+  background: var(--color-sunset-1);
+  color: var(--color-bg);
+}
+
+/* Off-transit state: green background to signal active seeker */
+.transitToggleOff {
+  background: var(--color-success);
+  color: var(--color-bg);
+}

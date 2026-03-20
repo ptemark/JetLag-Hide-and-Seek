@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { lockZone } from '../api.js';
+import styles from './ZoneSelector.module.css';
 
 /**
  * ZoneSelector — shown to the hider during the hiding phase.
@@ -57,10 +58,10 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
   return (
     <div aria-label="Zone selector" data-testid="zone-selector">
       <h3>Select your hiding zone</h3>
-      <p>Tap a transit station to lock your hiding zone for this game.</p>
+      <p className={styles.instructions}>Tap a transit station to lock your hiding zone for this game.</p>
 
       {error && (
-        <p role="alert" style={{ color: 'red' }}>
+        <p role="alert" className={styles.errorMsg}>
           {error}
         </p>
       )}
@@ -69,9 +70,9 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
         <p>No stations available in the game area.</p>
       )}
 
-      <ul style={{ listStyle: 'none', padding: 0 }}>
+      <ul className={styles.zoneList}>
         {zones.map((zone) => (
-          <li key={zone.stationId} style={{ marginBottom: '0.5rem' }}>
+          <li key={zone.stationId} className={styles.zoneItem}>
             <button
               disabled={!!locked || loading}
               onClick={() => setStaged(zone)}
@@ -92,7 +93,7 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
           <p>
             Lock <strong>{staged.name ?? staged.stationId}</strong> as your hiding zone?
           </p>
-          <button onClick={confirmLock} disabled={loading}>
+          <button className={styles.confirmBtn} onClick={confirmLock} disabled={loading}>
             {loading ? 'Locking…' : 'Confirm'}
           </button>
           <button onClick={() => setStaged(null)} disabled={loading}>

@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react';
 import { startGame, lookupGame } from '../api.js';
 import Alert from './Alert.jsx';
+import styles from './WaitingRoom.module.css';
 
 /** Valid hiding duration ranges per scale (RULES.md §Game Scales), in minutes. */
 const SCALE_DURATION_RANGES = {
@@ -72,7 +73,7 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
     <div aria-label="Waiting room" className="panel">
       <h2>Waiting Room</h2>
       <p>
-        Game ID: <code>{game.gameId}</code>
+        Game ID: <code className={styles.inviteCode}>{game.gameId}</code>
       </p>
       <p>Scale: {game.size}</p>
       {(game.seekerTeams ?? 0) >= 2 && (
@@ -81,15 +82,15 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
       <p>Status: {game.status}</p>
       {showTeam && (
         <p aria-label="Team assignment">
-          Your team: <strong>Team {player.team}</strong>
+          Your team: <strong className={styles.teamBadge}>Team {player.team}</strong>
         </p>
       )}
       <p>
         Invite link:{' '}
-        <a href={inviteUrl} aria-label="Invite link">{inviteUrl}</a>
+        <a href={inviteUrl} aria-label="Invite link" className={styles.inviteLink}>{inviteUrl}</a>
       </p>
       {onStart && (
-        <div>
+        <div className={styles.durationRow}>
           <label>
             Hiding duration (min):{' '}
             <input

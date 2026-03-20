@@ -1,0 +1,44 @@
+/* ZoneSelector component styles */
+
+.instructions {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+/* Confirm button: compound panel surface with primary accent styling */
+.confirmBtn {
+  background: var(--color-accent);
+  color: var(--color-bg);
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.confirmBtn:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.confirmBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.errorMsg {
+  color: var(--color-error);
+}
+
+.zoneList {
+  list-style: none;
+  padding: 0;
+}
+
+.zoneItem {
+  margin-bottom: 0.5rem;
+}

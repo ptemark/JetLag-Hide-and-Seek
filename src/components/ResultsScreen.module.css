@@ -1,0 +1,64 @@
+/* ResultsScreen component styles */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-bg);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.winner {
+  font-family: 'Oswald', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--color-sunset-2);
+  text-align: center;
+  margin: 0;
+}
+
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1.5rem 0;
+  width: 100%;
+  max-width: 320px;
+}
+
+.statsTable {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.labelCell {
+  padding: 0.4rem 1rem;
+  text-align: right;
+  color: var(--color-text-secondary);
+}
+
+.valueCell {
+  padding: 0.4rem 1rem;
+  font-weight: 700;
+}
+
+.playAgainBtn {
+  margin-top: 1.5rem;
+  padding: 0.75rem 2rem;
+  font-size: 1.1rem;
+  border-radius: 8px;
+  border: none;
+  background: var(--color-white);
+  color: var(--color-bg);
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 44px;
+}
+
+.playAgainBtn:hover {
+  background: var(--color-text-primary);
+}

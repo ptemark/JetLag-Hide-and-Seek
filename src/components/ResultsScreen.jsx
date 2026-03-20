@@ -7,6 +7,7 @@
  *   bonusSeconds — total bonus seconds from time_bonus cards played
  *   onPlayAgain  — callback invoked when the user taps "Play Again"
  */
+import styles from './ResultsScreen.module.css';
 
 /**
  * Format a duration in milliseconds as "Xh Ym Zs" or "Ym Zs".
@@ -27,66 +28,43 @@ export default function ResultsScreen({ winner, elapsedMs, bonusSeconds = 0, onP
   const isHiderWin  = winner === 'hider';
   const finalScore  = Math.max(0, Math.floor(elapsedMs / 1000)) + bonusSeconds;
 
-  const bannerStyle = {
-    position: 'fixed',
-    inset: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: isHiderWin ? 'rgba(0,100,0,0.92)' : 'rgba(139,0,0,0.92)',
-    color: '#fff',
-    zIndex: 9999,
-    padding: '2rem',
-    textAlign: 'center',
-    gap: '1rem',
-  };
-
   return (
-    <div aria-label="Results screen" role="dialog" style={bannerStyle}>
-      <h1 style={{ margin: 0, fontSize: '2.5rem' }}>
+    <div aria-label="Results screen" role="dialog" className={styles.overlay}>
+      <h1 className={styles.winner}>
         {isHiderWin ? 'Hider Wins!' : 'Seekers Win!'}
       </h1>
 
-      <table aria-label="Game results" style={{ borderCollapse: 'collapse', minWidth: 260 }}>
-        <tbody>
-          <tr>
-            <td style={{ padding: '0.4rem 1rem', textAlign: 'right', opacity: 0.8 }}>Hiding time:</td>
-            <td style={{ padding: '0.4rem 1rem', fontWeight: 'bold' }}>
-              {formatDuration(elapsedMs)}
-            </td>
-          </tr>
-          {bonusSeconds > 0 && (
+      <div className={styles.stats}>
+        <table aria-label="Game results" className={styles.statsTable}>
+          <tbody>
             <tr>
-              <td style={{ padding: '0.4rem 1rem', textAlign: 'right', opacity: 0.8 }}>Card bonus:</td>
-              <td style={{ padding: '0.4rem 1rem', fontWeight: 'bold' }}>
-                +{formatDuration(bonusSeconds * 1000)}
+              <td className={styles.labelCell}>Hiding time:</td>
+              <td className={styles.valueCell}>
+                {formatDuration(elapsedMs)}
               </td>
             </tr>
-          )}
-          <tr>
-            <td style={{ padding: '0.4rem 1rem', textAlign: 'right', opacity: 0.8 }}>Final score:</td>
-            <td style={{ padding: '0.4rem 1rem', fontWeight: 'bold', fontSize: '1.2rem' }}>
-              {finalScore}s
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            {bonusSeconds > 0 && (
+              <tr>
+                <td className={styles.labelCell}>Card bonus:</td>
+                <td className={styles.valueCell}>
+                  +{formatDuration(bonusSeconds * 1000)}
+                </td>
+              </tr>
+            )}
+            <tr>
+              <td className={styles.labelCell}>Final score:</td>
+              <td className={styles.valueCell}>
+                {finalScore}s
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <button
         aria-label="Play Again"
         onClick={onPlayAgain}
-        style={{
-          marginTop: '1.5rem',
-          padding: '0.75rem 2rem',
-          fontSize: '1.1rem',
-          borderRadius: 8,
-          border: 'none',
-          background: '#fff',
-          color: '#333',
-          cursor: 'pointer',
-          fontWeight: 'bold',
-        }}
+        className={styles.playAgainBtn}
       >
         Play Again
       </button>

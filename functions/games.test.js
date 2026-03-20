@@ -551,6 +551,69 @@ describe('joinGame (in-process)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// handleCreateGame (with pool) — regression test for the SCHEMA_SQL drift bug
+// ---------------------------------------------------------------------------
+// Root cause: db/db.js SCHEMA_SQL was missing seeker_teams and host_player_id
+// columns, so dbCreateGame's INSERT failed in production with
+// "column seeker_teams does not exist".  This suite ensures the DB path works.
+
+describe('handleCreateGame (with pool)', () => {
+  it('returns 201 with gameId and status when pool resolves', async () => {
+    const mockRow = {
+      id: 'game-uuid-1',
+      size: 'medium',
+      bounds: {},
+      status: 'waiting',
+      seeker_teams: 0,
+      host_player_id: null,
+      created_at: new Date().toISOString(),
+    };
+    const pool = { query: vi.fn().mockResolvedValue({ rows: [mockRow] }) };
+    const res = await handleCreateGame(
+      { method: 'POST', body: { size: 'medium', bounds: {}, seekerTeams: 0 } },
+      pool,
+    );
+    expect(res.status).toBe(201);
+    expect(res.body.gameId).toBe('game-uuid-1');
+    expect(res.body.status).toBe('waiting');
+  });
+
+  it('passes seeker_teams to the INSERT query', async () => {
+    const mockRow = {
+      id: 'game-uuid-2',
+      size: 'small',
+      bounds: {},
+      status: 'waiting',
+      seeker_teams: 2,
+      host_player_id: 'player-1',
+      created_at: new Date().toISOString(),
+    };
+    const pool = { query: vi.fn().mockResolvedValue({ rows: [mockRow] }) };
+    const res = await handleCreateGame(
+      { method: 'POST', body: { size: 'small', bounds: {}, seekerTeams: 2, playerId: 'player-1' } },
+      pool,
+    );
+    expect(res.status).toBe(201);
+    expect(res.body.seekerTeams).toBe(2);
+    expect(res.body.hostPlayerId).toBe('player-1');
+    // Verify the INSERT query included seeker_teams and host_player_id columns.
+    const sql = pool.query.mock.calls[0][0];
+    expect(sql).toMatch(/seeker_teams/);
+    expect(sql).toMatch(/host_player_id/);
+  });
+
+  it('returns 400 when pool query rejects with a validation error', async () => {
+    const pool = { query: vi.fn().mockRejectedValue(new Error('invalid size')) };
+    const res = await handleCreateGame(
+      { method: 'POST', body: { size: 'invalid', bounds: {} } },
+      pool,
+    );
+    // 400 from the createGame validation (size check fires before pool.query).
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('joinGame (with pool)', () => {
   it('calls dbJoinGame with pool and returns 200 on success', async () => {
     // Pool rows must use snake_case column names as returned by Postgres.

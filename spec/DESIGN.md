@@ -622,6 +622,65 @@ padding:       0.5rem 0.75rem
 - One global stylesheet (`src/index.css`) for tokens + resets; per-component `.module.css` files for layout
 - No CSS-in-JS dependencies (keep bundle lean for mobile)
 
+### Game Creation — Location Picker
+
+After selecting a game size, the host uses an interactive location picker to define where the game will be played. The flow replaces the raw four-field bounds form with a search-first, map-centric experience.
+
+#### 1. Geocoding search
+
+A text input labelled "Search for a city, town or country…" calls the **Nominatim OSM API** (`https://nominatim.openstreetmap.org/search?q=…&format=json&limit=5`) on form submit or after a 500 ms debounce. Results appear in a dropdown list beneath the input; selecting a result:
+- Centres and zooms the preview map to the result's bounding box.
+- Sets `center` to the result's `lat`/`lon`.
+- Recomputes `radiusKm` to the scale default (see table below) and updates the `bounds` fields.
+
+Nominatim is free, requires no API key, and must be rate-limited to ≤ 1 request/second (debounce handles this). No new paid APIs are introduced.
+
+#### 2. Preview map
+
+A Leaflet OSM map (same dark CartoDB `dark_all` tiles as `GameMap`) renders inside the Create Game form directly below the search bar. The map is hidden until a location is chosen (to avoid blank-map confusion on first load). On location select the map:
+- Flies to the result bounding box.
+- Draws a `L.circle` centred on the result, radius = scale default, styled with `rgba(240,135,48,0.15)` fill and `--color-sunset-2` stroke — matching the in-game zone style.
+- Shows a draggable centre marker so the host can nudge the zone without re-searching.
+
+#### 3. Draggable radius resize
+
+The host can resize the zone circle by dragging a **resize handle** — a small accent-coloured circle marker placed at the east edge of the zone circle. Dragging it updates `radiusKm` live and redraws the circle. A read-only numeric display (or editable input) shows the current radius in km. The drag handle is keyboard-accessible (arrow keys ±1 km).
+
+#### 4. Lat/lon fields
+
+The four `lat_min / lat_max / lon_min / lon_max` fields are retained in a collapsible **"Advanced"** disclosure section below the map. They are auto-populated whenever the map changes (centre + radius → axis-aligned bounding box). Manual edits to any field update the map circle accordingly (centre = midpoint of bounds, radius = half the shorter dimension). This gives power users a direct numeric override and preserves API compatibility.
+
+#### Data flow
+
+```
+State: { center: { lat, lon }, radiusKm, bounds: { lat_min, lat_max, lon_min, lon_max } }
+
+Geocoding result selected  →  set center + radiusKm (scale default)  →  recompute bounds
+Map centre marker dragged  →  update center  →  recompute bounds
+Resize handle dragged      →  update radiusKm  →  recompute bounds
+Manual field edited        →  update bounds  →  recompute center + radiusKm (best-fit)
+Form submit                →  send bounds to POST /api/games (API unchanged)
+```
+
+#### Default radii by scale
+
+| Scale | Default radius | Approx. area |
+|-------|---------------|--------------|
+| small | 5 km | ~78 km² |
+| medium | 15 km | ~707 km² |
+| large | 50 km | ~7 854 km² |
+
+The host may resize freely; there is no enforced minimum/maximum beyond what the game rules imply.
+
+#### Library constraints
+
+- Geocoding: Nominatim REST — no new dependency.
+- Map: existing `react-leaflet` + `leaflet` already in bundle — no new map library.
+- Resize handle: implemented as a standard Leaflet `L.marker` with a custom icon dragged via `dragend` event — no `leaflet-editable` or other plugin needed.
+- Map height in form: `260px` fixed on mobile, `320px` at ≥ 600 px breakpoint — consistent with mobile-first layout.
+
+---
+
 ### Technology Selection Rationale
 
 | Decision | Chosen | Rejected alternatives | Reason |

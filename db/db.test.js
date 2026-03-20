@@ -53,7 +53,7 @@ describe('SCHEMA_SQL', () => {
     expect(playersBlock).toMatch(/\bcreated_at\b/);
   });
 
-  it('games table has id, size, bounds, status, created_at, updated_at columns', () => {
+  it('games table has id, size, bounds, status, seeker_teams, created_at, updated_at columns', () => {
     const gamesBlock = SCHEMA_SQL.slice(
       SCHEMA_SQL.indexOf('CREATE TABLE IF NOT EXISTS games'),
       SCHEMA_SQL.indexOf(');', SCHEMA_SQL.indexOf('CREATE TABLE IF NOT EXISTS games')) + 2
@@ -62,8 +62,33 @@ describe('SCHEMA_SQL', () => {
     expect(gamesBlock).toMatch(/\bsize\b/);
     expect(gamesBlock).toMatch(/\bbounds\b/);
     expect(gamesBlock).toMatch(/\bstatus\b/);
+    expect(gamesBlock).toMatch(/\bseeker_teams\b/);
     expect(gamesBlock).toMatch(/\bcreated_at\b/);
     expect(gamesBlock).toMatch(/\bupdated_at\b/);
+  });
+
+  it('includes host_player_id migration for games table', () => {
+    expect(SCHEMA_SQL).toMatch(/ALTER TABLE games ADD COLUMN IF NOT EXISTS host_player_id/);
+  });
+
+  it('defines the questions table', () => {
+    expect(SCHEMA_SQL).toMatch(/CREATE TABLE IF NOT EXISTS questions/);
+  });
+
+  it('defines the cards table', () => {
+    expect(SCHEMA_SQL).toMatch(/CREATE TABLE IF NOT EXISTS cards/);
+  });
+
+  it('defines the game_zones table', () => {
+    expect(SCHEMA_SQL).toMatch(/CREATE TABLE IF NOT EXISTS game_zones/);
+  });
+
+  it('scores table includes bonus_seconds column', () => {
+    const scoresBlock = SCHEMA_SQL.slice(
+      SCHEMA_SQL.indexOf('CREATE TABLE IF NOT EXISTS scores'),
+      SCHEMA_SQL.indexOf(');', SCHEMA_SQL.indexOf('CREATE TABLE IF NOT EXISTS scores')) + 2
+    );
+    expect(scoresBlock).toMatch(/\bbonus_seconds\b/);
   });
 
   it('games status column constrains valid values', () => {

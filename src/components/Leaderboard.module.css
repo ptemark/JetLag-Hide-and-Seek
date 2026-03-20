@@ -1,0 +1,50 @@
+.container {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.9rem;
+}
+
+.rank1 {
+  color: var(--color-sunset-1);
+  font-weight: 700;
+}
+
+.rank2 {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.rank3 {
+  color: var(--color-sunset-3);
+  font-weight: 600;
+}
+
+.empty {
+  text-align: center;
+  color: var(--color-text-secondary);
+  padding: 1.5rem;
+}

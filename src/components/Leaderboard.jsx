@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchLeaderboard } from '../api.js';
+import styles from './Leaderboard.module.css';
 
 /**
  * Format seconds as MM:SS (e.g. 90 → "01:30").
@@ -50,7 +51,7 @@ export default function Leaderboard({ gameId } = {}) {
 
   if (loading) return <p>Loading leaderboard…</p>;
   if (error) return <p role="alert">Failed to load leaderboard: {error}</p>;
-  if (scores.length === 0) return <p>No scores yet.</p>;
+  if (scores.length === 0) return <p className={styles.empty}>No scores yet.</p>;
 
   const sorted = [...scores].sort((a, b) => {
     const totalA = a.scoreSeconds + (a.bonusSeconds ?? 0);
@@ -58,32 +59,37 @@ export default function Leaderboard({ gameId } = {}) {
     return totalB - totalA;
   });
 
+  const RANK_CLASSES = [styles.rank1, styles.rank2, styles.rank3];
+
   return (
-    <table aria-label="leaderboard">
-      <thead>
-        <tr>
-          <th>Rank</th>
-          <th>Player</th>
-          <th>Scale</th>
-          <th>Score</th>
-          <th>Bonus</th>
-        </tr>
-      </thead>
-      <tbody>
-        {sorted.map((s, i) => {
-          const total = s.scoreSeconds + (s.bonusSeconds ?? 0);
-          const bonus = fmtBonus(s.bonusSeconds ?? 0);
-          return (
-            <tr key={`${i}-${s.playerName}`}>
-              <td>{i + 1}</td>
-              <td>{s.playerName}</td>
-              <td>{s.scale ?? '—'}</td>
-              <td>{fmtMmSs(total)}</td>
-              <td>{bonus ?? ''}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className={styles.container}>
+      <table aria-label="leaderboard" className={styles.table}>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Player</th>
+            <th>Scale</th>
+            <th>Score</th>
+            <th>Bonus</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((s, i) => {
+            const total = s.scoreSeconds + (s.bonusSeconds ?? 0);
+            const bonus = fmtBonus(s.bonusSeconds ?? 0);
+            const rankClass = RANK_CLASSES[i] ?? '';
+            return (
+              <tr key={`${i}-${s.playerName}`} className={rankClass}>
+                <td>{i + 1}</td>
+                <td>{s.playerName}</td>
+                <td>{s.scale ?? '—'}</td>
+                <td>{fmtMmSs(total)}</td>
+                <td>{bonus ?? ''}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

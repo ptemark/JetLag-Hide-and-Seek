@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { submitQuestion, listQuestions, fetchQuestionPhoto } from '../api.js';
 import { tentacleHint, measuringHint, matchingHint, transitHint, thermometerHint } from './questionHints.js';
+import styles from './QuestionPanel.module.css';
 
 const CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
@@ -268,36 +269,36 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
       {allQuestions.length > 0 && (
         <div aria-label="Question history">
           <h4>Question history</h4>
-          <ul>
+          <ul className={styles.history}>
             {allQuestions.map((q) => (
-              <li key={q.questionId}>
-                <strong>[{q.category}]</strong> {q.text}{' '}
+              <li key={q.questionId} className={styles.historyItem}>
+                <span className={styles.category}>[{q.category}]</span>{' '}{q.text}{' '}
                 <em aria-label={`status: ${q.status}`}>— {q.status}</em>
                 {q.answer && (
                   <span aria-label="answer"> → {q.answer.text}</span>
                 )}
                 {q.answer && q.category === 'thermometer' && (
-                  <p data-testid="question-thermometer-hint">
+                  <p data-testid="question-thermometer-hint" className={styles.hint}>
                     {thermometerHint(q.thermometerCurrentDistanceM, q.thermometerPreviousDistanceM)}
                   </p>
                 )}
                 {q.answer && q.category === 'tentacle' && (
-                  <p data-testid="question-tentacle-hint">
+                  <p data-testid="question-tentacle-hint" className={styles.hint}>
                     {tentacleHint(q.tentacleWithinRadius, q.tentacleDistanceKm)}
                   </p>
                 )}
                 {q.answer && q.category === 'measuring' && (
-                  <p data-testid="question-measuring-hint">
+                  <p data-testid="question-measuring-hint" className={styles.hint}>
                     {measuringHint(q.measuringHiderIsCloser, q.measuringHiderDistanceKm, q.measuringSeekerDistanceKm)}
                   </p>
                 )}
                 {q.answer && q.category === 'transit' && (
-                  <p data-testid="question-transit-hint">
+                  <p data-testid="question-transit-hint" className={styles.hint}>
                     {transitHint(q.transitNearestStationName, q.transitNearestStationDistanceKm)}
                   </p>
                 )}
                 {q.answer && q.category === 'matching' && (
-                  <p data-testid="question-matching-hint">
+                  <p data-testid="question-matching-hint" className={styles.hint}>
                     {matchingHint(q.matchingFeaturesMatch, q.matchingFeatureType, q.matchingHiderFeatureName, q.matchingSeekerFeatureName)}
                   </p>
                 )}

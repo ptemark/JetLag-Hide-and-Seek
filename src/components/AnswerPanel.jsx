@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { listQuestions, submitAnswer, uploadQuestionPhoto } from '../api.js';
 import { tentacleHint, measuringHint, matchingHint, transitHint, thermometerHint } from './questionHints.js';
+import styles from './AnswerPanel.module.css';
 
 // Maximum photo size accepted by the API (functions/questions.js enforces 500 KB server-side).
 const MAX_PHOTO_BYTES = 500_000;
@@ -90,32 +91,32 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
       )}
 
       {pending.map((q) => (
-        <div key={q.questionId} aria-label={`Question ${q.questionId}`}>
+        <div key={q.questionId} aria-label={`Question ${q.questionId}`} className={styles.pendingQuestion}>
           <p>
             <strong>[{q.category}]</strong> {q.text}
           </p>
           {q.category === 'matching' && (
-            <p data-testid="matching-hint">
+            <p data-testid="matching-hint" className={styles.hintText}>
               {matchingHint(q.matchingFeaturesMatch, q.matchingFeatureType, q.matchingHiderFeatureName, q.matchingSeekerFeatureName)}
             </p>
           )}
           {q.category === 'measuring' && (
-            <p data-testid="measuring-hint">
+            <p data-testid="measuring-hint" className={styles.hintText}>
               {measuringHint(q.measuringHiderIsCloser, q.measuringHiderDistanceKm, q.measuringSeekerDistanceKm)}
             </p>
           )}
           {q.category === 'thermometer' && (
-            <p data-testid="thermometer-hint">
+            <p data-testid="thermometer-hint" className={styles.hintText}>
               {thermometerHint(q.thermometerCurrentDistanceM, q.thermometerPreviousDistanceM)}
             </p>
           )}
           {q.category === 'tentacle' && (
-            <p data-testid="tentacle-hint">
+            <p data-testid="tentacle-hint" className={styles.hintText}>
               {tentacleHint(q.tentacleWithinRadius, q.tentacleDistanceKm)}
             </p>
           )}
           {q.category === 'transit' && (
-            <p data-testid="transit-hint">
+            <p data-testid="transit-hint" className={styles.hintText}>
               {transitHint(q.transitNearestStationName, q.transitNearestStationDistanceKm)}
             </p>
           )}

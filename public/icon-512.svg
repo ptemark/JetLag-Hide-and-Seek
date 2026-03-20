@@ -1,5 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="72" fill="#1a56db"/>
-  <circle cx="256" cy="192" r="86" fill="white"/>
-  <path d="M116 428 Q256 300 396 428" stroke="white" stroke-width="26" fill="none" stroke-linecap="round"/>
+  <defs>
+    <clipPath id="c512">
+      <circle cx="256" cy="256" r="256"/>
+    </clipPath>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="#1B2A3A"/>
+  <!-- Sunset semicircle arcs, bottom half — largest (darkest) to smallest (lightest) -->
+  <g clip-path="url(#c512)">
+    <path d="M 11 256 A 245 245 0 0 1 501 256 Z" fill="#C83A18"/>
+    <path d="M 59 256 A 197 197 0 0 1 453 256 Z" fill="#E05828"/>
+    <path d="M 107 256 A 149 149 0 0 1 405 256 Z" fill="#F08730"/>
+    <path d="M 155 256 A 101 101 0 0 1 357 256 Z" fill="#F5C84A"/>
+    <path d="M 203 256 A 53 53 0 0 1 309 256 Z" fill="#FDFAF4"/>
+  </g>
+  <!-- Airplane silhouette in dark navy -->
+  <!-- Fuselage -->
+  <path d="M 256 139 C 269 152 269 267 256 280 C 243 267 243 152 256 139 Z" fill="#1B2A3A"/>
+  <!-- Main wings -->
+  <path d="M 243 192 L 96 245 L 96 259 L 243 208 L 269 208 L 416 259 L 416 245 L 269 192 Z" fill="#1B2A3A"/>
+  <!-- Tail fins -->
+  <path d="M 245 261 L 203 293 L 203 304 L 245 277 L 267 277 L 309 304 L 309 293 L 267 261 Z" fill="#1B2A3A"/>
 </svg>

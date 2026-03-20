@@ -4,8 +4,8 @@
   "description": "Mobile hide-and-seek using transit zones, challenge cards, and real-time location.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#1a56db",
+  "background_color": "#1B2A3A",
+  "theme_color": "#1B2A3A",
   "icons": [
     {
       "src": "/icon-192.svg",

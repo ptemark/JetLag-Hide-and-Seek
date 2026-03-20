@@ -1,0 +1,18 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.roleGroup {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.label {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.25rem;
+}

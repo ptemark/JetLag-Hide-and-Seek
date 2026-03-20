@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createGame, lookupGame } from '../api.js';
 import Alert from './Alert.jsx';
+import styles from './GameForm.module.css';
 
 const SCALES = ['small', 'medium', 'large'];
 
@@ -70,14 +71,15 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
   }
 
   return (
-    <div aria-label="Game lobby" className="panel">
+    <div aria-label="Game lobby" className={`panel ${styles.container}`}>
       <h2>Game Lobby</h2>
       <p>Playing as <strong>{player.name}</strong> ({player.role})</p>
 
-      <div role="tablist">
+      <div role="tablist" className={styles.tabs}>
         <button
           role="tab"
           aria-selected={tab === 'create'}
+          className={`${styles.tab}${tab === 'create' ? ` ${styles.tabActive}` : ''}`}
           onClick={() => { setTab('create'); setError(''); }}
         >
           Create Game
@@ -85,6 +87,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
         <button
           role="tab"
           aria-selected={tab === 'join'}
+          className={`${styles.tab}${tab === 'join' ? ` ${styles.tabActive}` : ''}`}
           onClick={() => { setTab('join'); setError(''); }}
         >
           Join Game
@@ -122,6 +125,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
 
           <fieldset>
             <legend>Map Bounds</legend>
+            <div className={styles.fieldsGrid}>
             <label>
               Lat min
               <input
@@ -162,6 +166,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
                 step="any"
               />
             </label>
+            </div>
           </fieldset>
 
           {error && <Alert>{error}</Alert>}

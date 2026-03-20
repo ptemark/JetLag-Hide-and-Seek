@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { registerPlayer } from '../api.js';
 import Alert from './Alert.jsx';
+import styles from './PlayerForm.module.css';
 
 /**
  * PlayerForm — collects player name and role, then calls POST /api/players.
@@ -33,11 +34,11 @@ export default function PlayerForm({ onRegistered }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} aria-label="Player registration" className="panel">
+    <form onSubmit={handleSubmit} aria-label="Player registration" className={`panel ${styles.form}`}>
       <h2>Register</h2>
 
       <div>
-        <label htmlFor="player-name">Name</label>
+        <label className={styles.label} htmlFor="player-name">Name</label>
         <input
           id="player-name"
           type="text"
@@ -50,26 +51,28 @@ export default function PlayerForm({ onRegistered }) {
 
       <fieldset>
         <legend>Role</legend>
-        <label>
-          <input
-            type="radio"
-            name="role"
-            value="seeker"
-            checked={role === 'seeker'}
-            onChange={() => setRole('seeker')}
-          />
-          {' '}Seeker
-        </label>
-        <label>
-          <input
-            type="radio"
-            name="role"
-            value="hider"
-            checked={role === 'hider'}
-            onChange={() => setRole('hider')}
-          />
-          {' '}Hider
-        </label>
+        <div className={styles.roleGroup}>
+          <label>
+            <input
+              type="radio"
+              name="role"
+              value="seeker"
+              checked={role === 'seeker'}
+              onChange={() => setRole('seeker')}
+            />
+            {' '}Seeker
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="role"
+              value="hider"
+              checked={role === 'hider'}
+              onChange={() => setRole('hider')}
+            />
+            {' '}Hider
+          </label>
+        </div>
       </fieldset>
 
       {error && <Alert>{error}</Alert>}

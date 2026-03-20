@@ -303,3 +303,23 @@ export async function joinGame({ gameId, playerId, role, team = null }) {
   }
   return res.json();
 }
+
+/**
+ * Fetch the admin dashboard status from the managed server.
+ * GET /api/admin  (Authorization: Bearer <apiKey>)
+ *   → { connectedPlayers: number, activeGameCount: number,
+ *        games: [{ gameId, phase, phaseElapsedMs, playerCount }] }
+ *
+ * @param {string} apiKey  Admin bearer token.
+ * @returns {Promise<{ connectedPlayers: number, activeGameCount: number, games: Array }>}
+ */
+export async function fetchAdminStatus(apiKey) {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/admin`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `fetchAdminStatus failed: ${res.status}`);
+  }
+  return res.json();
+}

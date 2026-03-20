@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { ENV } from '../../config/env.js';
 import AppHeader from './AppHeader.jsx';
 import PlayerForm from './PlayerForm.jsx';
 import GameForm from './GameForm.jsx';
 import WaitingRoom from './WaitingRoom.jsx';
 import GameMap from './GameMap.jsx';
 import Leaderboard from './Leaderboard.jsx';
+import AdminDashboard from './AdminDashboard.jsx';
 
 const SERVER_URL = import.meta.env.VITE_GAME_SERVER_URL ?? '';
 
@@ -34,6 +36,7 @@ export default function Lobby() {
   const [game, setGame] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
   const urlGameId = getUrlGameId();
 
   return (
@@ -41,12 +44,21 @@ export default function Lobby() {
       <AppHeader />
 
       {!playing && (
-        <button type="button" onClick={() => setShowLeaderboard(v => !v)}>
-          {showLeaderboard ? 'Back' : 'Leaderboard'}
-        </button>
+        <>
+          <button type="button" onClick={() => { setShowLeaderboard(v => !v); setShowAdmin(false); }}>
+            {showLeaderboard ? 'Back' : 'Leaderboard'}
+          </button>
+          {ENV.features.adminDashboard && (
+            <button type="button" onClick={() => { setShowAdmin(v => !v); setShowLeaderboard(false); }}>
+              {showAdmin ? 'Back' : 'Admin'}
+            </button>
+          )}
+        </>
       )}
 
-      {showLeaderboard && !playing ? (
+      {showAdmin && !playing ? (
+        <AdminDashboard />
+      ) : showLeaderboard && !playing ? (
         <Leaderboard />
       ) : (
         <>

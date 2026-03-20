@@ -23,9 +23,17 @@ vi.mock('../api.js', () => ({
   submitScore: vi.fn(),
   fetchLeaderboard: vi.fn().mockResolvedValue([]),
   lockZone: vi.fn(),
+  fetchAdminStatus: vi.fn(),
+}));
+
+// Mock ENV so individual tests can toggle feature flags without relying on
+// VITE_* env vars being set. The mutable object lets beforeEach reset state.
+vi.mock('../../config/env.js', () => ({
+  ENV: { features: { adminDashboard: false } },
 }));
 
 import * as api from '../api.js';
+import { ENV } from '../../config/env.js';
 import PlayerForm from './PlayerForm.jsx';
 import GameForm from './GameForm.jsx';
 import WaitingRoom from './WaitingRoom.jsx';
@@ -40,6 +48,8 @@ beforeEach(() => {
   // Restore joinGame to the default resolved value after any test that
   // may have set mockRejectedValue (clearAllMocks does not reset implementations).
   api.joinGame.mockResolvedValue({ gameId: 'g1', playerId: 'p1', role: 'seeker', team: null });
+  // Reset feature flag to off so existing tests are unaffected.
+  ENV.features.adminDashboard = false;
 });
 
 // ---------------------------------------------------------------------------
@@ -466,4 +476,37 @@ describe('Lobby', () => {
       { timeout: 4000 },
     );
   }, 10000);
+});
+
+// ---------------------------------------------------------------------------
+// Lobby — Admin Dashboard feature flag (tests j, k, l)
+// ---------------------------------------------------------------------------
+
+describe('Lobby admin dashboard', () => {
+  // (j) Admin button absent when ENV.features.adminDashboard is false
+  it('Admin button absent when adminDashboard flag is false', () => {
+    ENV.features.adminDashboard = false;
+    render(<Lobby />);
+    expect(screen.queryByRole('button', { name: /^admin$/i })).not.toBeInTheDocument();
+  });
+
+  // (k) Admin button present when ENV.features.adminDashboard is true
+  it('Admin button present when adminDashboard flag is true', () => {
+    ENV.features.adminDashboard = true;
+    render(<Lobby />);
+    expect(screen.getByRole('button', { name: /^admin$/i })).toBeInTheDocument();
+  });
+
+  // (l) clicking Admin button shows AdminDashboard
+  it('clicking Admin button renders AdminDashboard', async () => {
+    const user = userEvent.setup();
+    ENV.features.adminDashboard = true;
+    render(<Lobby />);
+
+    await user.click(screen.getByRole('button', { name: /^admin$/i }));
+
+    // AdminDashboard renders a key-entry form — verify it is visible
+    expect(screen.getByLabelText(/admin api key/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /connect/i })).toBeInTheDocument();
+  });
 });

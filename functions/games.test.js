@@ -156,7 +156,7 @@ describe('handleStartGame', () => {
   });
 
   it('returns 204 without calling fetch when no game server URL is configured', async () => {
-    const mockFetch = vi.fn().mockResolvedValue({});
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'medium' }),
       null,
@@ -164,13 +164,11 @@ describe('handleStartGame', () => {
       mockFetch,
     );
     expect(res.status).toBe(204);
-    // Fire-and-forget is enqueued as a microtask; flush the queue.
-    await new Promise(r => setTimeout(r, 0));
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('returns 204 and notifies the managed server with gameId and scale', async () => {
-    const mockFetch = vi.fn().mockResolvedValue({});
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'large' }),
       null,
@@ -178,7 +176,6 @@ describe('handleStartGame', () => {
       mockFetch,
     );
     expect(res.status).toBe(204);
-    await new Promise(r => setTimeout(r, 0));
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe('http://game-server/internal/games/g1/start');
@@ -188,19 +185,19 @@ describe('handleStartGame', () => {
   });
 
   it('URL-encodes the gameId in the notify request', async () => {
-    const mockFetch = vi.fn().mockResolvedValue({});
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     await handleStartGame(
       makePostReq({ gameId: 'game/with/slashes' }, { scale: 'small' }),
       null,
       'http://game-server',
       mockFetch,
     );
-    await new Promise(r => setTimeout(r, 0));
     const [url] = mockFetch.mock.calls[0];
     expect(url).toBe('http://game-server/internal/games/game%2Fwith%2Fslashes/start');
   });
 
-  it('silently swallows notify errors so the 204 response is unaffected', async () => {
+  // Task 130 — game start must fail loudly when managed server is unavailable
+  it('returns 503 when notifyGameStart throws a network error', async () => {
     const mockFetch = vi.fn().mockRejectedValue(new Error('network failure'));
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small' }),
@@ -208,9 +205,33 @@ describe('handleStartGame', () => {
       'http://game-server',
       mockFetch,
     );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('game_server_unavailable');
+    expect(res.body.message).toMatch(/Game server could not be reached/);
+  });
+
+  it('returns 503 when managed server responds with a non-2xx status', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small' }),
+      null,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('game_server_unavailable');
+  });
+
+  it('returns 204 when notification succeeds with ok response', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'medium' }),
+      null,
+      'http://game-server',
+      mockFetch,
+    );
     expect(res.status).toBe(204);
-    // Should not throw after the rejected promise is handled.
-    await expect(new Promise(r => setTimeout(r, 10))).resolves.toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledOnce();
   });
 
   // Task 74 — configurable hiding duration
@@ -248,7 +269,7 @@ describe('handleStartGame', () => {
   });
 
   it('passes hidingDurationMs to managed server when hidingDurationMin is valid', async () => {
-    const mockFetch = vi.fn().mockResolvedValue({});
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small', hidingDurationMin: 45 }),
       null,
@@ -256,7 +277,6 @@ describe('handleStartGame', () => {
       mockFetch,
     );
     expect(res.status).toBe(204);
-    await new Promise(r => setTimeout(r, 0));
     const payload = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(payload.hidingDurationMs).toBe(45 * 60_000);
     expect(payload.seekingDurationMs).toBe(45 * 60_000);
@@ -304,7 +324,7 @@ describe('handleStartGame', () => {
     pool.query
       .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 2 }] })
       .mockResolvedValueOnce({ rows: [{ id: 'z1', game_id: 'g1', station_id: 's1', lat: 1, lon: 2, radius_m: 300, locked_at: null }] });
-    const mockFetch = vi.fn().mockResolvedValue({});
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small' }),
       pool,
@@ -312,7 +332,6 @@ describe('handleStartGame', () => {
       mockFetch,
     );
     expect(res.status).toBe(204);
-    await new Promise(r => setTimeout(r, 0));
     expect(mockFetch).toHaveBeenCalledOnce();
   });
 
@@ -334,7 +353,7 @@ describe('handleStartGame', () => {
   });
 
   it('skips zone check when pool is null', async () => {
-    const mockFetch = vi.fn().mockResolvedValue({});
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small' }),
       null,
@@ -342,7 +361,6 @@ describe('handleStartGame', () => {
       mockFetch,
     );
     expect(res.status).toBe(204);
-    await new Promise(r => setTimeout(r, 0));
     expect(mockFetch).toHaveBeenCalledOnce();
   });
 });

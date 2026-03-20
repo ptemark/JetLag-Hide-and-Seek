@@ -125,26 +125,35 @@ export function handleCreateGame(req, pool = null) {
 
 /**
  * Notify the managed server to begin the hiding phase for a game.
- * Fire-and-forget — errors are intentionally swallowed.
+ * Returns a resolved Promise when no server URL is configured (local dev).
+ * Throws if the fetch fails or the server returns a non-2xx status.
  *
  * @param {{ gameId: string, scale?: string, hidingDurationMs?: number, seekingDurationMs?: number }} options
  * @param {string|undefined} gameServerUrl
  * @param {typeof fetch} fetchFn
+ * @returns {Promise<void>}
  */
-function notifyGameStart({ gameId, scale, hidingDurationMs, seekingDurationMs }, gameServerUrl, fetchFn) {
+async function notifyGameStart({ gameId, scale, hidingDurationMs, seekingDurationMs }, gameServerUrl, fetchFn) {
   const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
-  if (serverUrl && fetchFn) {
-    const payload = { scale };
-    if (hidingDurationMs != null) payload.hidingDurationMs = hidingDurationMs;
-    if (seekingDurationMs != null) payload.seekingDurationMs = seekingDurationMs;
-    Promise.resolve(fetchFn(
-      `${serverUrl}/internal/games/${encodeURIComponent(gameId)}/start`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      },
-    )).catch((err) => { console.error('[games] notify failed', { type: 'game_start', gameId, error: err.message }); });
+  if (!serverUrl || !fetchFn) {
+    return;
+  }
+
+  const payload = { scale };
+  if (hidingDurationMs != null) payload.hidingDurationMs = hidingDurationMs;
+  if (seekingDurationMs != null) payload.seekingDurationMs = seekingDurationMs;
+
+  const response = await fetchFn(
+    `${serverUrl}/internal/games/${encodeURIComponent(gameId)}/start`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`game server responded with ${response.status}`);
   }
 }
 
@@ -208,7 +217,13 @@ export async function handleStartGame(req, pool = null, gameServerUrl, fetchFn =
   }
 
   const hidingDurationMs = hidingDurationMin != null ? hidingDurationMin * 60_000 : undefined;
-  notifyGameStart({ gameId, scale, hidingDurationMs, seekingDurationMs: hidingDurationMs }, gameServerUrl, fetchFn);
+
+  try {
+    await notifyGameStart({ gameId, scale, hidingDurationMs, seekingDurationMs: hidingDurationMs }, gameServerUrl, fetchFn);
+  } catch {
+    return { status: 503, body: { error: 'game_server_unavailable', message: 'Game server could not be reached. Please try again.' } };
+  }
+
   return { status: 204, body: {} };
 }
 

@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { MapContainer, TileLayer, Circle, Marker } from 'react-leaflet';
+import L from 'leaflet';
 import { createGame, lookupGame, joinGame } from '../api.js';
 import { centerRadiusToBounds } from './gameUtils.js';
 import Alert from './Alert.jsx';
@@ -21,6 +23,38 @@ const DISPLAY_NAME_MAX_CHARS = 60;
 
 // Default zone radii by scale (DESIGN.md §25 Default radii by scale).
 const SCALE_DEFAULT_RADIUS_KM = { small: 5, medium: 15, large: 50 };
+
+// CartoDB dark tiles — free OSM-based dark palette, no API key (DESIGN.md §7, §22).
+const CARTO_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const CARTO_ATTRIBUTION =
+  '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
+  '© <a href="https://carto.com/attributions">CARTO</a>';
+
+// Initial zoom level used when flying to a geocoding result (DESIGN.md §22).
+const PREVIEW_MAP_ZOOM = 11;
+
+/**
+ * LocationCircle — renders the zone circle overlay on the preview map.
+ * Internal component; not exported.
+ *
+ * Props:
+ *   center   — { lat, lon } — circle centre.
+ *   radiusKm — zone radius in kilometres.
+ */
+function LocationCircle({ center, radiusKm }) {
+  return (
+    <Circle
+      center={[center.lat, center.lon]}
+      radius={radiusKm * 1000}
+      pathOptions={{
+        fillColor: '#F08730',
+        fillOpacity: 0.15,
+        color: '#F08730',
+        weight: 2,
+      }}
+    />
+  );
+}
 
 /**
  * GameForm — lets a registered player create a new game or join an existing one.
@@ -47,6 +81,19 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
   const [locationQuery, setLocationQuery] = useState('');
   const [locationResults, setLocationResults] = useState([]);
   const [center, setCenter] = useState(null); // { lat, lon } or null
+  const [radiusKm, setRadiusKm] = useState(SCALE_DEFAULT_RADIUS_KM.medium);
+  // mapKey increments on each geocoding result selection to remount MapContainer
+  // at the new location without remounting on user drags.
+  const [mapKey, setMapKey] = useState(0);
+
+  // Draggable centre marker icon — small accent circle.
+  // Created in useMemo to avoid calling L.divIcon at module parse time.
+  const centerMarkerIcon = useMemo(() => L.divIcon({
+    className: '',
+    html: '<div style="width:12px;height:12px;border-radius:50%;background:#F08730;cursor:move;border:2px solid rgba(255,255,255,0.8);box-sizing:border-box;"></div>',
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  }), []);
 
   // Debounced Nominatim search — fires 500 ms after the user stops typing.
   useEffect(() => {
@@ -76,7 +123,9 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
     const newCenter = { lat: parseFloat(result.lat), lon: parseFloat(result.lon) };
     const newRadiusKm = SCALE_DEFAULT_RADIUS_KM[scale];
     setCenter(newCenter);
+    setRadiusKm(newRadiusKm);
     setBounds(centerRadiusToBounds(newCenter, newRadiusKm));
+    setMapKey(k => k + 1); // remount MapContainer centred on new location
     setLocationResults([]);
     setLocationQuery(result.display_name.slice(0, DISPLAY_NAME_MAX_CHARS));
   }
@@ -85,8 +134,16 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
     setScale(newScale);
     if (center) {
       const newRadiusKm = SCALE_DEFAULT_RADIUS_KM[newScale];
+      setRadiusKm(newRadiusKm);
       setBounds(centerRadiusToBounds(center, newRadiusKm));
     }
+  }
+
+  function handleCenterMarkerDragend(e) {
+    const { lat, lng } = e.target.getLatLng();
+    const newCenter = { lat, lon: lng };
+    setCenter(newCenter);
+    setBounds(centerRadiusToBounds(newCenter, radiusKm));
   }
 
   function setBound(key, value) {
@@ -214,6 +271,27 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
               </ul>
             )}
           </div>
+
+          {center !== null && (
+            <div className={styles.previewMap}>
+              <MapContainer
+                key={mapKey}
+                center={[center.lat, center.lon]}
+                zoom={PREVIEW_MAP_ZOOM}
+                scrollWheelZoom={false}
+                style={{ height: '100%', width: '100%' }}
+              >
+                <TileLayer url={CARTO_TILE_URL} attribution={CARTO_ATTRIBUTION} />
+                <LocationCircle center={center} radiusKm={radiusKm} />
+                <Marker
+                  position={[center.lat, center.lon]}
+                  draggable={true}
+                  icon={centerMarkerIcon}
+                  eventHandlers={{ dragend: handleCenterMarkerDragend }}
+                />
+              </MapContainer>
+            </div>
+          )}
 
           <details>
             <summary className={styles.advancedSummary}>Advanced</summary>

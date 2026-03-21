@@ -9,6 +9,27 @@ vi.mock('../api.js', () => ({
   joinGame: vi.fn().mockResolvedValue({ gameId: 'g1', playerId: 'p1', role: 'seeker', team: null }),
 }));
 
+// Hoist marker handler capture for use in mock factory and tests.
+const leafletMapMocks = vi.hoisted(() => ({ centerMarkerDragend: null }));
+
+// Mock react-leaflet — prevents real Leaflet DOM operations in jsdom.
+vi.mock('react-leaflet', () => ({
+  MapContainer: ({ children }) => (
+    <div data-testid="preview-map" role="region" aria-label="Preview map">
+      {children}
+    </div>
+  ),
+  TileLayer: () => null,
+  Circle: () => null,
+  Marker: ({ eventHandlers }) => {
+    leafletMapMocks.centerMarkerDragend = eventHandlers?.dragend ?? null;
+    return null;
+  },
+}));
+
+// Mock leaflet so L.divIcon() works without a real browser environment.
+vi.mock('leaflet', () => ({ default: { divIcon: vi.fn(() => ({})) } }));
+
 import GameForm from './GameForm.jsx';
 import { centerRadiusToBounds } from './gameUtils.js';
 import * as api from '../api.js';

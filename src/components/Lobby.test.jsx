@@ -1,10 +1,33 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, within, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // Mock GameMap to prevent Leaflet from running in jsdom when Lobby transitions
 // to the playing state. GameMap behaviour is tested in its own test file.
 vi.mock('./GameMap.jsx', () => ({ default: () => null }));
+
+// Hoist marker event handler capture so it's accessible inside the factory
+// and in test assertions.
+const leafletMapMocks = vi.hoisted(() => ({ centerMarkerDragend: null }));
+
+// Mock react-leaflet so the preview map renders a testable DOM element
+// without needing a real Leaflet environment.
+vi.mock('react-leaflet', () => ({
+  MapContainer: ({ children }) => (
+    <div data-testid="preview-map" role="region" aria-label="Preview map">
+      {children}
+    </div>
+  ),
+  TileLayer: () => null,
+  Circle: () => null,
+  Marker: ({ eventHandlers }) => {
+    leafletMapMocks.centerMarkerDragend = eventHandlers?.dragend ?? null;
+    return null;
+  },
+}));
+
+// Mock leaflet so L.divIcon() (used for the custom marker icon) works in jsdom.
+vi.mock('leaflet', () => ({ default: { divIcon: vi.fn(() => ({})) } }));
 
 // Mock API module before importing components that use it.
 vi.mock('../api.js', () => ({
@@ -50,6 +73,8 @@ beforeEach(() => {
   api.joinGame.mockResolvedValue({ gameId: 'g1', playerId: 'p1', role: 'seeker', team: null });
   // Reset feature flag to off so existing tests are unaffected.
   ENV.features.adminDashboard = false;
+  // Reset captured marker handler between tests.
+  leafletMapMocks.centerMarkerDragend = null;
 });
 
 // ---------------------------------------------------------------------------
@@ -294,6 +319,76 @@ describe('GameForm', () => {
   it('pre-fills gameId input when initialGameId is provided', () => {
     render(<GameForm player={PLAYER} onGameReady={() => {}} initialTab="join" initialGameId="abc123" />);
     expect(screen.getByLabelText(/game id/i)).toHaveValue('abc123');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GameForm — preview map (Task 143)
+// ---------------------------------------------------------------------------
+
+describe('GameForm preview map', () => {
+  // Shared helper: type a search query, wait for the 500 ms debounce to fire
+  // (real timers), then click the first location result in the dropdown.
+  async function selectLondon(user) {
+    await user.type(screen.getByLabelText(/search for a city/i), 'London');
+    const listbox = await screen.findByRole('listbox', { name: /location results/i }, { timeout: 2000 });
+    await act(async () => {
+      within(listbox).getAllByRole('option')[0].click();
+    });
+  }
+
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { lat: '51.5074', lon: '-0.1278', display_name: 'London, England, United Kingdom' },
+      ],
+    });
+  });
+
+  afterEach(() => {
+    delete global.fetch;
+  });
+
+  // (a) Map container absent before location is selected.
+  it('preview map is not rendered before a location is selected', () => {
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+    expect(screen.queryByTestId('preview-map')).not.toBeInTheDocument();
+  });
+
+  // (b) Map container present after a geocoding result is selected.
+  it('preview map appears after selecting a geocoding result', async () => {
+    const user = userEvent.setup({ delay: null });
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await selectLondon(user);
+
+    expect(screen.getByTestId('preview-map')).toBeInTheDocument();
+  });
+
+  // (c) Dragging the centre marker updates the bounds fields.
+  it('dragging the centre marker updates the bounds fields', async () => {
+    const user = userEvent.setup({ delay: null });
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await selectLondon(user);
+
+    // Bounds should be populated from the geocoding result.
+    await waitFor(() => expect(screen.getByLabelText(/lat min/i)).not.toHaveValue(''));
+
+    // Simulate dragend on the centre marker with a new LatLng.
+    expect(leafletMapMocks.centerMarkerDragend).not.toBeNull();
+    await act(async () => {
+      leafletMapMocks.centerMarkerDragend({
+        target: { getLatLng: () => ({ lat: 52.0, lng: 1.0 }) },
+      });
+    });
+
+    // Bounds should update to reflect the new centre (52.0, 1.0) at medium radius 15 km.
+    await waitFor(() => {
+      const latMin = parseFloat(screen.getByLabelText(/lat min/i).value);
+      expect(latMin).toBeCloseTo(52.0 - 15 / 111, 2);
+    });
   });
 });
 

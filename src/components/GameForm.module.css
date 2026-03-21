@@ -78,6 +78,19 @@
   outline: none;
 }
 
+.previewMap {
+  height: 260px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 0.75rem 0;
+}
+
+@media (min-width: 600px) {
+  .previewMap {
+    height: 320px;
+  }
+}
+
 .advancedSummary {
   cursor: pointer;
   color: var(--color-text-secondary);

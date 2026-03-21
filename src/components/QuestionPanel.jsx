@@ -305,7 +305,7 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
                 {q.category === 'photo' && q.answer && (() => {
                   const cached = photoCache[q.questionId];
                   if (typeof cached === 'string' && cached !== '') {
-                    return <img data-testid="question-photo-img" src={cached} alt="Hider photo" style={{ maxWidth: '200px', display: 'block' }} />;
+                    return <img data-testid="question-photo-img" src={cached} alt="Hider photo" className={styles.questionPhoto} />;
                   }
                   if (cached === null) {
                     return <span data-testid="no-photo">No photo attached</span>;

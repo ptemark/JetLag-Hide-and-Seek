@@ -1473,4 +1473,42 @@ describe('GameMap', () => {
     });
     await waitFor(() => expect(api.listQuestions).toHaveBeenCalledTimes(2));
   });
+
+  // ---------------------------------------------------------------------------
+  // Task 149 — Score submission error surfaced to player
+  // ---------------------------------------------------------------------------
+
+  it('shows role="alert" error banner when submitScore rejects on game finish', async () => {
+    api.submitScore.mockRejectedValueOnce(new Error('Network error'));
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'finished', winner: 'hider' }),
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('score-error-banner')).toBeInTheDocument()
+    );
+    expect(screen.getByTestId('score-error-banner')).toHaveAttribute('role', 'alert');
+    expect(screen.getByTestId('score-error-banner')).toHaveTextContent('Network error');
+  });
+
+  it('dismiss button on score error banner removes the banner', async () => {
+    api.submitScore.mockRejectedValueOnce(new Error('Timeout'));
+    const seekingGame = { ...game, status: 'seeking' };
+    const { getByLabelText, queryByTestId } = render(
+      <GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />
+    );
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'finished', winner: 'hider' }),
+      });
+    });
+    await waitFor(() => expect(queryByTestId('score-error-banner')).toBeInTheDocument());
+    await act(async () => {
+      getByLabelText('Dismiss score error').click();
+    });
+    expect(queryByTestId('score-error-banner')).not.toBeInTheDocument();
+  });
 });

@@ -30,6 +30,14 @@
   margin: 0.25rem 0 0;
 }
 
+/* Photo image displayed alongside answered photo questions */
+.questionPhoto {
+  max-width: 200px;
+  display: block;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+}
+
 /* Curse-active status banner — matches DESIGN.md §22 alert panel style */
 .curseBanner {
   background: rgba(200, 58, 24, 0.15);

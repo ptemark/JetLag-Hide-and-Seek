@@ -106,6 +106,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [availableZones, setAvailableZones] = useState([]);        // transit stations fetched from /api/zones
   const [zonesError, setZonesError] = useState(null);              // error fetching transit zones
   const [gpsError, setGpsError] = useState(null);                  // GPS permission/availability error message
+  const [scoreError, setScoreError] = useState(null);              // score submission failure message
   const lockedZoneLayerRef = useRef(null);                         // L.circle for the hider's locked zone
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
@@ -351,7 +352,9 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
             hidingTimeMs: elapsedMs,
             captured: winner === 'seekers',
             bonusSeconds: bonusSecondsRef.current,
-          }).catch(() => { /* fire-and-forget */ });
+          }).catch((err) => {
+            setScoreError(err?.message ?? 'Score could not be saved. Please check your connection.');
+          });
         }
       } else if (msg.type === 'capture') {
         captureWinnerRef.current = msg.winner ?? 'seekers';
@@ -692,6 +695,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
             onTimeBonusPlayed={(mins) => { bonusSecondsRef.current += mins * 60; }}
           />
         </Suspense>
+      )}
+
+      {scoreError && (
+        <p role="alert" data-testid="score-error-banner" className={styles.alertBanner}>
+          {scoreError}
+          <button onClick={() => setScoreError(null)} className={styles.dismissBtn} aria-label="Dismiss score error">✕</button>
+        </p>
       )}
 
       {gameResult && (

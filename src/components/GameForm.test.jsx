@@ -283,3 +283,55 @@ describe('GameForm — location search (Task 142)', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// GameForm — manual Advanced bounds fields sync preview map (Task 145)
+// ---------------------------------------------------------------------------
+
+describe('GameForm — manual bounds field editing (Task 145)', () => {
+  // (a) Filling all four Advanced fields with valid values renders the preview map.
+  it('shows preview map when all four bounds fields are filled with valid values', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    // Map must not be visible before any input.
+    expect(screen.queryByTestId('preview-map')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/lat min/i), '51');
+    await user.type(screen.getByLabelText(/lat max/i), '52');
+    await user.type(screen.getByLabelText(/lon min/i), '-1');
+    await user.type(screen.getByLabelText(/lon max/i), '1');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('preview-map')).toBeInTheDocument()
+    );
+  });
+
+  // (b) Filling only some fields does NOT render the preview map.
+  it('does not show preview map when only some bounds fields are filled', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    // Fill only lat_min — three fields remain empty.
+    await user.type(screen.getByLabelText(/lat min/i), '51');
+
+    expect(screen.queryByTestId('preview-map')).not.toBeInTheDocument();
+  });
+
+  // (c) Filling all four valid fields updates the "Zone radius:" output.
+  it('updates Zone radius output to a non-zero value after valid bounds are entered', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await user.type(screen.getByLabelText(/lat min/i), '51');
+    await user.type(screen.getByLabelText(/lat max/i), '52');
+    await user.type(screen.getByLabelText(/lon min/i), '-1');
+    await user.type(screen.getByLabelText(/lon max/i), '1');
+
+    await waitFor(() => {
+      const output = screen.getByLabelText(/zone radius/i);
+      // The output must show a non-zero radius value.
+      expect(output).toHaveTextContent(/Zone radius: [1-9]/i);
+    });
+  });
+});

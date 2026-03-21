@@ -169,7 +169,28 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
   }
 
   function setBound(key, value) {
-    setBounds(prev => ({ ...prev, [key]: value }));
+    const next = { ...bounds, [key]: value };
+    setBounds(next);
+    // DESIGN.md §22: manual edits sync the preview map — centre = midpoint of
+    // bounds, radius = half the shorter dimension.
+    const latMin = parseFloat(next.lat_min);
+    const latMax = parseFloat(next.lat_max);
+    const lonMin = parseFloat(next.lon_min);
+    const lonMax = parseFloat(next.lon_max);
+    if (
+      Number.isFinite(latMin) &&
+      Number.isFinite(latMax) &&
+      Number.isFinite(lonMin) &&
+      Number.isFinite(lonMax) &&
+      latMax > latMin &&
+      lonMax > lonMin
+    ) {
+      const newCenter = { lat: (latMin + latMax) / 2, lon: (lonMin + lonMax) / 2 };
+      const latRadiusKm = haversineKm(newCenter, { lat: latMax, lon: newCenter.lon });
+      const lonRadiusKm = haversineKm(newCenter, { lat: newCenter.lat, lon: lonMax });
+      setCenter(newCenter);
+      setRadiusKm(Math.min(latRadiusKm, lonRadiusKm));
+    }
   }
 
   async function handleCreate(e) {

@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event';
 
 // Mock GameMap to prevent Leaflet from running in jsdom when Lobby transitions
 // to the playing state. GameMap behaviour is tested in its own test file.
-vi.mock('./GameMap.jsx', () => ({ default: () => null }));
+// vi.fn() so tests can inspect the props passed by Lobby (e.g. serverUrl).
+vi.mock('./GameMap.jsx', () => ({ default: vi.fn(() => null) }));
 
 // Hoist marker event handler capture so it's accessible inside the factory
 // and in test assertions.
@@ -60,12 +61,14 @@ vi.mock('../api.js', () => ({
 
 // Mock ENV so individual tests can toggle feature flags without relying on
 // VITE_* env vars being set. The mutable object lets beforeEach reset state.
+// wsUrl is the WebSocket server address used by GameMap via SERVER_URL.
 vi.mock('../../config/env.js', () => ({
-  ENV: { features: { adminDashboard: false } },
+  ENV: { wsUrl: 'ws://test-server', features: { adminDashboard: false } },
 }));
 
 import * as api from '../api.js';
 import { ENV } from '../../config/env.js';
+import GameMap from './GameMap.jsx';
 import PlayerForm from './PlayerForm.jsx';
 import GameForm from './GameForm.jsx';
 import WaitingRoom from './WaitingRoom.jsx';
@@ -670,6 +673,34 @@ describe('Lobby', () => {
       { timeout: 4000 },
     );
   }, 10000);
+});
+
+// ---------------------------------------------------------------------------
+// Lobby — SERVER_URL forwarded to GameMap (Task 153)
+// ---------------------------------------------------------------------------
+
+describe('Lobby server URL', () => {
+  it('passes ENV.wsUrl as serverUrl prop to GameMap', async () => {
+    const user = userEvent.setup();
+    api.registerPlayer.mockResolvedValue(PLAYER);
+    api.createGame.mockResolvedValue(GAME); // GAME.hostPlayerId === PLAYER.playerId
+    api.startGame.mockResolvedValue();
+
+    render(<Lobby />);
+
+    await user.type(screen.getByLabelText(/name/i), 'Alice');
+    await user.click(screen.getByRole('button', { name: /register/i }));
+    await waitFor(() => screen.getByRole('tab', { name: /create game/i }));
+
+    await user.click(screen.getByRole('button', { name: /create game/i }));
+    await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+
+    await user.click(screen.getByRole('button', { name: /start game/i }));
+    await waitFor(() => expect(GameMap).toHaveBeenCalled());
+
+    const props = GameMap.mock.calls[0][0];
+    expect(props.serverUrl).toBe(ENV.wsUrl);
+  });
 });
 
 // ---------------------------------------------------------------------------

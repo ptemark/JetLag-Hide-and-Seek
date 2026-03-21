@@ -11,7 +11,9 @@ import GameMap from './GameMap.jsx';
 const Leaderboard = lazy(() => import('./Leaderboard.jsx'));
 const AdminDashboard = lazy(() => import('./AdminDashboard.jsx'));
 
-const SERVER_URL = import.meta.env.VITE_GAME_SERVER_URL ?? '';
+// Use ENV.wsUrl (VITE_WS_URL) as the single source of truth for the
+// WebSocket server address — defined in config/env.js and .env.example.
+const SERVER_URL = ENV.wsUrl;
 
 /** Read ?gameId from the page URL (set once at load time). */
 function getUrlGameId() {

@@ -1,0 +1,26 @@
+/* Lobby.module.css — scoped styles for the Lobby component */
+
+/**
+ * "Not {name}?" identity-change link — shown below the header when a
+ * player identity has been restored from localStorage (Task 158).
+ * Styled as unobtrusive text so it does not compete with primary actions.
+ */
+.changePlayerBtn {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  text-decoration: underline;
+  /* Minimum 44×44 px touch target per RALPH.md §Accessibility */
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.changePlayerBtn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

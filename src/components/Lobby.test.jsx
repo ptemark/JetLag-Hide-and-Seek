@@ -87,6 +87,9 @@ beforeEach(() => {
   ENV.features.adminDashboard = false;
   // Reset captured marker handler between tests.
   leafletMapMocks.centerMarkerDragend = null;
+  // Remove the player persistence key between tests so player-persistence
+  // tests are isolated without depending on localStorage.clear() (Task 158).
+  localStorage.removeItem('jetlag_player');
 });
 
 // ---------------------------------------------------------------------------
@@ -734,5 +737,99 @@ describe('Lobby admin dashboard', () => {
     const keyInput = await screen.findByLabelText(/admin api key/i);
     expect(keyInput).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /connect/i })).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lobby — Player identity persistence (Task 158)
+// ---------------------------------------------------------------------------
+
+describe('Lobby player identity persistence', () => {
+  // (a) Valid saved player — PlayerForm is NOT rendered; GameForm IS rendered
+  it('skips PlayerForm when valid player is in localStorage', () => {
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    render(<Lobby />);
+    // PlayerForm registration heading must be absent
+    expect(screen.queryByRole('heading', { name: /register/i })).not.toBeInTheDocument();
+    // GameForm should be shown (Create / Join tabs)
+    expect(screen.getByRole('tab', { name: /create/i })).toBeInTheDocument();
+  });
+
+  // (b) Restoring from localStorage does not call registerPlayer
+  it('restores player identity without calling registerPlayer API', () => {
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    render(<Lobby />);
+    expect(api.registerPlayer).not.toHaveBeenCalled();
+  });
+
+  // (c) Invalid JSON in localStorage falls back to PlayerForm
+  it('shows PlayerForm when localStorage contains invalid JSON', () => {
+    localStorage.setItem('jetlag_player', 'not-valid-json{{{');
+    render(<Lobby />);
+    expect(screen.getByRole('heading', { name: /register/i })).toBeInTheDocument();
+  });
+
+  // (d) Object with missing required fields falls back to PlayerForm
+  it('shows PlayerForm when localStorage entry is missing required fields', () => {
+    localStorage.setItem('jetlag_player', JSON.stringify({ playerId: 'p1' }));
+    render(<Lobby />);
+    expect(screen.getByRole('heading', { name: /register/i })).toBeInTheDocument();
+  });
+
+  // (e) After onRegistered fires, localStorage contains the player JSON
+  it('persists player to localStorage after successful registration', async () => {
+    const user = userEvent.setup();
+    api.registerPlayer.mockResolvedValue(PLAYER);
+    render(<Lobby />);
+
+    await user.type(screen.getByLabelText(/name/i), 'Alice');
+    await user.click(screen.getByRole('button', { name: /register/i }));
+
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem('jetlag_player'));
+      expect(stored).toMatchObject({ playerId: 'p1', name: 'Alice', role: 'seeker' });
+    });
+  });
+
+  // (f) "Not {name}?" button is visible when player is set and not playing
+  it('shows "Not {name}?" button when player is set and not playing', () => {
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    render(<Lobby />);
+    expect(screen.getByRole('button', { name: /change player identity/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /change player identity/i }).textContent).toContain('Alice');
+  });
+
+  // (g) Clicking "Not {name}?" clears localStorage and shows PlayerForm
+  it('clicking "Not {name}?" clears storage and shows PlayerForm', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    render(<Lobby />);
+
+    await user.click(screen.getByRole('button', { name: /change player identity/i }));
+
+    expect(localStorage.getItem('jetlag_player')).toBeNull();
+    expect(screen.getByRole('heading', { name: /register/i })).toBeInTheDocument();
+  });
+
+  // (h) "Not {name}?" button is NOT shown during active gameplay
+  it('does not show "Not {name}?" button during active gameplay', async () => {
+    const user = userEvent.setup();
+    // Restore player from localStorage — skip registration
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    api.createGame.mockResolvedValue(GAME);
+    api.startGame.mockResolvedValue();
+    render(<Lobby />);
+
+    // GameForm is shown immediately (player restored); create a game
+    await user.click(screen.getByRole('button', { name: /create game/i }));
+    await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+
+    // Start game (host path)
+    await user.click(screen.getByRole('button', { name: /start game/i }));
+    // Wait for GameMap to render (playing === true)
+    await waitFor(() => expect(GameMap).toHaveBeenCalled());
+
+    // "Not {name}?" must be absent during gameplay
+    expect(screen.queryByRole('button', { name: /change player identity/i })).not.toBeInTheDocument();
   });
 });

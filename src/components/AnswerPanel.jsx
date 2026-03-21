@@ -148,74 +148,82 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
         <p>No pending questions.</p>
       )}
 
-      {pending.map((q) => (
-        <div key={q.questionId} aria-label={`Question ${q.questionId}`} className={styles.pendingQuestion}>
-          <p>
-            <strong>[{q.category}]</strong> {q.text}
-          </p>
-          {q.category === 'matching' && (
-            <p data-testid="matching-hint" className={styles.hintText}>
-              {matchingHint(q.matchingFeaturesMatch, q.matchingFeatureType, q.matchingHiderFeatureName, q.matchingSeekerFeatureName)}
+      {pending.map((q) => {
+        const isExpired = expiryCounts[q.questionId] === '0:00';
+        return (
+          <div key={q.questionId} aria-label={`Question ${q.questionId}`} className={styles.pendingQuestion}>
+            <p>
+              <strong>[{q.category}]</strong> {q.text}
             </p>
-          )}
-          {q.category === 'measuring' && (
-            <p data-testid="measuring-hint" className={styles.hintText}>
-              {measuringHint(q.measuringHiderIsCloser, q.measuringHiderDistanceKm, q.measuringSeekerDistanceKm)}
-            </p>
-          )}
-          {q.category === 'thermometer' && (
-            <p data-testid="thermometer-hint" className={styles.hintText}>
-              {thermometerHint(q.thermometerCurrentDistanceM, q.thermometerPreviousDistanceM)}
-            </p>
-          )}
-          {q.category === 'tentacle' && (
-            <p data-testid="tentacle-hint" className={styles.hintText}>
-              {tentacleHint(q.tentacleWithinRadius, q.tentacleDistanceKm)}
-            </p>
-          )}
-          {q.category === 'transit' && (
-            <p data-testid="transit-hint" className={styles.hintText}>
-              {transitHint(q.transitNearestStationName, q.transitNearestStationDistanceKm)}
-            </p>
-          )}
-          {expiryCounts[q.questionId] != null && (
-            <p className={styles.expiry}>
-              Answer by: <time dateTime={q.expiresAt}>{expiryCounts[q.questionId]}</time>
-            </p>
-          )}
-          <form
-            onSubmit={(e) => handleAnswer(e, q.questionId, q.category)}
-            aria-label={`Answer form for ${q.questionId}`}
-          >
-            {errors[q.questionId] && (
-              <p role="alert">{errors[q.questionId]}</p>
+            {q.category === 'matching' && (
+              <p data-testid="matching-hint" className={styles.hintText}>
+                {matchingHint(q.matchingFeaturesMatch, q.matchingFeatureType, q.matchingHiderFeatureName, q.matchingSeekerFeatureName)}
+              </p>
             )}
-            {q.category === 'photo' && (
+            {q.category === 'measuring' && (
+              <p data-testid="measuring-hint" className={styles.hintText}>
+                {measuringHint(q.measuringHiderIsCloser, q.measuringHiderDistanceKm, q.measuringSeekerDistanceKm)}
+              </p>
+            )}
+            {q.category === 'thermometer' && (
+              <p data-testid="thermometer-hint" className={styles.hintText}>
+                {thermometerHint(q.thermometerCurrentDistanceM, q.thermometerPreviousDistanceM)}
+              </p>
+            )}
+            {q.category === 'tentacle' && (
+              <p data-testid="tentacle-hint" className={styles.hintText}>
+                {tentacleHint(q.tentacleWithinRadius, q.tentacleDistanceKm)}
+              </p>
+            )}
+            {q.category === 'transit' && (
+              <p data-testid="transit-hint" className={styles.hintText}>
+                {transitHint(q.transitNearestStationName, q.transitNearestStationDistanceKm)}
+              </p>
+            )}
+            {expiryCounts[q.questionId] != null && (
+              <p className={styles.expiry}>
+                Answer by: <time dateTime={q.expiresAt}>{expiryCounts[q.questionId]}</time>
+              </p>
+            )}
+            <form
+              onSubmit={(e) => handleAnswer(e, q.questionId, q.category)}
+              aria-label={`Answer form for ${q.questionId}`}
+            >
+              {errors[q.questionId] && (
+                <p role="alert">{errors[q.questionId]}</p>
+              )}
+              {q.category === 'photo' && (
+                <label>
+                  Photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    aria-label="Photo upload"
+                    onChange={(e) => handlePhotoChange(q.questionId, e.target.files?.[0] ?? null)}
+                  />
+                </label>
+              )}
               <label>
-                Photo
-                <input
-                  type="file"
-                  accept="image/*"
-                  aria-label="Photo upload"
-                  onChange={(e) => handlePhotoChange(q.questionId, e.target.files?.[0] ?? null)}
+                Your answer
+                <textarea
+                  value={answers[q.questionId] ?? ''}
+                  onChange={(e) => setAnswerText(q.questionId, e.target.value)}
+                  rows={2}
+                  placeholder="Type your answer…"
                 />
               </label>
-            )}
-            <label>
-              Your answer
-              <textarea
-                value={answers[q.questionId] ?? ''}
-                onChange={(e) => setAnswerText(q.questionId, e.target.value)}
-                rows={2}
-                placeholder="Type your answer…"
-              />
-            </label>
-            <button type="submit" disabled={submitting[q.questionId]}>
-              {submitting[q.questionId] ? 'Sending…' : 'Submit answer'}
-            </button>
-          </form>
-        </div>
-      ))}
+              <button
+                type="submit"
+                disabled={submitting[q.questionId] || isExpired}
+                aria-disabled={isExpired}
+                className={isExpired ? styles.expiredBtn : undefined}
+              >
+                {submitting[q.questionId] ? 'Sending…' : isExpired ? 'Expired' : 'Submit answer'}
+              </button>
+            </form>
+          </div>
+        );
+      })}
 
       {answered.size > 0 && (
         <p aria-live="polite">{answered.size} question(s) answered this session.</p>

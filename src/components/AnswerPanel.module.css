@@ -29,3 +29,8 @@
   font-family: 'JetBrains Mono', monospace;
   color: var(--color-sunset-3);
 }
+
+.expiredBtn {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -8,7 +8,7 @@
  *   onStart        — callback invoked after the managed server confirms game start (host only; optional)
  *   onGameStarted  — callback invoked when the game transitions away from 'waiting' (all players)
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { startGame, lookupGame } from '../api.js';
 import Alert from './Alert.jsx';
 import styles from './WaitingRoom.module.css';
@@ -23,13 +23,32 @@ const SCALE_DURATION_RANGES = {
 /** How often non-host players poll for game start, in milliseconds. */
 const POLL_INTERVAL_MS = 3000;
 
+/** Duration (ms) to show "Copied!" confirmation before reverting the button label. */
+const CLIPBOARD_RESET_MS = 2_000;
+
 export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
   const [error, setError] = useState('');
   const range = SCALE_DURATION_RANGES[game.size] ?? { min: 30, max: 360 };
   const [hidingDurationMin, setHidingDurationMin] = useState(range.min);
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef(null);
 
   const showTeam = (game.seekerTeams ?? 0) >= 2 && player?.role === 'seeker' && player?.team;
   const inviteUrl = `${window.location.origin}${window.location.pathname}?gameId=${game.gameId}`;
+
+  // Clear any pending clipboard reset timer on unmount to prevent state updates.
+  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), CLIPBOARD_RESET_MS);
+    } catch {
+      // Clipboard API unavailable or denied — the link is still visible for manual copy.
+    }
+  }
 
   // Non-host players poll the API until the host starts the game.
   useEffect(() => {
@@ -85,10 +104,18 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
           Your team: <strong className={styles.teamBadge}>Team {player.team}</strong>
         </p>
       )}
-      <p>
-        Invite link:{' '}
+      <p>Invite link:</p>
+      <div className={styles.inviteRow}>
         <a href={inviteUrl} aria-label="Invite link" className={styles.inviteLink}>{inviteUrl}</a>
-      </p>
+        <button
+          type="button"
+          aria-label="Copy invite link"
+          className={styles.copyBtn}
+          onClick={handleCopyLink}
+        >
+          {copied ? 'Copied!' : 'Copy Link'}
+        </button>
+      </div>
       {onStart && (
         <div className={styles.durationRow}>
           <label>

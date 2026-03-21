@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -273,5 +273,70 @@ describe('WaitingRoom non-host polling', () => {
       expect(onStart).toHaveBeenCalledOnce();
       expect(onGameStarted).toHaveBeenCalledOnce();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Copy invite link (Task 147)
+// ---------------------------------------------------------------------------
+
+describe('WaitingRoom copy invite link', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders a Copy Link button', () => {
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+    expect(screen.getByRole('button', { name: /copy invite link/i })).toBeInTheDocument();
+  });
+
+  it('passes the invite URL (containing gameId) to clipboard.writeText when clicked', async () => {
+    // jsdom provides navigator.clipboard — spy on the real implementation.
+    const spy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await user.click(screen.getByRole('button', { name: /copy invite link/i }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledOnce());
+    expect(spy.mock.calls[0][0]).toContain('gameId=g1');
+  });
+
+  it('changes button label to "Copied!" after a successful copy', async () => {
+    vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await user.click(screen.getByRole('button', { name: /copy invite link/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /copy invite link/i })).toHaveTextContent('Copied!')
+    );
+  });
+
+  it('reverts button label to "Copy Link" after CLIPBOARD_RESET_MS', async () => {
+    vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await user.click(screen.getByRole('button', { name: /copy invite link/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /copy invite link/i })).toHaveTextContent('Copied!')
+    );
+
+    vi.advanceTimersByTime(2_000);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /copy invite link/i })).toHaveTextContent('Copy Link')
+    );
+    vi.useRealTimers();
+  });
+
+  it('clears the reset timer on unmount', () => {
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const { unmount } = render(<WaitingRoom game={GAME} player={PLAYER} />);
+    unmount();
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
   });
 });

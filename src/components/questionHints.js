@@ -69,3 +69,72 @@ export function thermometerHint(current, previous) {
   if (current > previous) return 'Thermometer hint: colder — you moved further away';
   return 'Thermometer hint: same — no distance change';
 }
+
+// ── Pre-filled answer text helpers ───────────────────────────────────────────
+// Used by AnswerPanel to seed the answer textarea with the computed conclusion.
+// Returns '' when data is unavailable so the hider must type manually.
+
+/**
+ * Natural-language answer text for a thermometer question.
+ * @param {number|null} current
+ * @param {number|null} previous
+ * @returns {string}
+ */
+export function thermometerAnswerText(current, previous) {
+  if (current == null || previous == null) return '';
+  if (current < previous) return 'Warmer — I moved closer to you';
+  if (current > previous) return 'Colder — I moved further away';
+  return 'Same — no distance change';
+}
+
+/**
+ * Natural-language answer text for a tentacle question.
+ * @param {boolean|null} withinRadius
+ * @param {number|null} distanceKm
+ * @returns {string}
+ */
+export function tentacleAnswerText(withinRadius, distanceKm) {
+  if (withinRadius === true)  return `Yes, within radius (${distanceKm.toFixed(2)} km away)`;
+  if (withinRadius === false) return `No, outside radius (${distanceKm.toFixed(2)} km away)`;
+  return '';
+}
+
+/**
+ * Natural-language answer text for a measuring question.
+ * @param {boolean|null} hiderIsCloser
+ * @param {number|null} hiderDistanceKm
+ * @param {number|null} seekerDistanceKm
+ * @returns {string}
+ */
+export function measuringAnswerText(hiderIsCloser, hiderDistanceKm, seekerDistanceKm) {
+  if (hiderIsCloser === true)  return `Yes, I am closer (I am ${hiderDistanceKm.toFixed(2)} km away, you are ${seekerDistanceKm.toFixed(2)} km)`;
+  if (hiderIsCloser === false) return `No, you are closer (I am ${hiderDistanceKm.toFixed(2)} km away, you are ${seekerDistanceKm.toFixed(2)} km)`;
+  return '';
+}
+
+/**
+ * Natural-language answer text for a transit question.
+ * @param {string|null} nearestStationName
+ * @param {number|null} nearestStationDistanceKm
+ * @returns {string}
+ */
+export function transitAnswerText(nearestStationName, nearestStationDistanceKm) {
+  if (nearestStationName != null) {
+    return `My nearest station is ${nearestStationName}, ${nearestStationDistanceKm.toFixed(2)} km away`;
+  }
+  return '';
+}
+
+/**
+ * Natural-language answer text for a matching question.
+ * @param {boolean|null} featuresMatch
+ * @param {string|null} featureType
+ * @param {string|null} hiderFeatureName
+ * @param {string|null} seekerFeatureName
+ * @returns {string}
+ */
+export function matchingAnswerText(featuresMatch, featureType, hiderFeatureName, seekerFeatureName) {
+  if (featuresMatch === true)  return `Same — we both have ${featureType}: ${hiderFeatureName}`;
+  if (featuresMatch === false) return `Different — mine is ${hiderFeatureName}, yours is ${seekerFeatureName}`;
+  return '';
+}

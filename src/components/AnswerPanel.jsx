@@ -1,11 +1,37 @@
 import { useState, useEffect } from 'react';
 import { listQuestions, submitAnswer, uploadQuestionPhoto } from '../api.js';
-import { tentacleHint, measuringHint, matchingHint, transitHint, thermometerHint } from './questionHints.js';
+import {
+  tentacleHint, measuringHint, matchingHint, transitHint, thermometerHint,
+  thermometerAnswerText, tentacleAnswerText, measuringAnswerText, transitAnswerText, matchingAnswerText,
+} from './questionHints.js';
 import { formatCountdown } from './gameUtils.js';
 import styles from './AnswerPanel.module.css';
 
 // Maximum photo size accepted by the API (functions/questions.js enforces 500 KB server-side).
 const MAX_PHOTO_BYTES = 500_000;
+
+/**
+ * Derive pre-filled answer text for a question based on its category and computed fields.
+ * Returns '' for photo questions or when computed data is unavailable.
+ * @param {object} q
+ * @returns {string}
+ */
+function computedAnswerText(q) {
+  switch (q.category) {
+    case 'thermometer':
+      return thermometerAnswerText(q.thermometerCurrentDistanceM, q.thermometerPreviousDistanceM);
+    case 'tentacle':
+      return tentacleAnswerText(q.tentacleWithinRadius, q.tentacleDistanceKm);
+    case 'measuring':
+      return measuringAnswerText(q.measuringHiderIsCloser, q.measuringHiderDistanceKm, q.measuringSeekerDistanceKm);
+    case 'transit':
+      return transitAnswerText(q.transitNearestStationName, q.transitNearestStationDistanceKm);
+    case 'matching':
+      return matchingAnswerText(q.matchingFeaturesMatch, q.matchingFeatureType, q.matchingHiderFeatureName, q.matchingSeekerFeatureName);
+    default:
+      return '';
+  }
+}
 // Tick interval for per-question expiry countdowns (ms).
 const COUNTDOWN_TICK_MS = 1_000;
 
@@ -30,10 +56,21 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
   const [expiryCounts, setExpiryCounts] = useState({});
 
   // Reload question list whenever the component mounts or refreshTrigger changes.
+  // Pre-populate answer text from server-computed fields without overwriting existing edits.
   useEffect(() => {
     setLoadError(null);
     listQuestions({ playerId: player.playerId })
-      .then((data) => setQuestions(data.questions ?? []))
+      .then((data) => {
+        const qs = data.questions ?? [];
+        setQuestions(qs);
+        const initialAnswers = Object.fromEntries(
+          qs
+            .filter((q) => q.status === 'pending')
+            .map((q) => [q.questionId, computedAnswerText(q)])
+            .filter(([, text]) => text !== ''),
+        );
+        setAnswers((prev) => ({ ...initialAnswers, ...prev }));
+      })
       .catch((err) => setLoadError(err.message));
   }, [player.playerId, refreshTrigger]);
 

@@ -723,6 +723,101 @@ describe('AnswerPanel', () => {
     expect(clearSpy).toHaveBeenCalled();
     clearSpy.mockRestore();
   });
+
+  // ── Task 155 — pre-fill answer from computed hint ─────────────────────────
+
+  it('pre-fills thermometer answer textarea when computed data is available', async () => {
+    const q = { ...QUESTION, category: 'thermometer', status: 'pending',
+      thermometerCurrentDistanceM: 800, thermometerPreviousDistanceM: 1200 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => {
+      const value = screen.getByLabelText(/your answer/i).value;
+      expect(value).toMatch(/warmer/i);
+    });
+  });
+
+  it('pre-fills tentacle answer textarea when computed data is available', async () => {
+    const q = { ...QUESTION, category: 'tentacle', status: 'pending',
+      tentacleWithinRadius: false, tentacleDistanceKm: 12.5 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => {
+      const value = screen.getByLabelText(/your answer/i).value;
+      expect(value).toContain('No, outside radius');
+      expect(value).toContain('12.50');
+    });
+  });
+
+  it('pre-fills measuring answer textarea when computed data is available', async () => {
+    const q = { ...QUESTION, category: 'measuring', status: 'pending',
+      measuringHiderIsCloser: true, measuringHiderDistanceKm: 3.2, measuringSeekerDistanceKm: 7.8 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => {
+      const value = screen.getByLabelText(/your answer/i).value;
+      expect(value).toContain('Yes, I am closer');
+      expect(value).toContain('3.20');
+    });
+  });
+
+  it('pre-fills transit answer textarea when computed data is available', async () => {
+    const q = { ...QUESTION, category: 'transit', status: 'pending',
+      transitNearestStationName: "King's Cross", transitNearestStationDistanceKm: 0.35 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => {
+      const value = screen.getByLabelText(/your answer/i).value;
+      expect(value).toContain("King's Cross");
+      expect(value).toContain('0.35');
+    });
+  });
+
+  it('pre-fills matching answer textarea when computed data is available', async () => {
+    const q = { ...QUESTION, category: 'matching', status: 'pending',
+      matchingFeaturesMatch: false, matchingFeatureType: 'airport',
+      matchingHiderFeatureName: 'Heathrow', matchingSeekerFeatureName: 'Gatwick' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => {
+      const value = screen.getByLabelText(/your answer/i).value;
+      expect(value).toContain('Different');
+      expect(value).toContain('Heathrow');
+    });
+  });
+
+  it('leaves textarea empty when computed data is null', async () => {
+    const q = { ...QUESTION, category: 'tentacle', status: 'pending',
+      tentacleWithinRadius: null, tentacleDistanceKm: null };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.getByLabelText(/your answer/i)).toHaveValue('');
+  });
+
+  it('does not pre-fill photo question answer', async () => {
+    const q = { ...QUESTION, category: 'photo', status: 'pending' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.getByLabelText(/your answer/i)).toHaveValue('');
+  });
+
+  it('does not overwrite edited answer text when refreshTrigger fires', async () => {
+    const q = { ...QUESTION, category: 'thermometer', status: 'pending',
+      thermometerCurrentDistanceM: 800, thermometerPreviousDistanceM: 1200 };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
+    const user = userEvent.setup();
+    const { rerender } = render(<AnswerPanel player={HIDER} game={GAME} refreshTrigger={0} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    // Clear pre-filled text and type custom answer
+    await user.clear(screen.getByLabelText(/your answer/i));
+    await user.type(screen.getByLabelText(/your answer/i), 'My custom answer');
+    // Trigger refresh — pre-fill must not clobber the user's edit
+    rerender(<AnswerPanel player={HIDER} game={GAME} refreshTrigger={1} />);
+    await waitFor(() => expect(api.listQuestions).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText(/your answer/i)).toHaveValue('My custom answer');
+  });
 });
 
 // ── QuestionPanel matching inputs ─────────────────────────────────────────────

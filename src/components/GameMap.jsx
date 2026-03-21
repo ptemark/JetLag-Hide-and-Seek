@@ -26,6 +26,8 @@ const BOUNDS_BORDER_COLOR = '#9EB3C8'; // --color-text-secondary — subtle game
 const FALSE_ZONE_COLOR = '#9EB3C8';    // --color-text-secondary — muted decoy circle (distinct from real zones)
 const TRAIL_COLOR = '#F5C84A';         // --color-sunset-1 — warm yellow hider journey trail
 const MAX_RECONNECT_ATTEMPTS = 6; // 1 s, 2 s, 4 s, 8 s, 16 s, 30 s
+// RULES.md §End Game: seekers must be off transit to spot the hider.
+const SPOT_ON_TRANSIT_LABEL = 'Board off transit to spot';
 
 /**
  * Compute the centre {lat, lng} of a bounds object.
@@ -619,12 +621,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           className={styles.mapContainer}
         />
 
-        {player.role === 'seeker' && phase === 'seeking' && (
+        {player.role === 'seeker' && endGameActive && (
           <button
             type="button"
             data-testid="spot-hider-btn"
             className={styles.spotButton}
-            disabled={spotResult === 'pending' || spotResult === 'confirmed'}
+            disabled={spotResult === 'pending' || spotResult === 'confirmed' || myOnTransit}
             onClick={() => {
               setSpotResult('pending');
               setSpotDistance({ distanceM: null, spotRadiusM: null });
@@ -637,12 +639,18 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
               }
             }}
           >
-            {spotResult === 'confirmed' ? 'Hider Spotted!' : spotResult === 'rejected' ? 'Not Close Enough' : 'I See the Hider!'}
+            {spotResult === 'confirmed'
+              ? 'Hider Spotted!'
+              : spotResult === 'rejected'
+                ? 'Not Close Enough'
+                : myOnTransit
+                  ? SPOT_ON_TRANSIT_LABEL
+                  : 'I See the Hider!'}
           </button>
         )}
       </div>
 
-      {spotResult === 'rejected' && player.role === 'seeker' && phase === 'seeking' && (
+      {spotResult === 'rejected' && player.role === 'seeker' && endGameActive && (
         <span data-testid="spot-rejected-msg" className={styles.spotRejectedMsg}>
           {spotDistance.distanceM != null && spotDistance.spotRadiusM != null
             ? `You are ${Math.round(spotDistance.distanceM)} m away; need to be within ${spotDistance.spotRadiusM} m`

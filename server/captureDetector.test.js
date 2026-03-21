@@ -444,6 +444,38 @@ describe('checkSpot', () => {
     expect(result.hiderLat).toBe(51.1234);
     expect(result.hiderLon).toBe(-0.5678);
   });
+
+  it('returns reason: null when spotter is off transit and within radius', () => {
+    const state = makeSpotState({
+      h1: { lat: 51.5,     lon: 0, role: 'hider'  },
+      s1: { lat: 51.50009, lon: 0, role: 'seeker', onTransit: false },
+    });
+    const result = checkSpot(state, 's1', SPOT_RADIUS_M);
+    expect(result.spotted).toBe(true);
+    expect(result.reason).toBeNull();
+  });
+
+  it('returns spotted: false and reason: on_transit when spotter is on transit even within radius', () => {
+    // Spotter at same location as hider but on transit — should be rejected.
+    const state = makeSpotState({
+      h1: { lat: 51.5, lon: 0, role: 'hider'  },
+      s1: { lat: 51.5, lon: 0, role: 'seeker', onTransit: true },
+    });
+    const result = checkSpot(state, 's1', SPOT_RADIUS_M);
+    expect(result.spotted).toBe(false);
+    expect(result.reason).toBe('on_transit');
+    expect(result.distance).toBeNull();
+  });
+
+  it('returns reason: null when spotter has no onTransit property (defaults to off transit)', () => {
+    const state = makeSpotState({
+      h1: { lat: 51.5,     lon: 0, role: 'hider'  },
+      s1: { lat: 51.50009, lon: 0, role: 'seeker' }, // no onTransit field
+    });
+    const result = checkSpot(state, 's1', SPOT_RADIUS_M);
+    expect(result.spotted).toBe(true);
+    expect(result.reason).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

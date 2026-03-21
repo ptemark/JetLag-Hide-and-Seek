@@ -664,10 +664,15 @@ describe('GameMap', () => {
   // "I See the Hider!" button — Task 70
   // ---------------------------------------------------------------------------
 
-  it('shows "I See the Hider!" button for seeker in seeking phase', () => {
+  it('shows "I See the Hider!" button for seeker once End Game is active', async () => {
     const seeker = { ...player, role: 'seeker' };
     const seekingGame = { ...game, status: 'seeking' };
     render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    // Button absent before End Game starts.
+    expect(screen.queryByTestId('spot-hider-btn')).not.toBeInTheDocument();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+    });
     expect(screen.getByTestId('spot-hider-btn')).toBeInTheDocument();
     expect(screen.getByTestId('spot-hider-btn')).toHaveTextContent('I See the Hider!');
   });
@@ -691,6 +696,11 @@ describe('GameMap', () => {
     const ws = MockWebSocket.last;
     ws.readyState = WebSocket.OPEN;
 
+    // Activate End Game so the button appears.
+    await act(async () => {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+    });
+
     await act(async () => {
       screen.getByTestId('spot-hider-btn').click();
     });
@@ -706,6 +716,10 @@ describe('GameMap', () => {
     const seeker = { ...player, role: 'seeker' };
     const seekingGame = { ...game, status: 'seeking' };
     render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    // Activate End Game so the button and rejected message are rendered.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+    });
     await act(async () => {
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'spot_rejected', gameId: 'g1', spotterId: 'p1', distanceM: 80, spotRadiusM: 30 }),
@@ -719,6 +733,10 @@ describe('GameMap', () => {
     const seeker = { ...player, role: 'seeker' };
     const seekingGame = { ...game, status: 'seeking' };
     render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    // Activate End Game so the rejected message renders.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+    });
     await act(async () => {
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'spot_rejected', gameId: 'g1', spotterId: 'p1' }),
@@ -731,6 +749,10 @@ describe('GameMap', () => {
     const seeker = { ...player, role: 'seeker' };
     const seekingGame = { ...game, status: 'seeking' };
     render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    // Activate End Game so the button is visible.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+    });
     // First attempt rejected with distance
     await act(async () => {
       MockWebSocket.last.onmessage?.({
@@ -750,6 +772,10 @@ describe('GameMap', () => {
     const seeker = { ...player, role: 'seeker' };
     const seekingGame = { ...game, status: 'seeking' };
     render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    // Activate End Game so the button is visible.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+    });
     await act(async () => {
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'spot_confirmed', gameId: 'g1', spotterId: 'p1', distanceM: 10 }),
@@ -762,12 +788,61 @@ describe('GameMap', () => {
     const seeker = { ...player, role: 'seeker' };
     const seekingGame = { ...game, status: 'seeking' };
     render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    // Activate End Game so the button is visible.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+    });
     await act(async () => {
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'spot_confirmed', gameId: 'g1', spotterId: 'p1', distanceM: 10 }),
       });
     });
     expect(screen.getByTestId('spot-hider-btn')).toBeDisabled();
+  });
+
+  // Task 161 — spot gate: End Game + off transit required
+  it('spot button absent during seeking phase when End Game has not started', () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('spot-hider-btn')).not.toBeInTheDocument();
+  });
+
+  it('spot button disabled with "Board off transit to spot" label when seeker is on transit during End Game', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    const ws = MockWebSocket.last;
+    ws.readyState = WebSocket.OPEN;
+
+    // Activate End Game.
+    await act(async () => {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+    });
+    // Toggle transit on.
+    await act(async () => {
+      screen.getByTestId('transit-toggle').click();
+    });
+
+    const btn = screen.getByTestId('spot-hider-btn');
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveTextContent('Board off transit to spot');
+  });
+
+  it('spot button enabled with "I See the Hider!" label when seeker is off transit during End Game', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    const ws = MockWebSocket.last;
+
+    // Activate End Game. Seeker starts off transit by default.
+    await act(async () => {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }) });
+    });
+
+    const btn = screen.getByTestId('spot-hider-btn');
+    expect(btn).not.toBeDisabled();
+    expect(btn).toHaveTextContent('I See the Hider!');
   });
 
   it('removes decoy circle when false_zone_expired WS event is received', async () => {
@@ -1458,18 +1533,25 @@ describe('GameMap', () => {
     expect(screen.getByTestId('zone-selector')).toBeInTheDocument();
   });
 
-  it('spot-hider button renders for seeker after phase_change to seeking', async () => {
+  it('spot-hider button renders for seeker only after end_game_started, not just phase_change to seeking', async () => {
     const seeker = { ...player, role: 'seeker' };
     const hidingGame = { ...game, status: 'hiding' };
     render(<GameMap player={seeker} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
     // Spot button should NOT be present while phase is hiding.
     expect(screen.queryByTestId('spot-hider-btn')).not.toBeInTheDocument();
+    // Phase changes to seeking but End Game has not started — button still absent.
     await act(async () => {
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
       });
     });
-    // Spot button should appear now that phase is seeking.
+    expect(screen.queryByTestId('spot-hider-btn')).not.toBeInTheDocument();
+    // End Game starts — button should now appear.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }),
+      });
+    });
     expect(screen.getByTestId('spot-hider-btn')).toBeInTheDocument();
   });
 

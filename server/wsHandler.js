@@ -375,14 +375,17 @@ export class WsHandler {
    * Handle a `spot_hider` message from a seeker.
    *
    * The seeker claims they can physically see the hider. The server checks
-   * whether the spotter's last known location is within `spotRadiusM` of the
-   * hider's last known location.
+   * two pre-conditions before verifying proximity:
+   *   1. End Game must be active (RULES.md §End Game: spot only valid after
+   *      seekers have entered the hiding zone).
+   *   2. The spotter must not be on transit (RULES.md §End Game: seekers must
+   *      be off transit to finalise capture).
    *
    * - If confirmed: broadcast `spot_confirmed` to the game and call
    *   `this.onSpotConfirmed(gameId, spotterId)` (which typically calls
    *   `gameLoopManager.finishGame`).
-   * - If rejected (out of range or unknown locations): send `spot_rejected`
-   *   back to the requesting seeker with the measured distance.
+   * - If rejected: send `spot_rejected` back to the requesting seeker with a
+   *   `reason` field indicating the cause.
    *
    * @param {object} ws
    * @param {string} playerId
@@ -394,13 +397,26 @@ export class WsHandler {
       return;
     }
 
+    // Pre-check 1: End Game must be active before a spot can be confirmed.
+    if (this.gameStateManager && !this.gameStateManager.isEndGameActive(gameId)) {
+      this._send(ws, {
+        type: 'spot_rejected',
+        gameId,
+        spotterId: playerId,
+        reason: 'end_game_not_started',
+        distanceM: null,
+        spotRadiusM: this.spotRadiusM,
+      });
+      return;
+    }
+
     const gameState = this.gameStateManager
       ? this.gameStateManager.getGameState(gameId)
       : null;
 
     // Allow tests to inject a stub by setting instance._checkSpotFn.
     const checkSpot = this._checkSpotFn ?? _checkSpotImpl;
-    const { spotted, distance } = checkSpot(gameState, playerId, this.spotRadiusM);
+    const { spotted, distance, reason } = checkSpot(gameState, playerId, this.spotRadiusM);
 
     if (spotted) {
       this.broadcastToGame(gameId, { type: 'spot_confirmed', gameId, spotterId: playerId, distanceM: distance });
@@ -412,6 +428,7 @@ export class WsHandler {
         type: 'spot_rejected',
         gameId,
         spotterId: playerId,
+        reason: reason ?? null,
         distanceM: distance,
         spotRadiusM: this.spotRadiusM,
       });

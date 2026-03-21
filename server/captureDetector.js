@@ -216,9 +216,12 @@ export function checkCapture(gameState, zones) {
  * capture: the spotter sends a `spot_hider` WS message and the server calls
  * this function to confirm physical proximity before finalising the game.
  *
+ * Returns `reason: 'on_transit'` when the spotter has `onTransit === true` —
+ * RULES.md §End Game requires seekers to be off transit to finalise a spot.
+ *
  * @param {object} gameState
  *   Snapshot from GameStateManager.getGameState():
- *   { gameId, status, players: { [playerId]: { lat, lon, role } } }
+ *   { gameId, status, players: { [playerId]: { lat, lon, role, onTransit } } }
  * @param {string} spotterId  Player ID of the seeker claiming to see the hider.
  * @param {number} spotRadiusM  Maximum metres between spotter and hider.
  * @returns {{
@@ -226,10 +229,11 @@ export function checkCapture(gameState, zones) {
  *   distance: number | null,
  *   hiderLat: number | null,
  *   hiderLon: number | null,
+ *   reason:   string | null,
  * }}
  */
 export function checkSpot(gameState, spotterId, spotRadiusM) {
-  const empty = { spotted: false, distance: null, hiderLat: null, hiderLon: null };
+  const empty = { spotted: false, distance: null, hiderLat: null, hiderLon: null, reason: null };
   if (!gameState || !spotterId || spotRadiusM == null) return empty;
 
   const players = Object.entries(gameState.players ?? {});
@@ -239,8 +243,13 @@ export function checkSpot(gameState, spotterId, spotRadiusM) {
   if (hiders.length === 0) return empty;
   if (!spotter || spotter.lat == null || spotter.lon == null) return empty;
 
+  // RULES.md §End Game: seekers must be off transit to finalise a spot.
+  if (spotter.onTransit === true) {
+    return { spotted: false, distance: null, hiderLat: null, hiderLon: null, reason: 'on_transit' };
+  }
+
   const [, hider] = hiders[0];
   const distance = haversineDistance(spotter.lat, spotter.lon, hider.lat, hider.lon);
   const spotted  = distance <= spotRadiusM;
-  return { spotted, distance, hiderLat: hider.lat, hiderLon: hider.lon };
+  return { spotted, distance, hiderLat: hider.lat, hiderLon: hider.lon, reason: null };
 }

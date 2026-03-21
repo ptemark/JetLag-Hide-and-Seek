@@ -851,10 +851,12 @@ describe('WsHandler — message routing — set_transit', () => {
 describe('WsHandler — message routing — spot_hider', () => {
   let handler, loop, gsm, ws;
 
-  /** Shared seeker setup: p1 is a seeker in game g1. */
+  /** Shared seeker setup: p1 is a seeker in game g1, End Game active by default. */
   beforeEach(() => {
     loop = makeLoop();
     gsm  = makeGsm();
+    // End Game must be active for spot_hider to be processed (Task 161).
+    gsm.isEndGameActive.mockReturnValue(true);
     // Default GSM state: return a game state that tests can override.
     gsm.getGameState.mockReturnValue({
       gameId: 'g1', status: 'seeking',
@@ -974,6 +976,53 @@ describe('WsHandler — message routing — spot_hider', () => {
     expect(() =>
       noGsmWs.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }))
     ).not.toThrow();
+  });
+
+  it('sends spot_rejected with reason end_game_not_started when End Game has not started', () => {
+    gsm.isEndGameActive.mockReturnValue(false);
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    const msgs = sentMessages(ws);
+    const rejected = msgs.find(m => m.type === 'spot_rejected');
+    expect(rejected).toBeTruthy();
+    expect(rejected.reason).toBe('end_game_not_started');
+    expect(rejected.distanceM).toBeNull();
+    expect(rejected.spotterId).toBe('p1');
+  });
+
+  it('does not call checkSpot when End Game has not started', () => {
+    gsm.isEndGameActive.mockReturnValue(false);
+    handler._checkSpotFn = vi.fn();
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    expect(handler._checkSpotFn).not.toHaveBeenCalled();
+  });
+
+  it('sends spot_rejected with reason on_transit when seeker is on transit during End Game', () => {
+    // End Game active but spotter on transit.
+    handler._checkSpotFn = vi.fn().mockReturnValue({
+      spotted: false, distance: null, hiderLat: null, hiderLon: null, reason: 'on_transit',
+    });
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    const msgs = sentMessages(ws);
+    const rejected = msgs.find(m => m.type === 'spot_rejected');
+    expect(rejected).toBeTruthy();
+    expect(rejected.reason).toBe('on_transit');
+  });
+
+  it('sends spot_confirmed when End Game active, spotter off transit, within radius', () => {
+    handler._checkSpotFn = vi.fn().mockReturnValue({
+      spotted: true, distance: 10, hiderLat: 51.5, hiderLon: 0, reason: null,
+    });
+
+    ws.emit('message', JSON.stringify({ type: 'spot_hider', gameId: 'g1' }));
+
+    const msgs = sentMessages(ws);
+    expect(msgs).toContainEqual(expect.objectContaining({ type: 'spot_confirmed', gameId: 'g1', spotterId: 'p1' }));
   });
 });
 

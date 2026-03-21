@@ -4,8 +4,10 @@ import userEvent from '@testing-library/user-event';
 
 // Mock the API module before importing the component.
 vi.mock('../api.js', () => ({
-  startGame: vi.fn(),
-  lookupGame: vi.fn(),
+  startGame:        vi.fn(),
+  lookupGame:       vi.fn(),
+  markPlayerReady:  vi.fn(),
+  fetchReadyStatus: vi.fn(),
 }));
 
 import * as api from '../api.js';
@@ -16,6 +18,9 @@ const PLAYER = { playerId: 'p1', name: 'Alice', role: 'seeker' };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default stubs — prevent unhandled rejections from background poll.
+  api.fetchReadyStatus.mockResolvedValue({ readyCount: 0, totalCount: 0 });
+  api.markPlayerReady.mockResolvedValue({ readyCount: 1, totalCount: 1 });
 });
 
 // ---------------------------------------------------------------------------
@@ -239,12 +244,14 @@ describe('WaitingRoom non-host polling', () => {
     expect(onGameStarted).toHaveBeenCalledOnce();
   });
 
-  it('does not start polling when onStart is provided (host path)', () => {
-    vi.spyOn(global, 'setInterval');
+  it('does not start game-start polling when onStart is provided (host path)', () => {
+    vi.spyOn(global, 'setInterval').mockReturnValue(1);
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
 
     render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} onGameStarted={() => {}} />);
 
-    expect(global.setInterval).not.toHaveBeenCalled();
+    // Host sets up only the ready-status poll (1 call); game-start poll is skipped.
+    expect(global.setInterval).toHaveBeenCalledTimes(1);
   });
 
   it('clears the interval on unmount', () => {
@@ -338,5 +345,108 @@ describe('WaitingRoom copy invite link', () => {
     unmount();
     expect(clearSpy).toHaveBeenCalled();
     clearSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Player ready mechanic (Task 154)
+// RULES.md §Setup — "All players begin at a common starting point."
+// ---------------------------------------------------------------------------
+
+describe('WaitingRoom ready mechanic', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('renders an "I\'m Ready" button', () => {
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+    expect(screen.getByRole('button', { name: /i'm ready/i })).toBeInTheDocument();
+  });
+
+  it('shows "(0/0 ready)" count on initial render', () => {
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+    expect(screen.getByText(/0\/0 ready/)).toBeInTheDocument();
+  });
+
+  it('calls markPlayerReady with ready:true when "I\'m Ready" is clicked', async () => {
+    const user = userEvent.setup();
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await user.click(screen.getByRole('button', { name: /i'm ready/i }));
+
+    await waitFor(() =>
+      expect(api.markPlayerReady).toHaveBeenCalledWith({
+        gameId: 'g1',
+        playerId: 'p1',
+        ready: true,
+      })
+    );
+  });
+
+  it('changes button label to "Cancel Ready" after marking ready', async () => {
+    const user = userEvent.setup();
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await user.click(screen.getByRole('button', { name: /i'm ready/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /cancel ready/i })).toBeInTheDocument()
+    );
+  });
+
+  it('calls markPlayerReady with ready:false when "Cancel Ready" is clicked', async () => {
+    const user = userEvent.setup();
+    api.markPlayerReady
+      .mockResolvedValueOnce({ readyCount: 1, totalCount: 1 })  // first click — mark ready
+      .mockResolvedValueOnce({ readyCount: 0, totalCount: 1 }); // second click — cancel
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await user.click(screen.getByRole('button', { name: /i'm ready/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /cancel ready/i })).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: /cancel ready/i }));
+
+    await waitFor(() =>
+      expect(api.markPlayerReady).toHaveBeenLastCalledWith({
+        gameId: 'g1',
+        playerId: 'p1',
+        ready: false,
+      })
+    );
+  });
+
+  it('updates the ready count from the markPlayerReady response', async () => {
+    const user = userEvent.setup();
+    api.markPlayerReady.mockResolvedValue({ readyCount: 2, totalCount: 3 });
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await user.click(screen.getByRole('button', { name: /i'm ready/i }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/2\/3 ready/)).toBeInTheDocument()
+    );
+  });
+
+  it('surfaces an error alert when markPlayerReady rejects', async () => {
+    const user = userEvent.setup();
+    api.markPlayerReady.mockRejectedValue(new Error('network error'));
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await user.click(screen.getByRole('button', { name: /i'm ready/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/network error/i)
+    );
+  });
+
+  it('clears the ready poll interval on unmount (no leaked timer)', () => {
+    const intervalId = 99;
+    vi.spyOn(global, 'setInterval').mockReturnValue(intervalId);
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+
+    const { unmount } = render(<WaitingRoom game={GAME} player={PLAYER} />);
+    unmount();
+
+    expect(global.clearInterval).toHaveBeenCalledWith(intervalId);
   });
 });

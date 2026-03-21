@@ -12,6 +12,10 @@ import {
   joinGame,
   _getGamePlayers,
   _clearGamePlayers,
+  markReady,
+  getReadyStatus,
+  _getReadyPlayers,
+  _clearReadyPlayers,
 } from './games.js';
 import { handleRequest } from './router.js';
 
@@ -632,5 +636,100 @@ describe('joinGame (with pool)', () => {
     expect(res.status).toBe(200);
     expect(res.body.playerId).toBe('p1');
     expect(res.body.role).toBe('seeker');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// markReady / getReadyStatus (Task 154)
+// RULES.md §Setup — "All players begin at a common starting point."
+// ---------------------------------------------------------------------------
+
+describe('markReady (in-process)', () => {
+  beforeEach(() => {
+    _clearReadyPlayers();
+    _clearGamePlayers();
+    _clearStore();
+  });
+
+  it('returns 400 when gameId is missing', () => {
+    const res = markReady({ params: {}, body: { playerId: 'p1' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/gameId/i);
+  });
+
+  it('returns 400 when playerId is missing', () => {
+    const res = markReady({ params: { gameId: 'g1' }, body: {} });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/playerId/i);
+  });
+
+  it('marks a player ready and returns readyCount: 1', () => {
+    // Simulate a joined player so totalCount reflects correctly.
+    joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
+
+    const res = markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.readyCount).toBe(1);
+    expect(res.body.totalCount).toBe(1);
+  });
+
+  it('calling markReady with the same playerId twice is idempotent', () => {
+    joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
+    markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+
+    const res = markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+
+    expect(res.body.readyCount).toBe(1);
+  });
+
+  it('removes a player from ready set when ready:false', () => {
+    joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
+    markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+
+    const res = markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: false } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.readyCount).toBe(0);
+    expect(res.body.totalCount).toBe(1);
+  });
+
+  it('ready defaults to true when not specified', () => {
+    joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
+
+    const res = markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1' } });
+
+    expect(res.body.readyCount).toBe(1);
+  });
+});
+
+describe('getReadyStatus (in-process)', () => {
+  beforeEach(() => {
+    _clearReadyPlayers();
+    _clearGamePlayers();
+  });
+
+  it('returns 400 when gameId is missing', () => {
+    const res = getReadyStatus({ params: {} });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/gameId/i);
+  });
+
+  it('returns readyCount:0 and totalCount:0 for a game with no activity', () => {
+    const res = getReadyStatus({ params: { gameId: 'g1' } });
+    expect(res.status).toBe(200);
+    expect(res.body.readyCount).toBe(0);
+    expect(res.body.totalCount).toBe(0);
+  });
+
+  it('reflects current ready and total counts after joins and readies', () => {
+    joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
+    joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p2', role: 'hider' } });
+    markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+
+    const res = getReadyStatus({ params: { gameId: 'g1' } });
+
+    expect(res.body.readyCount).toBe(1);
+    expect(res.body.totalCount).toBe(2);
   });
 });

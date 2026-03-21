@@ -305,6 +305,41 @@ export async function joinGame({ gameId, playerId, role, team = null }) {
 }
 
 /**
+ * Mark a player as ready (or not ready) in the WaitingRoom.
+ * POST /api/games/:gameId/ready  { playerId, ready: boolean }
+ *   → { readyCount: number, totalCount: number }
+ *
+ * @param {{ gameId: string, playerId: string, ready: boolean }} options
+ * @returns {Promise<{ readyCount: number, totalCount: number }>}
+ */
+export async function markPlayerReady({ gameId, playerId, ready }) {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/ready`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId, ready }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error || `markPlayerReady failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Fetch the current ready status for a game.
+ * GET /api/games/:gameId/ready
+ *   → { readyCount: number, totalCount: number }
+ *
+ * @param {string} gameId
+ * @returns {Promise<{ readyCount: number, totalCount: number }>}
+ */
+export async function fetchReadyStatus(gameId) {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/ready`);
+  if (!res.ok) throw new Error(`fetchReadyStatus failed: ${res.status}`);
+  return res.json();
+}
+
+/**
  * Fetch the admin dashboard status from the managed server.
  * GET /api/admin  (Authorization: Bearer <apiKey>)
  *   → { connectedPlayers: number, activeGameCount: number,

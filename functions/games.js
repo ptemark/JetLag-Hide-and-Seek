@@ -26,6 +26,9 @@ const _games = new Map();
 // In-process game-players store.  Maps gameId → Map<playerId, { role, team }>.
 const _gamePlayers = new Map();
 
+// In-process ready store.  Maps gameId → Set<playerId>.
+const _readyPlayers = new Map();
+
 /**
  * Create a new game.
  *
@@ -331,4 +334,64 @@ export function _getGamePlayers() {
 /** Clear the in-process game-players store (for test isolation). */
 export function _clearGamePlayers() {
   _gamePlayers.clear();
+}
+
+/**
+ * Mark a player as ready or not ready in the WaitingRoom.
+ *
+ * Implements RULES.md §Setup — "All players begin at a common starting point."
+ * Players tap Ready to confirm they have gathered before the host starts.
+ * This is soft enforcement: the host can still start at any time.
+ *
+ * POST /games/:gameId/ready  { playerId, ready: boolean }
+ *   → { readyCount: number, totalCount: number }
+ *
+ * @param {{ params: { gameId: string }, body: { playerId?: string, ready?: boolean } }} req
+ * @param {import('pg').Pool|null} [pool]
+ */
+export function markReady(req, pool = null) {
+  const { gameId } = req.params ?? {};
+  const { playerId, ready = true } = req.body ?? {};
+  if (!gameId)   return { status: 400, body: { error: 'gameId is required' } };
+  if (!playerId) return { status: 400, body: { error: 'playerId is required' } };
+
+  if (!_readyPlayers.has(gameId)) _readyPlayers.set(gameId, new Set());
+  const readySet = _readyPlayers.get(gameId);
+  if (ready) {
+    readySet.add(playerId);
+  } else {
+    readySet.delete(playerId);
+  }
+
+  const readyCount  = readySet.size;
+  const totalCount  = _gamePlayers.get(gameId)?.size ?? 0;
+  return { status: 200, body: { readyCount, totalCount } };
+}
+
+/**
+ * Return current ready status for a game.
+ *
+ * GET /games/:gameId/ready
+ *   → { readyCount: number, totalCount: number }
+ *
+ * @param {{ params: { gameId: string } }} req
+ * @param {import('pg').Pool|null} [pool]
+ */
+export function getReadyStatus(req, pool = null) {
+  const { gameId } = req.params ?? {};
+  if (!gameId) return { status: 400, body: { error: 'gameId is required' } };
+
+  const readyCount = _readyPlayers.get(gameId)?.size ?? 0;
+  const totalCount = _gamePlayers.get(gameId)?.size ?? 0;
+  return { status: 200, body: { readyCount, totalCount } };
+}
+
+/** Return a copy of the in-process ready-players store (for testing). */
+export function _getReadyPlayers() {
+  return new Map(_readyPlayers);
+}
+
+/** Clear the in-process ready-players store (for test isolation). */
+export function _clearReadyPlayers() {
+  _readyPlayers.clear();
 }

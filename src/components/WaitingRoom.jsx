@@ -9,7 +9,7 @@
  *   onGameStarted  — callback invoked when the game transitions away from 'waiting' (all players)
  */
 import { useState, useEffect, useRef } from 'react';
-import { startGame, lookupGame } from '../api.js';
+import { startGame, lookupGame, markPlayerReady, fetchReadyStatus } from '../api.js';
 import Alert from './Alert.jsx';
 import styles from './WaitingRoom.module.css';
 
@@ -31,6 +31,10 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
   const range = SCALE_DURATION_RANGES[game.size] ?? { min: 30, max: 360 };
   const [hidingDurationMin, setHidingDurationMin] = useState(range.min);
   const [copied, setCopied] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  const [readyCount, setReadyCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [readyError, setReadyError] = useState(null);
   const copyTimerRef = useRef(null);
 
   const showTeam = (game.seekerTeams ?? 0) >= 2 && player?.role === 'seeker' && player?.team;
@@ -38,6 +42,22 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
 
   // Clear any pending clipboard reset timer on unmount to prevent state updates.
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+
+  // Poll ready status for all players (including host) so everyone sees the count.
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const status = await fetchReadyStatus(game.gameId);
+        setReadyCount(status.readyCount);
+        setTotalCount(status.totalCount);
+      } catch {
+        // ignore transient poll failures
+      }
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+    // Run once on mount. game.gameId is stable during the WaitingRoom's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleCopyLink() {
     try {
@@ -76,6 +96,19 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
     // Run once on mount. Props are stable during the WaitingRoom's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleToggleReady() {
+    setReadyError(null);
+    const next = !isReady;
+    try {
+      const status = await markPlayerReady({ gameId: game.gameId, playerId: player.playerId, ready: next });
+      setIsReady(next);
+      setReadyCount(status.readyCount);
+      setTotalCount(status.totalCount);
+    } catch (err) {
+      setReadyError(err.message || 'Could not update ready status');
+    }
+  }
 
   async function handleStart() {
     setError('');
@@ -132,6 +165,20 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
           <small> ({range.min}–{range.max} min for {game.size} scale)</small>
         </div>
       )}
+      <div className={styles.readyRow}>
+        <button
+          type="button"
+          aria-label={isReady ? 'Cancel ready' : "I'm Ready"}
+          className={isReady ? styles.readyBtnActive : styles.readyBtn}
+          onClick={handleToggleReady}
+        >
+          {isReady ? 'Cancel Ready' : "I'm Ready"}
+        </button>
+        <span className={styles.readyCount} aria-live="polite">
+          ({readyCount}/{totalCount} ready)
+        </span>
+      </div>
+      {readyError && <Alert>{readyError}</Alert>}
       {onStart && (
         <button onClick={handleStart}>Start Game</button>
       )}

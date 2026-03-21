@@ -37,7 +37,7 @@
  */
 
 import { registerPlayer } from './players.js';
-import { getGame, handleCreateGame, handleStartGame, cleanupStaleGames, joinGame } from './games.js';
+import { getGame, handleCreateGame, handleStartGame, cleanupStaleGames, joinGame, markReady, getReadyStatus } from './games.js';
 import { submitScore, getLeaderboard } from './scores.js';
 import { initiateSession, terminateSession } from './sessions.js';
 import { getLiveState } from './liveState.js';
@@ -84,6 +84,8 @@ const ROUTES = [
   { method: 'GET',    pattern: /^\/games\/(?<id>[^/]+)$/, handler: getGame },
   { method: 'POST',   pattern: /^\/games\/(?<gameId>[^/]+)\/start$/, handler: handleStartGame },
   { method: 'POST',   pattern: /^\/games\/(?<gameId>[^/]+)\/join$/, handler: joinGame },
+  { method: 'POST',   pattern: /^\/games\/(?<gameId>[^/]+)\/ready$/, handler: markReady },
+  { method: 'GET',    pattern: /^\/games\/(?<gameId>[^/]+)\/ready$/, handler: getReadyStatus },
   { method: 'POST',   pattern: /^\/games\/cleanup$/, handler: cleanupStaleGames },
   { method: 'POST',   pattern: /^\/scores$/, handler: submitScore },
   { method: 'GET',    pattern: /^\/scores$/, handler: getLeaderboard },

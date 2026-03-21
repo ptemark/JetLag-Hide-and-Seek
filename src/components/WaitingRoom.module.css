@@ -52,3 +52,50 @@
 .copyBtn:focus-visible {
   outline: 2px solid var(--color-accent);
 }
+
+.readyRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  flex-wrap: wrap;
+}
+
+.readyBtn {
+  background: none;
+  border: 2px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.375rem 0.75rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.readyBtn:focus-visible {
+  outline: 2px solid var(--color-accent);
+}
+
+.readyBtnActive {
+  background: var(--color-success);
+  border: 2px solid var(--color-success);
+  border-radius: 4px;
+  padding: 0.375rem 0.75rem;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  color: var(--color-bg);
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.readyBtnActive:focus-visible {
+  outline: 2px solid var(--color-accent);
+}
+
+.readyCount {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}

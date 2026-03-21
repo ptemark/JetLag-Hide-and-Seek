@@ -87,9 +87,10 @@ beforeEach(() => {
   ENV.features.adminDashboard = false;
   // Reset captured marker handler between tests.
   leafletMapMocks.centerMarkerDragend = null;
-  // Remove the player persistence key between tests so player-persistence
-  // tests are isolated without depending on localStorage.clear() (Task 158).
+  // Remove persistence keys between tests for isolation (Tasks 158, 160).
   localStorage.removeItem('jetlag_player');
+  localStorage.removeItem('jetlag_game');
+  localStorage.removeItem('jetlag_playing');
 });
 
 // ---------------------------------------------------------------------------
@@ -831,5 +832,109 @@ describe('Lobby player identity persistence', () => {
 
     // "Not {name}?" must be absent during gameplay
     expect(screen.queryByRole('button', { name: /change player identity/i })).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lobby — Game session persistence (Task 160)
+// ---------------------------------------------------------------------------
+
+describe('Lobby game session persistence', () => {
+  // (a) Valid game + playing=true → GameMap rendered on mount
+  it('renders GameMap on mount when game and playing are both saved', () => {
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    localStorage.setItem('jetlag_game', JSON.stringify(GAME));
+    localStorage.setItem('jetlag_playing', 'true');
+    render(<Lobby />);
+    expect(GameMap).toHaveBeenCalled();
+    expect(screen.queryByRole('tab', { name: /create/i })).not.toBeInTheDocument();
+  });
+
+  // (b) Valid game but no playing flag → WaitingRoom rendered on mount
+  it('renders WaitingRoom on mount when game is saved but playing is absent', () => {
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    localStorage.setItem('jetlag_game', JSON.stringify(GAME));
+    render(<Lobby />);
+    expect(screen.getByRole('heading', { name: /waiting room/i })).toBeInTheDocument();
+    expect(GameMap).not.toHaveBeenCalled();
+  });
+
+  // (c) Invalid game JSON → falls back to GameForm
+  it('shows GameForm when saved game JSON is invalid', () => {
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    localStorage.setItem('jetlag_game', 'bad-json{{{');
+    localStorage.setItem('jetlag_playing', 'true');
+    render(<Lobby />);
+    expect(screen.getByRole('tab', { name: /create/i })).toBeInTheDocument();
+    expect(GameMap).not.toHaveBeenCalled();
+  });
+
+  // (d) After onGameStarted fires, jetlag_playing is 'true' in localStorage
+  it('persists playing flag to localStorage after game starts', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    api.createGame.mockResolvedValue(GAME);
+    api.startGame.mockResolvedValue();
+    render(<Lobby />);
+
+    await user.click(screen.getByRole('button', { name: /create game/i }));
+    await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+    await user.click(screen.getByRole('button', { name: /start game/i }));
+    await waitFor(() => expect(GameMap).toHaveBeenCalled());
+
+    expect(localStorage.getItem('jetlag_playing')).toBe('true');
+  });
+
+  // (e) After onGameReady fires (create game), jetlag_game contains game JSON
+  it('persists game to localStorage after createGame resolves', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    api.createGame.mockResolvedValue(GAME);
+    render(<Lobby />);
+
+    await user.click(screen.getByRole('button', { name: /create game/i }));
+    await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+
+    const stored = JSON.parse(localStorage.getItem('jetlag_game'));
+    expect(stored).toMatchObject({ gameId: 'g1', size: 'medium' });
+  });
+
+  // (f) handleChangePlayer clears jetlag_game and jetlag_playing
+  it('clicking "Not {name}?" clears game and playing from localStorage', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    localStorage.setItem('jetlag_game', JSON.stringify(GAME));
+    // playing=false so WaitingRoom is shown and "Not Alice?" button is visible
+    render(<Lobby />);
+
+    await user.click(screen.getByRole('button', { name: /change player identity/i }));
+
+    expect(localStorage.getItem('jetlag_game')).toBeNull();
+    expect(localStorage.getItem('jetlag_playing')).toBeNull();
+    expect(localStorage.getItem('jetlag_player')).toBeNull();
+  });
+
+  // (g) handlePlayAgain clears both keys and returns to GameForm
+  it('handlePlayAgain clears game session and returns to GameForm', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
+    api.createGame.mockResolvedValue(GAME);
+    api.startGame.mockResolvedValue();
+    render(<Lobby />);
+
+    // Create and start a game
+    await user.click(screen.getByRole('button', { name: /create game/i }));
+    await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+    await user.click(screen.getByRole('button', { name: /start game/i }));
+    await waitFor(() => expect(GameMap).toHaveBeenCalled());
+
+    // Simulate GameMap calling onPlayAgain
+    const onPlayAgain = GameMap.mock.calls[GameMap.mock.calls.length - 1][0].onPlayAgain;
+    act(() => onPlayAgain());
+
+    expect(localStorage.getItem('jetlag_game')).toBeNull();
+    expect(localStorage.getItem('jetlag_playing')).toBeNull();
+    // GameForm should now be shown
+    expect(screen.getByRole('tab', { name: /create/i })).toBeInTheDocument();
   });
 });

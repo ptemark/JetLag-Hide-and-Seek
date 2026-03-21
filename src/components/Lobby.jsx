@@ -21,6 +21,12 @@ const SERVER_URL = ENV.wsUrl;
 // without losing their playerId — critical for WS reconnect (Task 158).
 const STORAGE_KEY = 'jetlag_player';
 
+// localStorage keys for persisting the active game session across page reloads.
+// When a player is mid-game and refreshes, these allow the app to skip GameForm
+// and WaitingRoom and jump directly to GameMap (Task 160).
+const GAME_STORAGE_KEY = 'jetlag_game';
+const PLAYING_STORAGE_KEY = 'jetlag_playing';
+
 /** Read ?gameId from the page URL (set once at load time). */
 function getUrlGameId() {
   const params = new URLSearchParams(window.location.search);
@@ -52,6 +58,37 @@ function restorePlayer() {
 }
 
 /**
+ * Restore a previously saved game session from localStorage.
+ * Returns the game object when it has gameId and size as non-empty strings,
+ * or null if absent, malformed, or incomplete.
+ */
+function restoreGame() {
+  try {
+    const raw = localStorage.getItem(GAME_STORAGE_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+    if (
+      saved &&
+      typeof saved.gameId === 'string' && saved.gameId &&
+      typeof saved.size === 'string' && saved.size
+    ) {
+      return saved;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Restore the playing flag from localStorage.
+ * Returns true only when the stored value is the string 'true'.
+ */
+function restorePlaying() {
+  return localStorage.getItem(PLAYING_STORAGE_KEY) === 'true';
+}
+
+/**
  * Lobby — top-level game lobby view.
  *
  * Manages the four-step flow:
@@ -71,8 +108,10 @@ export default function Lobby() {
   // Initialise synchronously from localStorage so there is no flash of the
   // registration form on reload when a player identity has been saved.
   const [player, setPlayer] = useState(() => restorePlayer());
-  const [game, setGame] = useState(null);
-  const [playing, setPlaying] = useState(false);
+  // Restore game session synchronously so a mid-game refresh re-mounts GameMap
+  // directly without passing through GameForm or WaitingRoom (Task 160).
+  const [game, setGame] = useState(() => restoreGame());
+  const [playing, setPlaying] = useState(() => restorePlaying());
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const urlGameId = getUrlGameId();
@@ -83,10 +122,34 @@ export default function Lobby() {
     setPlayer(registeredPlayer);
   }
 
-  /** Clear saved identity and return to the registration form. */
+  /** Persist game to localStorage then update state. */
+  function handleGameReady(g) {
+    localStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(g));
+    setGame(g);
+  }
+
+  /** Persist playing flag to localStorage then update state. */
+  function handleGameStarted() {
+    localStorage.setItem(PLAYING_STORAGE_KEY, 'true');
+    setPlaying(true);
+  }
+
+  /** Clear game session from localStorage and return to GameForm. */
+  function handlePlayAgain() {
+    localStorage.removeItem(GAME_STORAGE_KEY);
+    localStorage.removeItem(PLAYING_STORAGE_KEY);
+    setGame(null);
+    setPlaying(false);
+  }
+
+  /** Clear saved identity (and game session) and return to the registration form. */
   function handleChangePlayer() {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(GAME_STORAGE_KEY);
+    localStorage.removeItem(PLAYING_STORAGE_KEY);
     setPlayer(null);
+    setGame(null);
+    setPlaying(false);
   }
 
   return (
@@ -130,7 +193,7 @@ export default function Lobby() {
           {player && !game && (
             <GameForm
               player={player}
-              onGameReady={setGame}
+              onGameReady={handleGameReady}
               initialTab={urlGameId ? 'join' : 'create'}
               initialGameId={urlGameId}
             />
@@ -141,7 +204,7 @@ export default function Lobby() {
               game={game}
               player={player}
               onStart={player.playerId === game.hostPlayerId ? () => {} : undefined}
-              onGameStarted={() => setPlaying(true)}
+              onGameStarted={handleGameStarted}
             />
           )}
 
@@ -150,7 +213,7 @@ export default function Lobby() {
               player={player}
               game={game}
               serverUrl={SERVER_URL}
-              onPlayAgain={() => { setGame(null); setPlaying(false); }}
+              onPlayAgain={handlePlayAgain}
             />
           )}
         </>

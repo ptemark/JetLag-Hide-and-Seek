@@ -293,7 +293,7 @@ describe('WsHandler — game routing', () => {
     ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', role: 'seeker' }));
 
     expect(ws1.send).toHaveBeenCalledWith(
-      JSON.stringify({ type: 'player_joined', gameId: 'g1', playerId: 'p2', team: null })
+      JSON.stringify({ type: 'player_joined', gameId: 'g1', playerId: 'p2', team: null, name: null })
     );
   });
 

@@ -271,7 +271,30 @@ describe('WsHandler — message routing — join_game', () => {
     // p1 now joins
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
     const msgs = sentMessages(ws2);
-    expect(msgs).toContainEqual({ type: 'player_joined', gameId: 'g1', playerId: 'p1', team: null });
+    expect(msgs).toContainEqual({ type: 'player_joined', gameId: 'g1', playerId: 'p1', team: null, name: null });
+  });
+
+  it('player_joined broadcast includes name when provided in join_game', () => {
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.send.mockClear();
+
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', name: 'Alice' }));
+    const msgs = sentMessages(ws2);
+    expect(msgs).toContainEqual({ type: 'player_joined', gameId: 'g1', playerId: 'p1', team: null, name: 'Alice' });
+  });
+
+  it('player_joined broadcast uses null name when name omitted from join_game', () => {
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    ws2.send.mockClear();
+
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const msgs = sentMessages(ws2);
+    const joinedMsg = msgs.find(m => m.type === 'player_joined' && m.playerId === 'p1');
+    expect(joinedMsg.name).toBeNull();
   });
 
   it('returns error when gameId is missing', () => {
@@ -1297,8 +1320,27 @@ describe('WsHandler — game_state_sync on join', () => {
     ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
     const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
     expect(Array.isArray(sync.players)).toBe(true);
-    expect(sync.players).toContainEqual({ playerId: 'hider1', role: 'hider' });
-    expect(sync.players).toContainEqual({ playerId: 'seeker1', role: 'seeker' });
+    expect(sync.players).toContainEqual({ playerId: 'hider1', role: 'hider', name: null });
+    expect(sync.players).toContainEqual({ playerId: 'seeker1', role: 'seeker', name: null });
+  });
+
+  it('game_state_sync players include name for players whose name is known', () => {
+    gsm.getGameState.mockReturnValue({
+      status: 'waiting',
+      seekerTeams: 0,
+      players: { p2: { role: 'seeker', lat: null, lon: null, team: null, onTransit: false } },
+    });
+    // p2 joins with a name first, so their name is stored.
+    const ws2 = mockWs();
+    handler.handleConnection(ws2, 'p2');
+    ws2.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', name: 'Bob' }));
+
+    // p1 now joins and receives a game_state_sync with p2's name.
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1', name: 'Alice' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    const p2Entry = sync.players.find(p => p.playerId === 'p2');
+    expect(p2Entry).toBeDefined();
+    expect(p2Entry.name).toBe('Bob');
   });
 
   it('game_state_sync players array does not include lat/lon', () => {

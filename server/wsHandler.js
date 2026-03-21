@@ -40,6 +40,7 @@ export class WsHandler {
     this.gameClients = new Map();  // gameId   -> Map<playerId, ws>
     this.playerGames = new Map();  // playerId -> Set<gameId>
     this.playerTeams = new Map();  // playerId -> team ('A'|'B'|null)
+    this._playerNames = new Map(); // playerId -> name (display name for map markers)
     this._reconnectTimers = new Map(); // playerId -> timerId (grace-period cleanup)
   }
 
@@ -115,11 +116,14 @@ export class WsHandler {
     }
   }
 
-  _handleJoinGame(ws, playerId, { gameId, role = 'hider', team = null, bounds = null }) {
+  _handleJoinGame(ws, playerId, { gameId, role = 'hider', team = null, bounds = null, name = null }) {
     if (!gameId) {
       this._send(ws, { type: 'error', message: 'gameId required' });
       return;
     }
+
+    // Store the player's display name for inclusion in broadcasts.
+    if (name) this._playerNames.set(playerId, name);
 
     // If a reconnect grace timer is pending for this player, cancel it — they're back.
     const isReconnect = this._reconnectTimers.has(playerId);
@@ -196,7 +200,7 @@ export class WsHandler {
       // QuestionPanel.  Location data is intentionally excluded to preserve
       // hider privacy (RULES.md §Hiding Rules).
       const playersForSync = Object.entries(gameState?.players ?? {}).map(
-        ([pid, data]) => ({ playerId: pid, role: data.role }),
+        ([pid, data]) => ({ playerId: pid, role: data.role, name: this._playerNames.get(pid) ?? null }),
       );
       const syncPayload = {
         type: 'game_state_sync',
@@ -220,7 +224,7 @@ export class WsHandler {
     // Notify existing players in the game
     const eventType = isReconnect ? 'player_reconnected' : 'player_joined';
     const gamePlayers = this.gameClients.get(gameId);
-    const payload = JSON.stringify({ type: eventType, gameId, playerId, team: assignedTeam ?? null });
+    const payload = JSON.stringify({ type: eventType, gameId, playerId, team: assignedTeam ?? null, name: this._playerNames.get(playerId) ?? null });
     for (const [pid, clientWs] of gamePlayers.entries()) {
       if (pid !== playerId && clientWs.readyState === WS_OPEN) {
         clientWs.send(payload);
@@ -467,6 +471,7 @@ export class WsHandler {
   _finalizeDisconnect(playerId) {
     this._reconnectTimers.delete(playerId);
     this.playerTeams.delete(playerId);
+    this._playerNames.delete(playerId);
 
     const games = this.playerGames.get(playerId);
     if (games) {

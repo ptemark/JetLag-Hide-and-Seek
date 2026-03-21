@@ -1653,4 +1653,86 @@ describe('GameMap', () => {
     });
     expect(queryByTestId('score-error-banner')).not.toBeInTheDocument();
   });
+
+  // ---------------------------------------------------------------------------
+  // Player names on map markers — Task 162
+  // ---------------------------------------------------------------------------
+
+  it('join_game message sent on WS open includes player name', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.readyState = 1;
+      MockWebSocket.last.onopen?.();
+    });
+    const sentMsgs = MockWebSocket.last.send.mock.calls.map(([m]) => JSON.parse(m));
+    const joinMsg = sentMsgs.find(m => m.type === 'join_game');
+    expect(joinMsg).toBeDefined();
+    expect(joinMsg.name).toBe('Alice');
+  });
+
+  it('player_joined with name updates marker tooltip to show name not playerId', async () => {
+    const seeker = { playerId: 'seeker1', name: 'Alice', role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => { MockWebSocket.last.readyState = 1; MockWebSocket.last.onopen?.(); });
+
+    // Another player (p2) joins and is announced via player_joined with their name.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_joined', gameId: 'g1', playerId: 'p2', team: null, name: 'Bob' }),
+      });
+    });
+
+    // p2 sends a location — this triggers marker creation.
+    mockMarker.bindTooltip.mockClear();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', gameId: 'g1', playerId: 'p2', lat: 51.05, lon: -0.05 }),
+      });
+    });
+
+    // The marker tooltip should use 'Bob' not 'p2'.
+    expect(mockMarker.bindTooltip).toHaveBeenCalledWith('Bob', expect.any(Object));
+  });
+
+  it('game_state_sync with player names updates marker tooltips', async () => {
+    const seeker = { playerId: 'seeker1', name: 'Alice', role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => { MockWebSocket.last.readyState = 1; MockWebSocket.last.onopen?.(); });
+
+    // Receive a location update for p2 first (marker created with fallback pid label).
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', gameId: 'g1', playerId: 'p2', lat: 51.05, lon: -0.05 }),
+      });
+    });
+
+    // game_state_sync arrives with p2's name.
+    mockMarker.setTooltipContent.mockClear();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({
+          type: 'game_state_sync',
+          gameId: 'g1',
+          phase: 'seeking',
+          zones: [],
+          endGameActive: false,
+          players: [
+            { playerId: 'p2', role: 'seeker', name: 'Bob' },
+          ],
+        }),
+      });
+    });
+
+    // A subsequent location update for p2 should now show 'Bob' in the tooltip.
+    mockMarker.setTooltipContent.mockClear();
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'player_location', gameId: 'g1', playerId: 'p2', lat: 51.06, lon: -0.05 }),
+      });
+    });
+    const tooltipCall = mockMarker.setTooltipContent.mock.calls.find(([t]) => t.includes('Bob'));
+    expect(tooltipCall).toBeDefined();
+  });
 });

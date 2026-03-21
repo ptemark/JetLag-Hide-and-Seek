@@ -72,6 +72,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const wsRef = useRef(null);
   // Tracks each player's role so End Game hider markers use the correct colour.
   const playerRolesRef = useRef({ [player.playerId]: player.role });
+  // Tracks each player's display name for map marker tooltips.
+  const playerNamesRef = useRef({ [player.playerId]: player.name });
   const hidingStartedAtRef = useRef(null); // timestamp (ms) when hiding phase began
   const bonusSecondsRef = useRef(0);       // accumulated time_bonus card seconds
   const captureWinnerRef = useRef(null);   // winner string from capture event (avoids stale closure)
@@ -176,8 +178,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         const isMe = pid === player.playerId;
         const isOnTransit = pos.onTransit ?? false;
         const transitIcon = isOnTransit ? ' 🚌' : '';
-        const baseLabel = isMe ? `You${myTeam ? ` (Team ${myTeam})` : ''}` : pid;
-        const label = `${baseLabel}${transitIcon}`;
+        const displayName = isMe ? `You${myTeam ? ` (Team ${myTeam})` : ''}` : (playerNamesRef.current[pid] ?? pid);
+        const label = `${displayName}${transitIcon}`;
         markersRef.current[pid].setLatLng([pos.lat, pos.lon]);
         markersRef.current[pid].setStyle({ fillOpacity: isOnTransit ? 0.3 : 0.7 });
         markersRef.current[pid].setTooltipContent(label);
@@ -186,8 +188,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         const color = markerColor(pid);
         const isOnTransit = pos.onTransit ?? false;
         const transitIcon = isOnTransit ? ' 🚌' : '';
-        const baseLabel = isMe ? `You${myTeam ? ` (Team ${myTeam})` : ''}` : pid;
-        const label = `${baseLabel}${transitIcon}`;
+        const displayName = isMe ? `You${myTeam ? ` (Team ${myTeam})` : ''}` : (playerNamesRef.current[pid] ?? pid);
+        const label = `${displayName}${transitIcon}`;
         markersRef.current[pid] = L.circleMarker([pos.lat, pos.lon], {
           radius: isMe ? 10 : 7,
           color,
@@ -306,6 +308,9 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setWsStatus('connected');
         // Server may assign a team in two-team mode.
         if (msg.team) setMyTeam(msg.team);
+      } else if (msg.type === 'player_joined' || msg.type === 'player_reconnected') {
+        // Track the joining player's display name for map marker tooltips.
+        if (msg.name) playerNamesRef.current[msg.playerId] = msg.name;
       } else if (msg.type === 'player_location') {
         setPlayers((prev) => ({
           ...prev,
@@ -417,10 +422,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           endGameActiveRef.current = msg.endGameActive;
           setEndGameActive(msg.endGameActive);
         }
-        // Extract hider ID for QuestionPanel auto-population.
+        // Extract hider ID for QuestionPanel auto-population; also populate player names.
         if (Array.isArray(msg.players)) {
           const hider = msg.players.find((p) => p.role === 'hider');
           if (hider) setHiderId(hider.playerId);
+          for (const p of msg.players) {
+            if (p.name) playerNamesRef.current[p.playerId] = p.name;
+          }
         }
       } else if (msg.type === 'error') {
         setJoinError(msg.message ?? 'An error occurred');
@@ -441,6 +449,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           type: 'join_game',
           gameId: game.gameId,
           role: player.role,
+          name: player.name,
         };
         if (game.bounds?.lat_min != null) {
           joinMsg.bounds = {

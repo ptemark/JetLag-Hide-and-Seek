@@ -699,8 +699,9 @@ describe('Lobby admin dashboard', () => {
 
     await user.click(screen.getByRole('button', { name: /^admin$/i }));
 
-    // AdminDashboard renders a key-entry form — verify it is visible
-    expect(screen.getByLabelText(/admin api key/i)).toBeInTheDocument();
+    // AdminDashboard is lazy-loaded; findBy* waits for the Suspense boundary to resolve
+    const keyInput = await screen.findByLabelText(/admin api key/i);
+    expect(keyInput).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /connect/i })).toBeInTheDocument();
   });
 });

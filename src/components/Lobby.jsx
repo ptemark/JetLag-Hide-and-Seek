@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { ENV } from '../../config/env.js';
 import AppHeader from './AppHeader.jsx';
 import PlayerForm from './PlayerForm.jsx';
 import GameForm from './GameForm.jsx';
 import WaitingRoom from './WaitingRoom.jsx';
 import GameMap from './GameMap.jsx';
-import Leaderboard from './Leaderboard.jsx';
-import AdminDashboard from './AdminDashboard.jsx';
+
+// Lazy-load non-critical views that are never needed on initial render
+// (RALPH.md §Performance / Mobile — lazy-load non-critical views)
+const Leaderboard = lazy(() => import('./Leaderboard.jsx'));
+const AdminDashboard = lazy(() => import('./AdminDashboard.jsx'));
 
 const SERVER_URL = import.meta.env.VITE_GAME_SERVER_URL ?? '';
 
@@ -57,9 +60,9 @@ export default function Lobby() {
       )}
 
       {showAdmin && !playing ? (
-        <AdminDashboard />
+        <Suspense fallback={null}><AdminDashboard /></Suspense>
       ) : showLeaderboard && !playing ? (
-        <Leaderboard />
+        <Suspense fallback={null}><Leaderboard /></Suspense>
       ) : (
         <>
           {!player && (

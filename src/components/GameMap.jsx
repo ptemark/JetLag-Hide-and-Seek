@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import QuestionPanel from './QuestionPanel.jsx';
 import AnswerPanel from './AnswerPanel.jsx';
-import CardPanel from './CardPanel.jsx';
+// Lazy-load non-critical game panels (RALPH.md §Performance / Mobile)
+const CardPanel = lazy(() => import('./CardPanel.jsx'));
+const ResultsScreen = lazy(() => import('./ResultsScreen.jsx'));
 import ZoneSelector from './ZoneSelector.jsx';
-import ResultsScreen from './ResultsScreen.jsx';
 import { submitScore, listZones } from '../api.js';
 import { formatCountdown } from './gameUtils.js';
 import styles from './GameMap.module.css';
@@ -661,21 +662,25 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {player.role === 'hider' && (
-        <CardPanel
-          player={player}
-          game={game}
-          refreshTrigger={cardRefresh}
-          onTimeBonusPlayed={(mins) => { bonusSecondsRef.current += mins * 60; }}
-        />
+        <Suspense fallback={null}>
+          <CardPanel
+            player={player}
+            game={game}
+            refreshTrigger={cardRefresh}
+            onTimeBonusPlayed={(mins) => { bonusSecondsRef.current += mins * 60; }}
+          />
+        </Suspense>
       )}
 
       {gameResult && (
-        <ResultsScreen
-          winner={gameResult.winner}
-          elapsedMs={gameResult.elapsedMs}
-          bonusSeconds={gameResult.bonusSeconds}
-          onPlayAgain={onPlayAgain}
-        />
+        <Suspense fallback={null}>
+          <ResultsScreen
+            winner={gameResult.winner}
+            elapsedMs={gameResult.elapsedMs}
+            bonusSeconds={gameResult.bonusSeconds}
+            onPlayAgain={onPlayAgain}
+          />
+        </Suspense>
       )}
     </div>
   );

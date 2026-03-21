@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { submitQuestion, listQuestions, fetchQuestionPhoto } from '../api.js';
 import { tentacleHint, measuringHint, matchingHint, transitHint, thermometerHint } from './questionHints.js';
+import { formatCountdown } from './gameUtils.js';
 import styles from './QuestionPanel.module.css';
+
+/** Interval in ms for the curse-countdown live update tick. */
+const COUNTDOWN_TICK_MS = 1_000;
 
 const CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
@@ -56,18 +60,12 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
 
   // Tick every second so the curse countdown stays live.
   useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    const id = setInterval(() => setTick((n) => n + 1), COUNTDOWN_TICK_MS);
     return () => clearInterval(id);
   }, []);
 
   const isCurseActive = curseEndsAt != null && new Date(curseEndsAt) > new Date();
-  const curseCountdown = (() => {
-    if (!isCurseActive) return null;
-    const ms = new Date(curseEndsAt) - Date.now();
-    if (ms <= 0) return '0:00';
-    const totalSecs = Math.floor(ms / 1000);
-    return `${Math.floor(totalSecs / 60)}:${String(totalSecs % 60).padStart(2, '0')}`;
-  })();
+  const curseCountdown = isCurseActive ? formatCountdown(curseEndsAt) : null;
 
   // Fetch full Q&A history for the game on mount and whenever qaRefresh changes.
   useEffect(() => {

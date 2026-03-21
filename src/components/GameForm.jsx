@@ -33,6 +33,14 @@ const CARTO_ATTRIBUTION =
 // Initial zoom level used when flying to a geocoding result (DESIGN.md §22).
 const PREVIEW_MAP_ZOOM = 11;
 
+// Zone circle colour — matches --color-accent / --color-sunset-2 (DESIGN.md §22).
+// Must be a literal; Leaflet pathOptions cannot accept CSS custom properties.
+const ZONE_COLOR = '#F08730';
+
+// Semi-transparent white border for draggable marker icons — ensures visibility
+// against both light and dark map tiles.
+const MARKER_BORDER_COLOR = 'rgba(255,255,255,0.8)';
+
 /**
  * LocationCircle — renders the zone circle overlay on the preview map.
  * Internal component; not exported.
@@ -47,9 +55,9 @@ function LocationCircle({ center, radiusKm }) {
       center={[center.lat, center.lon]}
       radius={radiusKm * 1000}
       pathOptions={{
-        fillColor: '#F08730',
+        fillColor: ZONE_COLOR,
         fillOpacity: 0.15,
-        color: '#F08730',
+        color: ZONE_COLOR,
         weight: 2,
       }}
     />
@@ -90,7 +98,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
   // Created in useMemo to avoid calling L.divIcon at module parse time.
   const centerMarkerIcon = useMemo(() => L.divIcon({
     className: '',
-    html: '<div style="width:12px;height:12px;border-radius:50%;background:#F08730;cursor:move;border:2px solid rgba(255,255,255,0.8);box-sizing:border-box;"></div>',
+    html: `<div style="width:12px;height:12px;border-radius:50%;background:${ZONE_COLOR};cursor:move;border:2px solid ${MARKER_BORDER_COLOR};box-sizing:border-box;"></div>`,
     iconSize: [12, 12],
     iconAnchor: [6, 6],
   }), []);
@@ -98,7 +106,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
   // Resize handle icon — small accent circle with crosshair cursor placed at the east edge.
   const resizeHandleIcon = useMemo(() => L.divIcon({
     className: '',
-    html: '<div style="width:12px;height:12px;border-radius:50%;background:#F08730;cursor:crosshair;border:2px solid rgba(255,255,255,0.8);box-sizing:border-box;"></div>',
+    html: `<div style="width:12px;height:12px;border-radius:50%;background:${ZONE_COLOR};cursor:crosshair;border:2px solid ${MARKER_BORDER_COLOR};box-sizing:border-box;"></div>`,
     iconSize: [12, 12],
     iconAnchor: [6, 6],
   }), []);
@@ -323,7 +331,7 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
                   center={[center.lat, center.lon]}
                   zoom={PREVIEW_MAP_ZOOM}
                   scrollWheelZoom={false}
-                  style={{ height: '100%', width: '100%' }}
+                  className={styles.mapContainer}
                 >
                   <TileLayer url={CARTO_TILE_URL} attribution={CARTO_ATTRIBUTION} />
                   <LocationCircle center={center} radiusKm={radiusKm} />

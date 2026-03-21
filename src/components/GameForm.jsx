@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Circle, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { createGame, lookupGame, joinGame } from '../api.js';
-import { centerRadiusToBounds } from './gameUtils.js';
+import { centerRadiusToBounds, haversineKm, lonDeltaDeg } from './gameUtils.js';
 import Alert from './Alert.jsx';
 import styles from './GameForm.module.css';
 
@@ -95,6 +95,14 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
     iconAnchor: [6, 6],
   }), []);
 
+  // Resize handle icon — small accent circle with crosshair cursor placed at the east edge.
+  const resizeHandleIcon = useMemo(() => L.divIcon({
+    className: '',
+    html: '<div style="width:12px;height:12px;border-radius:50%;background:#F08730;cursor:crosshair;border:2px solid rgba(255,255,255,0.8);box-sizing:border-box;"></div>',
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  }), []);
+
   // Debounced Nominatim search — fires 500 ms after the user stops typing.
   useEffect(() => {
     if (!locationQuery.trim()) {
@@ -144,6 +152,20 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
     const newCenter = { lat, lon: lng };
     setCenter(newCenter);
     setBounds(centerRadiusToBounds(newCenter, radiusKm));
+  }
+
+  function handleResizeHandleDrag(e) {
+    const { lat, lng } = e.target.getLatLng();
+    const newRadius = haversineKm(center, { lat, lon: lng });
+    setRadiusKm(newRadius);
+    setBounds(centerRadiusToBounds(center, newRadius));
+  }
+
+  function handleResizeHandleDragend(e) {
+    const { lat, lng } = e.target.getLatLng();
+    const newRadius = haversineKm(center, { lat, lon: lng });
+    setRadiusKm(newRadius);
+    setBounds(centerRadiusToBounds(center, newRadius));
   }
 
   function setBound(key, value) {
@@ -273,24 +295,40 @@ export default function GameForm({ player, onGameReady, initialTab = 'create', i
           </div>
 
           {center !== null && (
-            <div className={styles.previewMap}>
-              <MapContainer
-                key={mapKey}
-                center={[center.lat, center.lon]}
-                zoom={PREVIEW_MAP_ZOOM}
-                scrollWheelZoom={false}
-                style={{ height: '100%', width: '100%' }}
-              >
-                <TileLayer url={CARTO_TILE_URL} attribution={CARTO_ATTRIBUTION} />
-                <LocationCircle center={center} radiusKm={radiusKm} />
-                <Marker
-                  position={[center.lat, center.lon]}
-                  draggable={true}
-                  icon={centerMarkerIcon}
-                  eventHandlers={{ dragend: handleCenterMarkerDragend }}
-                />
-              </MapContainer>
-            </div>
+            <>
+              <div className={styles.previewMap}>
+                <MapContainer
+                  key={mapKey}
+                  center={[center.lat, center.lon]}
+                  zoom={PREVIEW_MAP_ZOOM}
+                  scrollWheelZoom={false}
+                  style={{ height: '100%', width: '100%' }}
+                >
+                  <TileLayer url={CARTO_TILE_URL} attribution={CARTO_ATTRIBUTION} />
+                  <LocationCircle center={center} radiusKm={radiusKm} />
+                  <Marker
+                    position={[center.lat, center.lon]}
+                    draggable={true}
+                    icon={centerMarkerIcon}
+                    eventHandlers={{ dragend: handleCenterMarkerDragend }}
+                  />
+                  <Marker
+                    position={[center.lat, center.lon + lonDeltaDeg(radiusKm, center.lat)]}
+                    draggable={true}
+                    icon={resizeHandleIcon}
+                    title="Resize zone radius"
+                    keyboard={false}
+                    eventHandlers={{
+                      drag: handleResizeHandleDrag,
+                      dragend: handleResizeHandleDragend,
+                    }}
+                  />
+                </MapContainer>
+              </div>
+              <output aria-label="Zone radius" className={styles.radiusOutput}>
+                Zone radius: {radiusKm.toFixed(1)} km
+              </output>
+            </>
           )}
 
           <details>

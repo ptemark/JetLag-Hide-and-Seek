@@ -1,3 +1,36 @@
+// Earth's mean radius in km (WGS-84 approximation).
+const EARTH_RADIUS_KM = 6371;
+
+/**
+ * Convert a km distance to degrees of longitude at a given latitude.
+ * Used to position the east-edge resize handle on the preview map.
+ *
+ * @param {number} km  - Distance in kilometres.
+ * @param {number} lat - Latitude in decimal degrees.
+ * @returns {number}   - Equivalent longitude delta in degrees.
+ */
+export function lonDeltaDeg(km, lat) {
+  return km / (111 * Math.cos(lat * (Math.PI / 180)));
+}
+
+/**
+ * Compute the great-circle distance in kilometres between two lat/lon points
+ * using the Haversine formula.
+ *
+ * @param {{ lat: number, lon: number }} a - First point.
+ * @param {{ lat: number, lon: number }} b - Second point.
+ * @returns {number} Distance in kilometres.
+ */
+export function haversineKm({ lat: lat1, lon: lon1 }, { lat: lat2, lon: lon2 }) {
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return EARTH_RADIUS_KM * c;
+}
+
 /**
  * Convert a centre point + radius to an axis-aligned bounding box.
  *
@@ -9,7 +42,7 @@ export function centerRadiusToBounds({ lat, lon }, radiusKm) {
   // 1 degree latitude ≈ 111 km everywhere.
   // 1 degree longitude ≈ 111 km * cos(lat) — shrinks toward the poles.
   const latDelta = radiusKm / 111;
-  const lonDelta = radiusKm / (111 * Math.cos(lat * (Math.PI / 180)));
+  const lonDelta = lonDeltaDeg(radiusKm, lat);
   return {
     lat_min: lat - latDelta,
     lat_max: lat + latDelta,

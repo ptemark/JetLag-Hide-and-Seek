@@ -8,7 +8,11 @@ vi.mock('./GameMap.jsx', () => ({ default: () => null }));
 
 // Hoist marker event handler capture so it's accessible inside the factory
 // and in test assertions.
-const leafletMapMocks = vi.hoisted(() => ({ centerMarkerDragend: null }));
+const leafletMapMocks = vi.hoisted(() => ({
+  centerMarkerDragend: null,
+  resizeHandlerDrag: null,
+  resizeHandlerDragend: null,
+}));
 
 // Mock react-leaflet so the preview map renders a testable DOM element
 // without needing a real Leaflet environment.
@@ -20,8 +24,13 @@ vi.mock('react-leaflet', () => ({
   ),
   TileLayer: () => null,
   Circle: () => null,
-  Marker: ({ eventHandlers }) => {
-    leafletMapMocks.centerMarkerDragend = eventHandlers?.dragend ?? null;
+  Marker: ({ eventHandlers, title }) => {
+    if (title === 'Resize zone radius') {
+      leafletMapMocks.resizeHandlerDrag = eventHandlers?.drag ?? null;
+      leafletMapMocks.resizeHandlerDragend = eventHandlers?.dragend ?? null;
+    } else {
+      leafletMapMocks.centerMarkerDragend = eventHandlers?.dragend ?? null;
+    }
     return null;
   },
 }));
@@ -388,6 +397,96 @@ describe('GameForm preview map', () => {
     await waitFor(() => {
       const latMin = parseFloat(screen.getByLabelText(/lat min/i).value);
       expect(latMin).toBeCloseTo(52.0 - 15 / 111, 2);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GameForm — resize handle (Task 144)
+// ---------------------------------------------------------------------------
+
+describe('GameForm resize handle', () => {
+  async function selectLondon(user) {
+    await user.type(screen.getByLabelText(/search for a city/i), 'London');
+    const listbox = await screen.findByRole('listbox', { name: /location results/i }, { timeout: 2000 });
+    await act(async () => {
+      within(listbox).getAllByRole('option')[0].click();
+    });
+  }
+
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { lat: '51.5074', lon: '-0.1278', display_name: 'London, England, United Kingdom' },
+      ],
+    });
+    leafletMapMocks.resizeHandlerDrag = null;
+    leafletMapMocks.resizeHandlerDragend = null;
+  });
+
+  afterEach(() => {
+    delete global.fetch;
+  });
+
+  // (d) Resize handle marker present after location selected.
+  it('resize handle marker is present after a location is selected', async () => {
+    const user = userEvent.setup({ delay: null });
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await selectLondon(user);
+
+    // The mock captures the drag handler from the resize handle Marker.
+    await waitFor(() => expect(leafletMapMocks.resizeHandlerDrag).not.toBeNull());
+  });
+
+  // (e) Dragging the resize handle updates the "Zone radius:" display.
+  it('drag event on resize handle updates the Zone radius output', async () => {
+    const user = userEvent.setup({ delay: null });
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await selectLondon(user);
+    await waitFor(() => expect(leafletMapMocks.resizeHandlerDrag).not.toBeNull());
+
+    // Simulate dragging to a point ~30 km east of centre.
+    // London centre ≈ 51.5074, -0.1278; 30 km east at that lat ≈ lon + 0.43°
+    await act(async () => {
+      leafletMapMocks.resizeHandlerDrag({
+        target: { getLatLng: () => ({ lat: 51.5074, lng: 0.3 }) },
+      });
+    });
+
+    // Output should now show a radius that differs from the default 15 km.
+    await waitFor(() => {
+      const output = screen.getByLabelText(/zone radius/i);
+      // The displayed value must not be '15.0 km' any more.
+      expect(output.textContent).toMatch(/Zone radius:/);
+      expect(output.textContent).not.toBe('Zone radius: 15.0 km');
+    });
+  });
+
+  // (f) Dragend on resize handle updates the bounds fields.
+  it('dragend on resize handle updates the bounds fields', async () => {
+    const user = userEvent.setup({ delay: null });
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await selectLondon(user);
+    await waitFor(() => expect(leafletMapMocks.resizeHandlerDragend).not.toBeNull());
+
+    // Record the original lat_min value.
+    const originalLatMin = parseFloat(screen.getByLabelText(/lat min/i).value);
+
+    // Simulate dragend to a point much further east — this makes radiusKm larger,
+    // which widens the bounding box (lat_min decreases).
+    await act(async () => {
+      leafletMapMocks.resizeHandlerDragend({
+        target: { getLatLng: () => ({ lat: 51.5074, lng: 1.0 }) },
+      });
+    });
+
+    await waitFor(() => {
+      const newLatMin = parseFloat(screen.getByLabelText(/lat min/i).value);
+      expect(newLatMin).toBeLessThan(originalLatMin);
     });
   });
 });

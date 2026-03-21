@@ -91,6 +91,14 @@
   }
 }
 
+.radiusOutput {
+  display: block;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  margin-top: -0.5rem;
+  margin-bottom: 0.25rem;
+}
+
 .advancedSummary {
   cursor: pointer;
   color: var(--color-text-secondary);

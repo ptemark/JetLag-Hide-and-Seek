@@ -38,6 +38,13 @@
   margin-top: 0.5rem;
 }
 
+/* Read-only hider-target indicator shown when hiderId is known from WS state */
+.hiderIdDisplay {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 0.5rem;
+}
+
 /* Curse-active status banner — matches DESIGN.md §22 alert panel style */
 .curseBanner {
   background: rgba(200, 58, 24, 0.15);

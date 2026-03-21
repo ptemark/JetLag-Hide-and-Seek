@@ -35,12 +35,16 @@ const CATEGORY_HINTS = {
  *                 question_answered WS event). Defaults to 0.
  *   curseEndsAt — ISO timestamp string while a curse card is active; null otherwise.
  *                 Submit is disabled and a countdown is shown until the curse expires.
+ *   hiderId     — string | null; the playerId of the hider, derived from WS
+ *                 game_state_sync. When provided the targetId field is pre-populated
+ *                 and shown read-only so seekers cannot accidentally ask the wrong
+ *                 player. Optional — falls back to free-text input when null.
  *
  * Maintains a local list of submitted questions (optimistic) merged with the
  * server-side Q&A history fetched on mount and on each qaRefresh change.
  */
-export default function QuestionPanel({ player, game, teamId = null, qaRefresh = 0, curseEndsAt = null }) {
-  const [targetId, setTargetId] = useState('');
+export default function QuestionPanel({ player, game, teamId = null, qaRefresh = 0, curseEndsAt = null, hiderId = null }) {
+  const [targetId, setTargetId] = useState(hiderId ?? '');
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [text, setText] = useState('');
   const [tentacleTargetLat, setTentacleTargetLat] = useState('');
@@ -57,6 +61,13 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
   const fetchedPhotosRef = useRef(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [, setTick] = useState(0); // 1-second tick to refresh curse countdown
+
+  // Sync targetId when hiderId arrives after initial render (WS game_state_sync
+  // may arrive slightly after mount).  Only pre-fills when targetId is still empty
+  // so a seeker who manually typed something is not overwritten.
+  useEffect(() => {
+    if (hiderId && !targetId) setTargetId(hiderId);
+  }, [hiderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tick every second so the curse countdown stays live.
   useEffect(() => {
@@ -152,14 +163,20 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
       <form onSubmit={handleSubmit}>
         {error && <p role="alert">{error}</p>}
 
-        <label>
-          Hider ID
-          <input
-            value={targetId}
-            onChange={(e) => setTargetId(e.target.value)}
-            placeholder="Enter hider's player ID"
-          />
-        </label>
+        {hiderId ? (
+          <p aria-label="Target: Hider" className={styles.hiderIdDisplay}>
+            Target: Hider
+          </p>
+        ) : (
+          <label>
+            Hider ID
+            <input
+              value={targetId}
+              onChange={(e) => setTargetId(e.target.value)}
+              placeholder="Enter hider's player ID"
+            />
+          </label>
+        )}
 
         <label>
           Category

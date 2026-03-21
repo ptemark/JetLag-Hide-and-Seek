@@ -1369,6 +1369,66 @@ describe('GameMap', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // hiderId extraction from WS messages — Task 156
+  // ---------------------------------------------------------------------------
+
+  it('game_state_sync with hider player causes QuestionPanel to show read-only target', async () => {
+    const seeker = { playerId: 'seeker1', name: 'Alice', role: 'seeker' };
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    // Transition to seeking so QuestionPanel renders.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+    });
+    // Deliver game_state_sync with a hider player.
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({
+          type: 'game_state_sync',
+          gameId: 'g1',
+          phase: 'seeking',
+          zones: [],
+          endGameActive: false,
+          players: [
+            { playerId: 'hider99', role: 'hider' },
+            { playerId: 'seeker1', role: 'seeker' },
+          ],
+        }),
+      });
+    });
+    // Free-text input should be gone; read-only label should appear.
+    expect(screen.queryByPlaceholderText("Enter hider's player ID")).not.toBeInTheDocument();
+    expect(screen.getByText('Target: Hider')).toBeInTheDocument();
+  });
+
+  it('game_state message with hider in state.players also sets hiderId', async () => {
+    const seeker = { playerId: 'seeker1', name: 'Alice', role: 'seeker' };
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+    });
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({
+          type: 'game_state',
+          gameId: 'g1',
+          state: {
+            players: {
+              hider99: { role: 'hider', lat: null, lon: null },
+              seeker1: { role: 'seeker', lat: null, lon: null },
+            },
+          },
+        }),
+      });
+    });
+    expect(screen.queryByPlaceholderText("Enter hider's player ID")).not.toBeInTheDocument();
+    expect(screen.getByText('Target: Hider')).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
   // phase_change newPhase property correctness — Task 120
   // ---------------------------------------------------------------------------
 

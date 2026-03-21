@@ -1235,4 +1235,43 @@ describe('WsHandler — game_state_sync on join', () => {
     expect(sync.phase).toBeUndefined();
     expect(sync.zones).toEqual(ZONES);
   });
+
+  it('game_state_sync includes players array from GSM', () => {
+    gsm.getGameState.mockReturnValue({
+      status: 'waiting',
+      seekerTeams: 0,
+      players: {
+        hider1: { role: 'hider', lat: null, lon: null, team: null, onTransit: false },
+        seeker1: { role: 'seeker', lat: 51.5, lon: -0.1, team: null, onTransit: false },
+      },
+    });
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    expect(Array.isArray(sync.players)).toBe(true);
+    expect(sync.players).toContainEqual({ playerId: 'hider1', role: 'hider' });
+    expect(sync.players).toContainEqual({ playerId: 'seeker1', role: 'seeker' });
+  });
+
+  it('game_state_sync players array does not include lat/lon', () => {
+    gsm.getGameState.mockReturnValue({
+      status: 'hiding',
+      seekerTeams: 0,
+      players: {
+        hider1: { role: 'hider', lat: 51.5, lon: -0.1, team: null, onTransit: false },
+      },
+    });
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    const hiderEntry = sync.players.find(p => p.playerId === 'hider1');
+    expect(hiderEntry).toBeDefined();
+    expect(hiderEntry.lat).toBeUndefined();
+    expect(hiderEntry.lon).toBeUndefined();
+  });
+
+  it('game_state_sync players is empty array when GSM has no players', () => {
+    // default makeGsm returns players: {} — verify empty array
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    expect(sync.players).toEqual([]);
+  });
 });

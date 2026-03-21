@@ -188,14 +188,22 @@ export class WsHandler {
     this._send(ws, { type: 'joined_game', gameId, playerId, role, team: assignedTeam ?? null });
 
     // Send a state snapshot so the joining/reconnecting player immediately has
-    // the current phase, zones, and end-game flag without waiting for the next
-    // periodic broadcast.
+    // the current phase, zones, end-game flag, and player role list without
+    // waiting for the next periodic broadcast.
     {
+      const gameState = this.gameStateManager?.getGameState(gameId);
+      // Include player roles so seekers can auto-populate the hider's ID in the
+      // QuestionPanel.  Location data is intentionally excluded to preserve
+      // hider privacy (RULES.md §Hiding Rules).
+      const playersForSync = Object.entries(gameState?.players ?? {}).map(
+        ([pid, data]) => ({ playerId: pid, role: data.role }),
+      );
       const syncPayload = {
         type: 'game_state_sync',
         gameId,
         zones: this.gameStateManager?.getGameZones(gameId) ?? [],
         endGameActive: this.gameStateManager?.isEndGameActive(gameId) ?? false,
+        players: playersForSync,
       };
       if (this.gameLoopManager) {
         syncPayload.phase = this.gameLoopManager.getPhase(gameId);

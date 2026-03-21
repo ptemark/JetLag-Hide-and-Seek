@@ -1075,3 +1075,41 @@ describe('QuestionPanel computed hints in history', () => {
     expect(screen.queryByTestId('question-matching-hint')).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// QuestionPanel — hiderId prop auto-population (Task 156)
+// ---------------------------------------------------------------------------
+
+describe('QuestionPanel — hiderId auto-population', () => {
+  beforeEach(() => {
+    api.listQuestions.mockResolvedValue({ questions: [] });
+  });
+
+  it('shows free-text Hider ID input when hiderId is null', () => {
+    render(<QuestionPanel player={SEEKER} game={GAME} hiderId={null} />);
+    expect(screen.getByLabelText(/hider id/i)).toBeInTheDocument();
+    expect(screen.queryByText('Target: Hider')).not.toBeInTheDocument();
+  });
+
+  it('shows free-text Hider ID input when hiderId is omitted', () => {
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    expect(screen.getByLabelText(/hider id/i)).toBeInTheDocument();
+  });
+
+  it('hides free-text input and shows read-only label when hiderId is provided', () => {
+    render(<QuestionPanel player={SEEKER} game={GAME} hiderId="hider-uuid-99" />);
+    expect(screen.queryByPlaceholderText("Enter hider's player ID")).not.toBeInTheDocument();
+    expect(screen.getByText('Target: Hider')).toBeInTheDocument();
+  });
+
+  it('pre-populates targetId used in submitQuestion when hiderId is provided', async () => {
+    const user = userEvent.setup();
+    api.submitQuestion.mockResolvedValue({ questionId: 'q1' });
+    render(<QuestionPanel player={SEEKER} game={GAME} hiderId="hider-uuid-99" />);
+    await user.type(screen.getByLabelText(/^question$/i), 'Is it warm?');
+    await user.click(screen.getByRole('button', { name: /submit question/i }));
+    await waitFor(() => expect(api.submitQuestion).toHaveBeenCalled());
+    const call = api.submitQuestion.mock.calls[0][0];
+    expect(call.targetId).toBe('hider-uuid-99');
+  });
+});

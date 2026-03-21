@@ -107,6 +107,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [zonesError, setZonesError] = useState(null);              // error fetching transit zones
   const [gpsError, setGpsError] = useState(null);                  // GPS permission/availability error message
   const [scoreError, setScoreError] = useState(null);              // score submission failure message
+  const [hiderId, setHiderId] = useState(null);                    // playerId of the hider in this game
   const lockedZoneLayerRef = useRef(null);                         // L.circle for the hider's locked zone
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
@@ -316,16 +317,20 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           });
         }
       } else if (msg.type === 'game_state') {
+        // msg.state.players is { [playerId]: { role, lat, lon, ... } } (object, not array).
         const positions = {};
-        for (const p of msg.players ?? []) {
-          if (p.lat != null && p.lon != null) {
-            positions[p.playerId] = { lat: p.lat, lon: p.lon };
+        for (const [pid, data] of Object.entries(msg.state?.players ?? {})) {
+          if (data.lat != null && data.lon != null) {
+            positions[pid] = { lat: data.lat, lon: data.lon };
           }
-          if (p.role) {
-            playerRolesRef.current[p.playerId] = p.role;
+          if (data.role) {
+            playerRolesRef.current[pid] = data.role;
           }
         }
         setPlayers(positions);
+        // Extract hider ID for QuestionPanel auto-population.
+        const hiderEntry = Object.entries(msg.state?.players ?? {}).find(([, d]) => d.role === 'hider');
+        if (hiderEntry) setHiderId(hiderEntry[0]);
       } else if (msg.type === 'phase_change') {
         setPhase(msg.newPhase);
         setPendingQuestionExpiresAt(null); // phase change clears any pending question timer
@@ -409,6 +414,11 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         if (msg.endGameActive != null) {
           endGameActiveRef.current = msg.endGameActive;
           setEndGameActive(msg.endGameActive);
+        }
+        // Extract hider ID for QuestionPanel auto-population.
+        if (Array.isArray(msg.players)) {
+          const hider = msg.players.find((p) => p.role === 'hider');
+          if (hider) setHiderId(hider.playerId);
         }
       } else if (msg.type === 'error') {
         setJoinError(msg.message ?? 'An error occurred');
@@ -665,7 +675,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {player.role === 'seeker' && (
-        <QuestionPanel player={player} game={game} teamId={myTeam} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} />
+        <QuestionPanel player={player} game={game} teamId={myTeam} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} hiderId={hiderId} />
       )}
 
       {player.role === 'hider' && phase === 'hiding' && !lockedZone && (

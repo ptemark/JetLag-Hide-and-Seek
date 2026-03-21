@@ -87,6 +87,9 @@ describe('GameMap', () => {
   beforeEach(() => {
     MockWebSocket.last = null;
     vi.clearAllMocks();
+    // Default no-op geolocation mock so tests that don't need GPS don't see the
+    // GPS-unsupported error banner (which would conflict with other role="alert" queries)
+    global.navigator.geolocation = { getCurrentPosition: vi.fn() };
     // Restore chained return values cleared by clearAllMocks
     mockMap.setView.mockReturnValue(mockMap);
     mockMarker.bindTooltip.mockReturnThis();
@@ -261,9 +264,80 @@ describe('GameMap', () => {
   });
 
   it('skips GPS setup when geolocation is unavailable', () => {
+    delete global.navigator.geolocation;
     expect(() =>
       render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />),
     ).not.toThrow();
+  });
+
+  it('shows GPS unsupported alert when geolocation is unavailable', async () => {
+    delete global.navigator.geolocation;
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.getByTestId('gps-error-banner')).toHaveTextContent(
+      'Your device does not support location access',
+    );
+  });
+
+  it('shows GPS denied alert when getCurrentPosition errors with code 1', async () => {
+    const mockGetCurrentPosition = vi.fn((_success, error) => {
+      error({ code: 1 });
+    });
+    global.navigator.geolocation = { getCurrentPosition: mockGetCurrentPosition };
+
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {});
+    expect(screen.getByTestId('gps-error-banner')).toHaveTextContent(
+      'Location access denied',
+    );
+  });
+
+  it('shows GPS unavailable alert when getCurrentPosition errors with code 2', async () => {
+    const mockGetCurrentPosition = vi.fn((_success, error) => {
+      error({ code: 2 });
+    });
+    global.navigator.geolocation = { getCurrentPosition: mockGetCurrentPosition };
+
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {});
+    expect(screen.getByTestId('gps-error-banner')).toHaveTextContent(
+      'Location unavailable',
+    );
+  });
+
+  it('does not show GPS error alert for timeout errors (code 3)', async () => {
+    const mockGetCurrentPosition = vi.fn((_success, error) => {
+      error({ code: 3 });
+    });
+    global.navigator.geolocation = { getCurrentPosition: mockGetCurrentPosition };
+
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {});
+    expect(screen.queryByTestId('gps-error-banner')).not.toBeInTheDocument();
+  });
+
+  it('clears GPS error banner after a successful position fix', async () => {
+    let capturedErrorCb;
+    let capturedSuccessCb;
+    const mockGetCurrentPosition = vi.fn((success, error) => {
+      capturedSuccessCb = success;
+      capturedErrorCb = error;
+    });
+    global.navigator.geolocation = { getCurrentPosition: mockGetCurrentPosition };
+
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    // Trigger a permission-denied error to show the banner
+    await act(async () => { capturedErrorCb({ code: 1 }); });
+    expect(screen.getByTestId('gps-error-banner')).toBeInTheDocument();
+
+    // Now simulate a successful fix — banner should clear
+    await act(async () => {
+      capturedSuccessCb({ coords: { latitude: 51.05, longitude: -0.05 } });
+    });
+    expect(screen.queryByTestId('gps-error-banner')).not.toBeInTheDocument();
   });
 
   it('displays player role in header', () => {
@@ -1131,7 +1205,7 @@ describe('GameMap', () => {
     });
     expect(screen.getByTestId('location-rejected-banner')).toBeInTheDocument();
     await act(async () => {
-      screen.getByRole('button', { name: /dismiss/i }).click();
+      screen.getByRole('button', { name: 'Dismiss' }).click();
     });
     expect(screen.queryByTestId('location-rejected-banner')).not.toBeInTheDocument();
   });

@@ -105,6 +105,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [syncedZones, setSyncedZones] = useState(zones);           // locked zone from game_state_sync (for map circle)
   const [availableZones, setAvailableZones] = useState([]);        // transit stations fetched from /api/zones
   const [zonesError, setZonesError] = useState(null);              // error fetching transit zones
+  const [gpsError, setGpsError] = useState(null);                  // GPS permission/availability error message
   const lockedZoneLayerRef = useRef(null);                         // L.circle for the hider's locked zone
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
@@ -469,13 +470,27 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
 
   // ── GPS polling — throttled to LOCATION_INTERVAL_MS ───────────────────────
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setGpsError('Your device does not support location access — this game requires GPS.');
+      return;
+    }
+
+    const handleGpsError = (err) => {
+      if (err.code === 1 /* PERMISSION_DENIED */) {
+        setGpsError('Location access denied — enable location in your browser settings to continue playing.');
+      } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
+        setGpsError('Location unavailable — your device cannot determine its position.');
+      }
+      // code 3 = TIMEOUT: transient; next interval tick will retry silently
+    };
 
     const send = () => {
       // Hider must not send location updates once End Game begins (RULES.md §End Game).
       if (player.role === 'hider' && endGameActiveRef.current) return;
       navigator.geolocation.getCurrentPosition(
         (pos) => {
+          // Clear any previous GPS error on a successful fix
+          setGpsError((prev) => (prev !== null ? null : prev));
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
               type: 'location_update',
@@ -486,7 +501,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
             }));
           }
         },
-        () => {}, // ignore position errors silently
+        handleGpsError,
       );
     };
 
@@ -541,6 +556,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         <p role="alert" data-testid="location-rejected-banner" className={styles.alertBanner}>
           Your location is outside game bounds
           <button onClick={() => setLocationRejected(false)} className={styles.dismissBtn} aria-label="Dismiss">✕</button>
+        </p>
+      )}
+
+      {gpsError && (
+        <p role="alert" data-testid="gps-error-banner" className={styles.alertBanner}>
+          {gpsError}
+          <button onClick={() => setGpsError(null)} className={styles.dismissBtn} aria-label="Dismiss GPS error">✕</button>
         </p>
       )}
 

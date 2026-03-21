@@ -4,8 +4,14 @@ import { tentacleHint, measuringHint, matchingHint, transitHint, thermometerHint
 import { formatCountdown } from './gameUtils.js';
 import styles from './QuestionPanel.module.css';
 
-/** Interval in ms for the curse-countdown live update tick. */
+/** Interval in ms for the curse-countdown and pending-question live update tick. */
 const COUNTDOWN_TICK_MS = 1_000;
+
+/** Button label shown when a pending question is blocking submission. */
+const PENDING_SUBMIT_LABEL = 'Waiting for hider…';
+
+/** Accessible label prefix for the pending-question countdown banner. */
+const PENDING_BANNER_LABEL = 'Waiting for hider to answer';
 
 const CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
@@ -152,12 +158,21 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
     ...history,
   ];
 
+  // Derive the current pending question (if any) — blocks new submissions per RULES.md §Question Timing.
+  const pendingQuestion = allQuestions.find(q => q.status === 'pending') ?? null;
+  const pendingCountdown = pendingQuestion?.expiresAt ? formatCountdown(pendingQuestion.expiresAt) : null;
+
   return (
     <section aria-label="Question panel">
       <h3>Ask a Question</h3>
       {isCurseActive && (
         <p role="status" data-testid="curse-banner" className={styles.curseBanner}>
           Questions blocked by curse — {curseCountdown} remaining
+        </p>
+      )}
+      {pendingQuestion && (
+        <p role="status" data-testid="pending-banner" className={styles.pendingBanner}>
+          {PENDING_BANNER_LABEL}{pendingCountdown ? ` — ${pendingCountdown} remaining` : ''}
         </p>
       )}
       <form onSubmit={handleSubmit}>
@@ -274,8 +289,8 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
           </label>
         )}
 
-        <button type="submit" disabled={submitting || isCurseActive}>
-          {submitting ? 'Sending…' : 'Submit question'}
+        <button type="submit" disabled={submitting || isCurseActive || !!pendingQuestion}>
+          {submitting ? 'Sending…' : pendingQuestion ? PENDING_SUBMIT_LABEL : 'Submit question'}
         </button>
       </form>
 

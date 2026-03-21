@@ -53,3 +53,12 @@
   border-radius: 0 4px 4px 0;
   padding: 0.25rem 0.5rem;
 }
+
+/* Pending-question status banner — accent-coloured to distinguish from curse */
+.pendingBanner {
+  background: rgba(240, 135, 48, 0.10);
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text-primary);
+  border-radius: 0 4px 4px 0;
+  padding: 0.25rem 0.5rem;
+}

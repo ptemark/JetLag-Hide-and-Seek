@@ -273,6 +273,42 @@ describe('QuestionPanel', () => {
     const call = api.listQuestions.mock.calls[0][0];
     expect(call.teamId).toBeUndefined();
   });
+
+  it('disables submit and shows pending banner when history contains a pending question', async () => {
+    const pendingQ = { ...QUESTION, expiresAt: new Date(Date.now() + 300_000).toISOString() };
+    api.listQuestions.mockResolvedValue({ questions: [pendingQ] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => screen.getByTestId('pending-banner'));
+    expect(screen.getByTestId('pending-banner')).toHaveTextContent(/waiting for hider to answer/i);
+    expect(screen.getByRole('button', { name: /waiting for hider/i })).toBeDisabled();
+  });
+
+  it('shows time remaining in the pending-question banner when expiresAt is in the future', async () => {
+    const pendingQ = { ...QUESTION, expiresAt: new Date(Date.now() + 125_000).toISOString() };
+    api.listQuestions.mockResolvedValue({ questions: [pendingQ] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => screen.getByTestId('pending-banner'));
+    expect(screen.getByTestId('pending-banner')).toHaveTextContent(/remaining/i);
+    // Banner should show a mm:ss countdown string (e.g. "2:05")
+    expect(screen.getByTestId('pending-banner')).toHaveTextContent(/\d:\d\d/);
+  });
+
+  it('does not show pending banner and submit is enabled when all questions are answered', async () => {
+    const answeredQ = { ...QUESTION, status: 'answered', answer: { text: 'Yes', createdAt: '2026-01-01T00:01:00Z' } };
+    api.listQuestions.mockResolvedValue({ questions: [answeredQ] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => screen.getByRole('button'));
+    expect(screen.queryByTestId('pending-banner')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /submit question/i })).not.toBeDisabled();
+  });
+
+  it('does not show pending banner when there are no questions', async () => {
+    api.listQuestions.mockResolvedValue({ questions: [] });
+    render(<QuestionPanel player={SEEKER} game={GAME} />);
+    await waitFor(() => screen.getByRole('button', { name: /submit question/i }));
+    expect(screen.queryByTestId('pending-banner')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /submit question/i })).not.toBeDisabled();
+  });
 });
 
 // ── AnswerPanel ───────────────────────────────────────────────────────────────

@@ -2,6 +2,27 @@
 const EARTH_RADIUS_KM = 6371;
 
 /**
+ * Human-readable label for each card type.
+ * Shared between CardPanel (hand display) and GameMap (card-drawn toast).
+ * RULES.md §Cards: three types — time_bonus, powerup, curse.
+ */
+export const CARD_LABELS = Object.freeze({
+  time_bonus: 'Time Bonus',
+  powerup:    'Power-Up',
+  curse:      'Curse',
+});
+
+/**
+ * One-line effect description for each card type.
+ * Shared between CardPanel (hand display) and GameMap (card-drawn toast).
+ */
+export const CARD_DESCRIPTIONS = Object.freeze({
+  time_bonus: '+10 min hiding time',
+  powerup:    'Create a false zone',
+  curse:      'Block seeker questions for 2 min',
+});
+
+/**
  * Convert a km distance to degrees of longitude at a given latitude.
  * Used to position the east-edge resize handle on the preview map.
  *

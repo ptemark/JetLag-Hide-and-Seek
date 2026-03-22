@@ -8,7 +8,7 @@ const CardPanel = lazy(() => import('./CardPanel.jsx'));
 const ResultsScreen = lazy(() => import('./ResultsScreen.jsx'));
 import ZoneSelector from './ZoneSelector.jsx';
 import { submitScore, listZones } from '../api.js';
-import { formatCountdown, formatDuration, haversineDistanceM } from './gameUtils.js';
+import { formatCountdown, formatDuration, haversineDistanceM, CARD_LABELS, CARD_DESCRIPTIONS } from './gameUtils.js';
 import styles from './GameMap.module.css';
 
 const LOCATION_INTERVAL_MS = 10_000;
@@ -28,6 +28,8 @@ const TRAIL_COLOR = '#F5C84A';         // --color-sunset-1 — warm yellow hider
 const MAX_RECONNECT_ATTEMPTS = 6; // 1 s, 2 s, 4 s, 8 s, 16 s, 30 s
 // RULES.md §End Game: seekers must be off transit to spot the hider.
 const SPOT_ON_TRANSIT_LABEL = 'Board off transit to spot';
+// Duration (ms) that the card-drawn toast is visible before auto-dismissing (Task 168).
+const CARD_TOAST_DURATION_MS = 4_000;
 
 /**
  * Compute the centre {lat, lng} of a bounds object.
@@ -105,6 +107,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [hiderOutOfZone, setHiderOutOfZone] = useState(false); // hider left zone (seeker view)
   const [movementLocked, setMovementLocked] = useState(false); // server blocked hider movement (End Game)
   const [cardRefresh, setCardRefresh] = useState(0);          // increments on card_drawn WS event for this player
+  const [drawnCardToast, setDrawnCardToast] = useState(null); // { type, label, description } | null — hider card-drawn toast
   const [locationRejected, setLocationRejected] = useState(false); // server rejected location as out of bounds
   const [availableZones, setAvailableZones] = useState([]);        // transit stations fetched from /api/zones
   const [zonesError, setZonesError] = useState(null);              // error fetching transit zones
@@ -158,6 +161,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     const id = setInterval(() => setTimerTick((n) => n + 1), TIMER_TICK_MS);
     return () => clearInterval(id);
   }, []);
+
+  // ── Auto-dismiss card-drawn toast after CARD_TOAST_DURATION_MS (Task 168) ──
+  useEffect(() => {
+    if (drawnCardToast === null) return;
+    const id = setTimeout(() => setDrawnCardToast(null), CARD_TOAST_DURATION_MS);
+    return () => clearTimeout(id);
+  }, [drawnCardToast]);
 
   // ── Update player markers when players state changes ───────────────────────
   useEffect(() => {
@@ -417,6 +427,11 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setLocationRejected(true);
       } else if (msg.type === 'card_drawn' && msg.playerId === player.playerId) {
         setCardRefresh((n) => n + 1);
+        setDrawnCardToast({
+          type:        msg.cardType,
+          label:       CARD_LABELS[msg.cardType] ?? msg.cardType,
+          description: CARD_DESCRIPTIONS[msg.cardType] ?? '',
+        });
       } else if (msg.type === 'game_state_sync') {
         if (msg.phase != null) setPhase(msg.phase);
         if (msg.endGameActive != null) {
@@ -600,6 +615,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         <p role="alert" data-testid="gps-error-banner" className={styles.alertBanner}>
           {gpsError}
           <button onClick={() => setGpsError(null)} className={styles.dismissBtn} aria-label="Dismiss GPS error">✕</button>
+        </p>
+      )}
+
+      {drawnCardToast !== null && player.role === 'hider' && (
+        <p role="status" data-testid="card-drawn-toast" className={styles.infoBanner}>
+          New card: {drawnCardToast.label} — {drawnCardToast.description}
         </p>
       )}
 

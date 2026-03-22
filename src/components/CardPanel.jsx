@@ -1,19 +1,8 @@
 import { useEffect, useState } from 'react';
 import { fetchCards, playCardApi } from '../api.js';
 import Alert from './Alert.jsx';
+import { CARD_LABELS, CARD_DESCRIPTIONS } from './gameUtils.js';
 import styles from './CardPanel.module.css';
-
-const CARD_LABELS = {
-  time_bonus: 'Time Bonus',
-  powerup:    'Power-Up',
-  curse:      'Curse',
-};
-
-const CARD_DESCRIPTIONS = {
-  time_bonus: '+10 min hiding time',
-  powerup:    'Create a false zone',
-  curse:      'Block seeker questions for 2 min',
-};
 
 /**
  * CardPanel — displays the hider's hand of up to 6 challenge cards.

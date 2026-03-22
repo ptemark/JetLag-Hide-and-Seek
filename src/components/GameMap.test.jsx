@@ -1397,6 +1397,57 @@ describe('GameMap', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // card_drawn toast — Task 168
+  // ---------------------------------------------------------------------------
+
+  it('card_drawn shows toast with card label for hider', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'card_drawn', gameId: 'g1', playerId: 'p1', cardId: 'c1', cardType: 'time_bonus' }),
+      });
+    });
+    expect(screen.getByTestId('card-drawn-toast')).toBeInTheDocument();
+    expect(screen.getByTestId('card-drawn-toast')).toHaveTextContent('Time Bonus');
+  });
+
+  it('card_drawn shows card description in toast for hider', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'card_drawn', gameId: 'g1', playerId: 'p1', cardId: 'c2', cardType: 'powerup' }),
+      });
+    });
+    expect(screen.getByTestId('card-drawn-toast')).toHaveTextContent('Create a false zone');
+  });
+
+  it('card_drawn toast is not shown to seeker for another player card_drawn event', async () => {
+    const seeker = { playerId: 's1', name: 'Bob', role: 'seeker' };
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'card_drawn', gameId: 'g1', playerId: 'p-hider', cardId: 'c3', cardType: 'curse' }),
+      });
+    });
+    expect(screen.queryByTestId('card-drawn-toast')).not.toBeInTheDocument();
+  });
+
+  it('card_drawn toast auto-dismisses after CARD_TOAST_DURATION_MS', async () => {
+    vi.useFakeTimers();
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'card_drawn', gameId: 'g1', playerId: 'p1', cardId: 'c4', cardType: 'curse' }),
+      });
+    });
+    expect(screen.getByTestId('card-drawn-toast')).toBeInTheDocument();
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(screen.queryByTestId('card-drawn-toast')).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
   // game_state_sync — Task 96
   // ---------------------------------------------------------------------------
 

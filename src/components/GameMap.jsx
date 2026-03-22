@@ -106,7 +106,6 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [movementLocked, setMovementLocked] = useState(false); // server blocked hider movement (End Game)
   const [cardRefresh, setCardRefresh] = useState(0);          // increments on card_drawn WS event for this player
   const [locationRejected, setLocationRejected] = useState(false); // server rejected location as out of bounds
-  const [syncedZones, setSyncedZones] = useState(zones);           // locked zone from game_state_sync (for map circle)
   const [availableZones, setAvailableZones] = useState([]);        // transit stations fetched from /api/zones
   const [zonesError, setZonesError] = useState(null);              // error fetching transit zones
   const [gpsError, setGpsError] = useState(null);                  // GPS permission/availability error message
@@ -419,10 +418,19 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setCardRefresh((n) => n + 1);
       } else if (msg.type === 'game_state_sync') {
         if (msg.phase != null) setPhase(msg.phase);
-        if (Array.isArray(msg.zones)) setSyncedZones(msg.zones);
         if (msg.endGameActive != null) {
           endGameActiveRef.current = msg.endGameActive;
           setEndGameActive(msg.endGameActive);
+        }
+        // Restore zone circle for reconnecting players (RULES.md §Hiding Rules: seekers see zone
+        // only at End Game; hider always sees their own locked zone).
+        if (Array.isArray(msg.zones) && msg.zones.length > 0) {
+          const syncZone = msg.zones[0];
+          if (player.role === 'hider') {
+            setLockedZone(syncZone);
+          } else if (msg.endGameActive) {
+            setLockedZone(syncZone);
+          }
         }
         // Extract hider ID for QuestionPanel auto-population; also populate player names.
         if (Array.isArray(msg.players)) {

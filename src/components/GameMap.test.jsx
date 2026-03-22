@@ -1411,18 +1411,67 @@ describe('GameMap', () => {
   });
 
   it('game_state_sync updates locked-zone state without throwing', async () => {
-    // game_state_sync carries the already-locked zone; syncedZones is used for the map circle,
-    // not the ZoneSelector list (which now uses availableZones from /api/zones fetch).
+    // game_state_sync with zones restores the zone circle for a reconnecting hider.
     const hidingGame = { ...game, status: 'hiding' };
     const syncedZone = { stationId: 'z1', name: 'Central Station', lat: 51.05, lon: -0.05, radiusM: 300 };
+    mockL.circle.mockClear();
     render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
     await act(async () => {
       MockWebSocket.last.onmessage?.({
         data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'hiding', zones: [syncedZone], endGameActive: false }),
       });
     });
-    // The component should have rendered without throwing — zone state was updated.
-    expect(screen.getByLabelText('Game map')).toBeInTheDocument();
+    // The hider's zone circle should be drawn with the synced zone's coordinates.
+    const circleCalls = mockL.circle.mock.calls;
+    const zoneCall = circleCalls.find(([latlng]) => latlng[0] === 51.05 && latlng[1] === -0.05);
+    expect(zoneCall).toBeTruthy();
+  });
+
+  it('game_state_sync restores zone circle for reconnecting hider during seeking', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    const syncedZone = { stationId: 'z2', name: 'Victoria', lat: 51.49, lon: -0.14, radiusM: 500 };
+    mockL.circle.mockClear();
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'seeking', zones: [syncedZone], endGameActive: false }),
+      });
+    });
+    const circleCalls = mockL.circle.mock.calls;
+    const zoneCall = circleCalls.find(([latlng]) => latlng[0] === 51.49 && latlng[1] === -0.14);
+    expect(zoneCall).toBeTruthy();
+  });
+
+  it('game_state_sync restores zone circle for reconnecting seeker during End Game', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    const syncedZone = { stationId: 'z3', name: 'Paddington', lat: 51.52, lon: -0.18, radiusM: 500 };
+    mockL.circle.mockClear();
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'seeking', zones: [syncedZone], endGameActive: true }),
+      });
+    });
+    const circleCalls = mockL.circle.mock.calls;
+    const zoneCall = circleCalls.find(([latlng]) => latlng[0] === 51.52 && latlng[1] === -0.18);
+    expect(zoneCall).toBeTruthy();
+  });
+
+  it('game_state_sync does NOT reveal zone circle to seeker when End Game not active', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    const syncedZone = { stationId: 'z4', name: 'Waterloo', lat: 51.50, lon: -0.11, radiusM: 500 };
+    mockL.circle.mockClear();
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'seeking', zones: [syncedZone], endGameActive: false }),
+      });
+    });
+    const circleCalls = mockL.circle.mock.calls;
+    const zoneCall = circleCalls.find(([latlng]) => latlng[0] === 51.50 && latlng[1] === -0.11);
+    expect(zoneCall).toBeFalsy();
   });
 
   it('listZones is called when hider enters hiding phase', async () => {

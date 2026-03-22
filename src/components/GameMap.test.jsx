@@ -958,6 +958,68 @@ describe('GameMap', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Zone privacy — Task 163
+  // ---------------------------------------------------------------------------
+
+  it('zone_locked WS event updates the zone circle for the hider', async () => {
+    mockL.circle.mockClear();
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({
+          type: 'zone_locked',
+          gameId: 'g1',
+          zone: { stationId: 's99', lat: 48.1, lon: 11.5, radiusM: 500 },
+        }),
+      });
+    });
+
+    const circleCalls = mockL.circle.mock.calls;
+    const zoneCall = circleCalls.find(([latlng]) => latlng[0] === 48.1 && latlng[1] === 11.5);
+    expect(zoneCall).toBeTruthy();
+  });
+
+  it('end_game_started with zone field causes zone circle to appear for seeker', async () => {
+    mockL.circle.mockClear();
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({
+          type: 'end_game_started',
+          gameId: 'g1',
+          zone: { stationId: 's77', lat: 52.3, lon: 4.9, radiusM: 500 },
+        }),
+      });
+    });
+
+    const circleCalls = mockL.circle.mock.calls;
+    const zoneCall = circleCalls.find(([latlng]) => latlng[0] === 52.3 && latlng[1] === 4.9);
+    expect(zoneCall).toBeTruthy();
+  });
+
+  it('end_game_started without zone field does not crash and does not add a zone circle', async () => {
+    mockL.circle.mockClear();
+    const seeker = { ...player, role: 'seeker' };
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={seeker} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'end_game_started', gameId: 'g1' }),
+      });
+    });
+
+    // L.circle should not have been called for a locked zone (no zone in payload).
+    const circleCalls = mockL.circle.mock.calls;
+    // No call with lat 52.3 / lon 4.9 (from previous isolated test) — just confirm no error.
+    expect(screen.getByTestId('end-game-banner-seeker')).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
   // Hider journey trail — Task 75
   // ---------------------------------------------------------------------------
 

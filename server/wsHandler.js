@@ -75,6 +75,11 @@ export class WsHandler {
     }
   }
 
+  sendToPlayer(gameId, playerId, message) {
+    const ws = this.gameClients.get(gameId)?.get(playerId);
+    if (ws) this._send(ws, message);
+  }
+
   getConnectedCount() {
     return this.clients.size;
   }

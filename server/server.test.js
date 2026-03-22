@@ -1726,6 +1726,77 @@ describe('createServer — time bonus notify', () => {
   });
 });
 
+describe('createServer — zone_locked privacy', () => {
+  it('/internal/notify zone_locked sends event only to the hider, not to seekers', async () => {
+    const s = createServer({ tickInterval: 5000 });
+
+    const hiderWs = createMockWs();
+    const seekerWs = createMockWs();
+
+    s.wss.emit('connection', hiderWs, { url: '/?playerId=zl-hider', headers: { host: 'localhost' } });
+    hiderWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'zl-game', role: 'hider' }));
+
+    s.wss.emit('connection', seekerWs, { url: '/?playerId=zl-seeker', headers: { host: 'localhost' } });
+    seekerWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'zl-game', role: 'seeker' }));
+
+    hiderWs.send.mockClear();
+    seekerWs.send.mockClear();
+
+    const zone = { stationId: 's1', lat: 51.5, lon: -0.1, radiusM: 500 };
+    await sendNotify(s, { type: 'zone_locked', gameId: 'zl-game', lockedBy: 'zl-hider', zone });
+
+    const hiderMessages = hiderWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const seekerMessages = seekerWs.send.mock.calls.map(([m]) => JSON.parse(m));
+
+    expect(hiderMessages.some((b) => b.type === 'zone_locked')).toBe(true);
+    expect(seekerMessages.some((b) => b.type === 'zone_locked')).toBe(false);
+  });
+
+  it('/internal/notify zone_locked with no lockedBy does not broadcast to anyone', async () => {
+    const s = createServer({ tickInterval: 5000 });
+
+    const ws = createMockWs();
+    s.wss.emit('connection', ws, { url: '/?playerId=zl-p1', headers: { host: 'localhost' } });
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'zl-nolockedby', role: 'seeker' }));
+    ws.send.mockClear();
+
+    await sendNotify(s, { type: 'zone_locked', gameId: 'zl-nolockedby', zone: { stationId: 's1', lat: 0, lon: 0, radiusM: 500 } });
+
+    const messages = ws.send.mock.calls.map(([m]) => JSON.parse(m));
+    expect(messages.some((b) => b.type === 'zone_locked')).toBe(false);
+  });
+
+  it('end_game_started broadcast includes the zone from gameStateManager', async () => {
+    const s = createServer({ tickInterval: 5000, seekingDuration: 600_000, endGameTimeoutMs: 600_000 });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=eg-zone-p1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'eg-zone-game', role: 'seeker' }));
+    s.gameLoopManager.startGame('eg-zone-game');
+    s.gameLoopManager.beginHiding('eg-zone-game');
+    s.gameLoopManager.beginSeeking('eg-zone-game');
+
+    const zone = { stationId: 's1', lat: 10, lon: 20, radiusM: 500 };
+    s.gameStateManager.addPlayerToGame('eg-zone-game', 'eg-zone-hider', 'hider');
+    s.gameStateManager.updatePlayerLocation('eg-zone-game', 'eg-zone-hider', 10, 20);
+    s.gameStateManager.updatePlayerLocation('eg-zone-game', 'eg-zone-p1', 10, 20);
+    s.gameStateManager.setGameZone('eg-zone-game', zone);
+
+    mockWs.send.mockClear();
+
+    const gameState = s.gameStateManager.getGameState('eg-zone-game');
+    await s.stateDispatcher.dispatch(gameState);
+
+    const broadcasts = mockWs.send.mock.calls.map(([m]) => JSON.parse(m));
+    const endGameMsg = broadcasts.find((b) => b.type === 'end_game_started');
+    expect(endGameMsg).toBeTruthy();
+    expect(endGameMsg.zone).toBeTruthy();
+    expect(endGameMsg.zone.stationId).toBe('s1');
+    expect(endGameMsg.zone.lat).toBe(10);
+    expect(endGameMsg.zone.lon).toBe(20);
+  });
+});
+
 describe('false_zone_expiry StateDispatcher task', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());

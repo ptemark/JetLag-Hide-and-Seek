@@ -405,6 +405,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       } else if (msg.type === 'end_game_started') {
         endGameActiveRef.current = true;
         setEndGameActive(true);
+        // DESIGN.md §6: seekers learn the hider's zone only at End Game start.
+        if (msg.zone) setLockedZone(msg.zone);
       } else if (msg.type === 'zone_warning' && msg.code === 'HIDER_OUT_OF_ZONE') {
         setOutOfZone(true);
       } else if (msg.type === 'hider_out_of_zone') {

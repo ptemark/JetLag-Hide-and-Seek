@@ -410,6 +410,14 @@ export function createServer({
                 _falseZones.get(gameId).push({ decoyId, zone: decoyZone, expiresAt });
                 wsHandler.broadcastToGame(gameId, { type: 'false_zone', gameId, zone: decoyZone });
               }
+            } else if (eventType === 'zone_locked') {
+              // DESIGN.md §6: seekers must NOT see the hider's zone until End Game.
+              // Only send zone_locked to the hider who locked the zone.
+              const hiderPlayerId = rest.lockedBy;
+              if (hiderPlayerId && typeof hiderPlayerId === 'string') {
+                wsHandler.sendToPlayer(gameId, hiderPlayerId, { type: 'zone_locked', ...rest });
+              }
+              // If lockedBy is absent, silently skip — do not broadcast to all.
             } else {
               wsHandler.broadcastToGame(gameId, { type: eventType, ...rest });
             }
@@ -575,7 +583,9 @@ export function createServer({
     gameStateManager.setEndGameActive(gameId, true);
     const endGameStart = Date.now();
     _endGameStartedAt.set(gameId, endGameStart);
-    wsHandler.broadcastToGame(gameId, { type: 'end_game_started', gameId });
+    // Include the hider's zone so seekers learn where to go (DESIGN.md §6).
+    const endGameZone = zones.length > 0 ? zones[0] : null;
+    wsHandler.broadcastToGame(gameId, { type: 'end_game_started', gameId, zone: endGameZone });
     // Immediately sync the End Game countdown so all players see the timeout.
     const endGameTimerMsg = buildTimerSync(gameId, 'end_game');
     if (endGameTimerMsg) {

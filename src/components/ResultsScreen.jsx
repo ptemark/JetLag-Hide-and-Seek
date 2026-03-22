@@ -5,19 +5,26 @@
  *   winner       — 'hider' | 'seekers'
  *   elapsedMs    — milliseconds the hider was hidden (base hiding time)
  *   bonusSeconds — total bonus seconds from time_bonus cards played
+ *   captureTeam  — (optional) 'A' | 'B' | null — winning seeker team in two-team mode
  *   onPlayAgain  — callback invoked when the user taps "Play Again"
  */
 import styles from './ResultsScreen.module.css';
 import { formatDuration } from './gameUtils.js';
 
-export default function ResultsScreen({ winner, elapsedMs, bonusSeconds = 0, onPlayAgain }) {
+export default function ResultsScreen({ winner, elapsedMs, bonusSeconds = 0, captureTeam = null, onPlayAgain }) {
   const isHiderWin  = winner === 'hider';
   const finalScore  = Math.max(0, Math.floor(elapsedMs / 1000)) + bonusSeconds;
+
+  const winnerLabel = isHiderWin
+    ? 'Hider Wins!'
+    : captureTeam
+      ? `Seekers Win! (Team ${captureTeam})`
+      : 'Seekers Win!';
 
   return (
     <div aria-label="Results screen" role="dialog" className={styles.overlay}>
       <h1 className={styles.winner}>
-        {isHiderWin ? 'Hider Wins!' : 'Seekers Win!'}
+        {winnerLabel}
       </h1>
 
       <div className={styles.stats}>

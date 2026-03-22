@@ -80,6 +80,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const hidingStartedAtRef = useRef(null); // timestamp (ms) when hiding phase began
   const bonusSecondsRef = useRef(0);       // accumulated time_bonus card seconds
   const captureWinnerRef = useRef(null);   // winner string from capture event (avoids stale closure)
+  const captureTeamRef = useRef(null);     // winning team ('A'|'B'|null) from capture event
 
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimerRef = useRef(null);
@@ -368,7 +369,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
             ? Date.now() - hidingStartedAtRef.current
             : 0;
           const winner = msg.winner ?? captureWinnerRef.current ?? 'hider';
-          setGameResult({ winner, elapsedMs, bonusSeconds: bonusSecondsRef.current });
+          setGameResult({ winner, elapsedMs, bonusSeconds: bonusSecondsRef.current, captureTeam: captureTeamRef.current });
           submitScore({
             playerId: player.playerId,
             gameId: game.gameId,
@@ -381,6 +382,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         }
       } else if (msg.type === 'capture') {
         captureWinnerRef.current = msg.winner ?? 'seekers';
+        captureTeamRef.current = msg.captureTeam ?? null;
         const teamLabel = msg.captureTeam ? ` (Team ${msg.captureTeam})` : '';
         setCaptureMsg(msg.winner === 'seekers' ? `Seekers win!${teamLabel}` : 'Hiders win!');
       } else if (msg.type === 'question_answered') {
@@ -810,6 +812,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
             winner={gameResult.winner}
             elapsedMs={gameResult.elapsedMs}
             bonusSeconds={gameResult.bonusSeconds}
+            captureTeam={gameResult.captureTeam}
             onPlayAgain={onPlayAgain}
           />
         </Suspense>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act, waitFor } from '@testing-library/react';
+import { render, screen, act, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 // Prevent AnswerPanel/QuestionPanel/CardPanel from making real fetch calls in these tests.
@@ -1731,6 +1731,43 @@ describe('GameMap', () => {
       });
     });
     expect(screen.getByRole('dialog', { name: /results screen/i })).toBeInTheDocument();
+  });
+
+  // captureTeam attribution (Task 171)
+  it('passes captureTeam to ResultsScreen when capture event includes captureTeam', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'capture', winner: 'seekers', captureTeam: 'A' }),
+      });
+    });
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'finished', winner: 'seekers' }),
+      });
+    });
+    const dialog = screen.getByRole('dialog', { name: /results screen/i });
+    expect(within(dialog).getByRole('heading')).toHaveTextContent('Seekers Win! (Team A)');
+  });
+
+  it('passes null captureTeam to ResultsScreen when capture event omits captureTeam', async () => {
+    const seekingGame = { ...game, status: 'seeking' };
+    render(<GameMap player={player} game={seekingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'capture', winner: 'seekers' }),
+      });
+    });
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'finished', winner: 'seekers' }),
+      });
+    });
+    const dialog = screen.getByRole('dialog', { name: /results screen/i });
+    const heading = within(dialog).getByRole('heading');
+    expect(heading).toHaveTextContent('Seekers Win!');
+    expect(heading.textContent).not.toMatch(/Team/);
   });
 
   // ---------------------------------------------------------------------------

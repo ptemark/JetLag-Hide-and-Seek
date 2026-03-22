@@ -93,4 +93,27 @@ describe('ResultsScreen', () => {
     expect(screen.getAllByText('30s').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText(/Card bonus:/i)).not.toBeInTheDocument();
   });
+
+  // captureTeam attribution (Task 171)
+  it('shows "Seekers Win!" without team label when captureTeam is not provided', () => {
+    render(<ResultsScreen {...baseProps} winner="seekers" />);
+    expect(screen.getByRole('heading')).toHaveTextContent('Seekers Win!');
+    expect(screen.getByRole('heading').textContent).not.toMatch(/Team/);
+  });
+
+  it('shows "Seekers Win! (Team A)" when captureTeam is A', () => {
+    render(<ResultsScreen {...baseProps} winner="seekers" captureTeam="A" />);
+    expect(screen.getByRole('heading')).toHaveTextContent('Seekers Win! (Team A)');
+  });
+
+  it('shows "Seekers Win! (Team B)" when captureTeam is B', () => {
+    render(<ResultsScreen {...baseProps} winner="seekers" captureTeam="B" />);
+    expect(screen.getByRole('heading')).toHaveTextContent('Seekers Win! (Team B)');
+  });
+
+  it('ignores captureTeam when hider wins', () => {
+    render(<ResultsScreen {...baseProps} winner="hider" captureTeam="A" />);
+    expect(screen.getByRole('heading')).toHaveTextContent('Hider Wins!');
+    expect(screen.getByRole('heading').textContent).not.toMatch(/Team/);
+  });
 });

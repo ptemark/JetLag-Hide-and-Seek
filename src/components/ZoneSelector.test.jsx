@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 
 vi.mock('../api.js', () => ({
@@ -168,5 +169,62 @@ describe('ZoneSelector', () => {
     expect(liveRegion).toHaveTextContent('Selected: Central Station');
     fireEvent.click(screen.getByText('Cancel'));
     expect(liveRegion).toHaveTextContent('');
+  });
+});
+
+describe('ZoneSelector — station search filter', () => {
+  it('renders search input with correct aria-label', () => {
+    render(<ZoneSelector player={player} game={game} zones={zones} />);
+    expect(screen.getByRole('searchbox', { name: /search stations/i })).toBeInTheDocument();
+  });
+
+  it('filters the station list by name as the hider types', async () => {
+    const user = userEvent.setup();
+    render(<ZoneSelector player={player} game={game} zones={zones} />);
+
+    await user.type(screen.getByRole('searchbox', { name: /search stations/i }), 'Central');
+
+    expect(screen.getByText(/Central Station \(500 m\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/North Stop/)).not.toBeInTheDocument();
+  });
+
+  it('shows "No stations match your search." when no stations match', async () => {
+    const user = userEvent.setup();
+    render(<ZoneSelector player={player} game={game} zones={zones} />);
+
+    await user.type(screen.getByRole('searchbox', { name: /search stations/i }), 'zzznomatch');
+
+    expect(screen.getByText(/no stations match your search/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Central Station/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/North Stop/)).not.toBeInTheDocument();
+  });
+
+  it('restores full station list when search query is cleared', async () => {
+    const user = userEvent.setup();
+    render(<ZoneSelector player={player} game={game} zones={zones} />);
+    const input = screen.getByRole('searchbox', { name: /search stations/i });
+
+    await user.type(input, 'Central');
+    expect(screen.queryByText(/North Stop/)).not.toBeInTheDocument();
+
+    await user.clear(input);
+    expect(screen.getByText(/Central Station \(500 m\)/)).toBeInTheDocument();
+    expect(screen.getByText(/North Stop \(500 m\)/)).toBeInTheDocument();
+  });
+
+  it('hides search input after zone is locked', async () => {
+    lockZone.mockResolvedValue({
+      zoneId: 'z1', gameId: 'g1', stationId: 's1',
+      lat: 51.05, lon: -0.05, radiusM: 500, lockedAt: '2026-03-22T00:00:00Z',
+    });
+
+    render(<ZoneSelector player={player} game={game} zones={zones} />);
+    expect(screen.getByRole('searchbox', { name: /search stations/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText(/Central Station \(500 m\)/));
+    await act(async () => { fireEvent.click(screen.getByText('Confirm')); });
+
+    await waitFor(() => expect(screen.getByText(/hiding zone locked/i)).toBeInTheDocument());
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
   });
 });

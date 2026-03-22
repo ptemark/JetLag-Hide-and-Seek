@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { lockZone } from '../api.js';
 import styles from './ZoneSelector.module.css';
 
+/** Placeholder text for the station search input. */
+const SEARCH_PLACEHOLDER = 'Search stations…';
+
 /**
  * ZoneSelector — shown to the hider during the hiding phase.
  *
@@ -20,6 +23,7 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
   const [locked, setLocked]       = useState(null);   // confirmed/locked zone
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState(null);
+  const [searchQuery, setSearchQuery] = useState(''); // station name filter
 
   async function confirmLock() {
     if (!staged || locked) return;
@@ -55,10 +59,27 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
     );
   }
 
+  const trimmedQuery = searchQuery.trim();
+  const filteredZones = trimmedQuery
+    ? zones.filter((z) => (z.name ?? '').toLowerCase().includes(trimmedQuery.toLowerCase()))
+    : zones;
+
   return (
     <div aria-label="Zone selector" data-testid="zone-selector">
       <h3>Select your hiding zone</h3>
       <p className={styles.instructions}>Tap a transit station to lock your hiding zone for this game.</p>
+
+      <label>
+        {SEARCH_PLACEHOLDER}
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={SEARCH_PLACEHOLDER}
+          className={styles.searchInput}
+          aria-label="Search stations"
+        />
+      </label>
 
       {error && (
         <p role="alert" className={styles.errorMsg}>
@@ -70,6 +91,10 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
         <p>No stations available in the game area.</p>
       )}
 
+      {filteredZones.length === 0 && trimmedQuery && (
+        <p>No stations match your search.</p>
+      )}
+
       <p
         role="status"
         aria-live="polite"
@@ -79,7 +104,7 @@ export default function ZoneSelector({ player, game, zones = [], onZoneLocked })
       </p>
 
       <ul className={styles.zoneList}>
-        {zones.map((zone) => (
+        {filteredZones.map((zone) => (
           <li key={zone.stationId} className={styles.zoneItem}>
             <button
               type="button"

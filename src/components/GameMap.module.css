@@ -78,6 +78,24 @@
   margin: 0;
 }
 
+/* ── Hider in-zone status indicator (RULES.md §Hiding Rules rule 3) ─────────── */
+.zoneStatus {
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.875rem;
+  padding: 0.15rem 0;
+  margin: 0;
+}
+
+.zoneInside {
+  color: var(--color-success);
+}
+
+.zoneOutside {
+  color: var(--color-error);
+  font-weight: 500;
+}
+
 /* ── Game header bar ────────────────────────────────────────────────────────── */
 .gameHeader {
   display: flex;

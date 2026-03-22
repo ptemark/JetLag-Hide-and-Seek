@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { haversineKm, centerRadiusToBounds, formatDuration } from './gameUtils.js';
+import { haversineKm, haversineDistanceM, centerRadiusToBounds, formatDuration } from './gameUtils.js';
 
 describe('haversineKm', () => {
   // (a) Identical points have zero distance.
@@ -13,6 +13,27 @@ describe('haversineKm', () => {
     // Accept anything in the range 111.0–111.4 km (correct for all reasonable Earth radii).
     expect(d).toBeGreaterThan(111.0);
     expect(d).toBeLessThan(111.4);
+  });
+});
+
+describe('haversineDistanceM', () => {
+  // (a) Identical points → < 1 m (floating point epsilon only).
+  it('returns < 1 m for identical points', () => {
+    expect(haversineDistanceM({ lat: 51.5, lon: -0.1 }, { lat: 51.5, lon: -0.1 })).toBeLessThan(1);
+  });
+
+  // (b) A point 500 m north (lat delta ≈ 0.004504°) should return within 1% of 500 m.
+  it('returns ~500 m for a point 500 m north', () => {
+    const base = { lat: 51.5, lon: -0.1 };
+    const north = { lat: 51.5 + 500 / 111_000, lon: -0.1 };
+    const d = haversineDistanceM(base, north);
+    expect(Math.abs(d - 500) / 500).toBeLessThan(0.01);
+  });
+
+  // (c) 1° latitude separation ≈ 111 000 m (within 1%).
+  it('returns ~111 000 m for 1° latitude difference', () => {
+    const d = haversineDistanceM({ lat: 0, lon: 0 }, { lat: 1, lon: 0 });
+    expect(Math.abs(d - 111_000) / 111_000).toBeLessThan(0.01);
   });
 });
 

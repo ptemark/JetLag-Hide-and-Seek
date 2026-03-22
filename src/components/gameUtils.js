@@ -32,6 +32,22 @@ export function haversineKm({ lat: lat1, lon: lon1 }, { lat: lat2, lon: lon2 }) 
 }
 
 /**
+ * Compute the great-circle distance in metres between two lat/lon points.
+ * Delegates to haversineKm to avoid duplicating the Haversine formula.
+ *
+ * Used to determine whether the hider is inside their hiding zone during the
+ * seeking phase (RULES.md §Hiding Rules rule 3; §Definitions — Hiding Zone:
+ * 500 m for Small/Medium, 1 km for Large).
+ *
+ * @param {{ lat: number, lon: number }} a - First point.
+ * @param {{ lat: number, lon: number }} b - Second point.
+ * @returns {number} Distance in metres.
+ */
+export function haversineDistanceM(a, b) {
+  return haversineKm(a, b) * 1000;
+}
+
+/**
  * Convert a centre point + radius to an axis-aligned bounding box.
  *
  * @param {{ lat: number, lon: number }} center - Centre of the zone.

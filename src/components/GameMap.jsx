@@ -8,7 +8,7 @@ const CardPanel = lazy(() => import('./CardPanel.jsx'));
 const ResultsScreen = lazy(() => import('./ResultsScreen.jsx'));
 import ZoneSelector from './ZoneSelector.jsx';
 import { submitScore, listZones } from '../api.js';
-import { formatCountdown, formatDuration } from './gameUtils.js';
+import { formatCountdown, formatDuration, haversineDistanceM } from './gameUtils.js';
 import styles from './GameMap.module.css';
 
 const LOCATION_INTERVAL_MS = 10_000;
@@ -111,6 +111,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [gpsError, setGpsError] = useState(null);                  // GPS permission/availability error message
   const [scoreError, setScoreError] = useState(null);              // score submission failure message
   const [hiderId, setHiderId] = useState(null);                    // playerId of the hider in this game
+  const [myLocation, setMyLocation] = useState(null);              // hider's own latest GPS fix { lat, lon }
   const lockedZoneLayerRef = useRef(null);                         // L.circle for the hider's locked zone
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
@@ -525,6 +526,8 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         (pos) => {
           // Clear any previous GPS error on a successful fix
           setGpsError((prev) => (prev !== null ? null : prev));
+          // Store own location for in-zone status indicator (RULES.md §Hiding Rules rule 3)
+          setMyLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
               type: 'location_update',
@@ -643,6 +646,28 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
             )}
           </p>
         )}
+
+      {/* In-zone status indicator for hider during seeking (RULES.md §Hiding Rules rule 3) */}
+      {(() => {
+        const inZone =
+          phase === 'seeking' &&
+          player.role === 'hider' &&
+          myLocation !== null &&
+          lockedZone !== null
+            ? haversineDistanceM(myLocation, { lat: lockedZone.lat, lon: lockedZone.lon }) <=
+              (lockedZone.radiusM ?? 500)
+            : null;
+        if (inZone === null) return null;
+        return (
+          <p
+            role="status"
+            data-testid="zone-status"
+            className={`${styles.zoneStatus} ${inZone ? styles.zoneInside : styles.zoneOutside}`}
+          >
+            {inZone ? '✓ In zone' : '⚠ Outside zone'}
+          </p>
+        );
+      })()}
 
       <div className={styles.mapWrapper}>
         <div

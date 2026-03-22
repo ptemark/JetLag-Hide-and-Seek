@@ -1898,3 +1898,129 @@ describe('GameMap', () => {
     expect(screen.queryByTestId('elapsed-timer')).not.toBeInTheDocument();
   });
 });
+
+// ── In-zone status indicator (Task 167) ──────────────────────────────────────
+
+describe('zone-status banner (Task 167)', () => {
+  const zoneCenter = { lat: 51.05, lon: -0.05, radiusM: 500 };
+
+  // (d) Hider within zone during seeking → '✓ In zone' banner.
+  it('shows "✓ In zone" when hider GPS is within lockedZone radius during seeking', async () => {
+    vi.useFakeTimers();
+    // GPS returns the exact zone centre — definitely inside the 500 m radius.
+    const mockGetCurrentPosition = vi.fn((success) => {
+      success({ coords: { latitude: zoneCenter.lat, longitude: zoneCenter.lon } });
+    });
+    global.navigator.geolocation = { getCurrentPosition: mockGetCurrentPosition };
+
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {
+      MockWebSocket.last.onopen?.();
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'zone_locked', zone: zoneCenter }),
+      });
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(screen.getByTestId('zone-status')).toHaveTextContent('✓ In zone');
+  });
+
+  // (e) Hider outside zone during seeking → '⚠ Outside zone' banner.
+  it('shows "⚠ Outside zone" when hider GPS is outside lockedZone radius during seeking', async () => {
+    vi.useFakeTimers();
+    // Place the hider ~1 km north — well outside the 500 m radius.
+    const outsideLat = zoneCenter.lat + (1000 / 111_000);
+    const mockGetCurrentPosition = vi.fn((success) => {
+      success({ coords: { latitude: outsideLat, longitude: zoneCenter.lon } });
+    });
+    global.navigator.geolocation = { getCurrentPosition: mockGetCurrentPosition };
+
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {
+      MockWebSocket.last.onopen?.();
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'zone_locked', zone: zoneCenter }),
+      });
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(screen.getByTestId('zone-status')).toHaveTextContent('⚠ Outside zone');
+  });
+
+  // (f) Seeker never sees zone-status banner.
+  it('does not render zone-status banner for seekers', async () => {
+    vi.useFakeTimers();
+    const seeker = { playerId: 'p2', name: 'Bob', role: 'seeker' };
+    const mockGetCurrentPosition = vi.fn((success) => {
+      success({ coords: { latitude: zoneCenter.lat, longitude: zoneCenter.lon } });
+    });
+    global.navigator.geolocation = { getCurrentPosition: mockGetCurrentPosition };
+
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {
+      MockWebSocket.last.onopen?.();
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'zone_locked', zone: zoneCenter }),
+      });
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(screen.queryByTestId('zone-status')).not.toBeInTheDocument();
+  });
+
+  // (g) Hider during hiding phase — banner absent even when lockedZone is set.
+  it('does not render zone-status banner during hiding phase', async () => {
+    vi.useFakeTimers();
+    const mockGetCurrentPosition = vi.fn((success) => {
+      success({ coords: { latitude: zoneCenter.lat, longitude: zoneCenter.lon } });
+    });
+    global.navigator.geolocation = { getCurrentPosition: mockGetCurrentPosition };
+
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {
+      MockWebSocket.last.onopen?.();
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'hiding' }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'zone_locked', zone: zoneCenter }),
+      });
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(screen.queryByTestId('zone-status')).not.toBeInTheDocument();
+  });
+
+  // (h) Before any GPS fix (myLocation null) — banner absent even if zone is locked and seeking.
+  it('does not render zone-status banner before first GPS fix', async () => {
+    // GPS mock never calls success — myLocation stays null.
+    global.navigator.geolocation = { getCurrentPosition: vi.fn() };
+
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => {
+      MockWebSocket.last.onopen?.();
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'zone_locked', zone: zoneCenter }),
+      });
+    });
+
+    expect(screen.queryByTestId('zone-status')).not.toBeInTheDocument();
+  });
+});

@@ -1797,4 +1797,55 @@ describe('GameMap', () => {
     const tooltipCall = mockMarker.setTooltipContent.mock.calls.find(([t]) => t.includes('Bob'));
     expect(tooltipCall).toBeDefined();
   });
+
+  // ── Elapsed-time display (Task 165) ─────────────────────────────────────────
+
+  // (e) Elapsed timer renders for hider after phase_change → hiding.
+  it('renders elapsed-timer for hider after phase_change to hiding', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onopen?.();
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'hiding' }),
+      });
+    });
+    expect(screen.getByTestId('elapsed-timer')).toBeInTheDocument();
+    expect(screen.getByTestId('elapsed-timer')).toHaveTextContent(/Hiding time:/);
+  });
+
+  // (f) Elapsed timer still renders for hider after phase transitions to seeking.
+  it('renders elapsed-timer for hider during seeking phase', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onopen?.();
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'hiding' }),
+      });
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+    });
+    expect(screen.getByTestId('elapsed-timer')).toBeInTheDocument();
+    expect(screen.getByTestId('elapsed-timer')).toHaveTextContent(/Hiding time:/);
+  });
+
+  // (g) Elapsed timer is NOT rendered for seekers.
+  it('does not render elapsed-timer for seeker', async () => {
+    const seeker = { playerId: 'p2', name: 'Bob', role: 'seeker' };
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onopen?.();
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'hiding' }),
+      });
+    });
+    expect(screen.queryByTestId('elapsed-timer')).not.toBeInTheDocument();
+  });
+
+  // (h) Elapsed timer is NOT rendered before hidingStartedAtRef is set
+  //     (game starts in hiding status but no phase_change message yet).
+  it('does not render elapsed-timer on initial render before phase_change arrives', () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('elapsed-timer')).not.toBeInTheDocument();
+  });
 });

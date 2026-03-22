@@ -8,7 +8,7 @@ const CardPanel = lazy(() => import('./CardPanel.jsx'));
 const ResultsScreen = lazy(() => import('./ResultsScreen.jsx'));
 import ZoneSelector from './ZoneSelector.jsx';
 import { submitScore, listZones } from '../api.js';
-import { formatCountdown } from './gameUtils.js';
+import { formatCountdown, formatDuration } from './gameUtils.js';
 import styles from './GameMap.module.css';
 
 const LOCATION_INTERVAL_MS = 10_000;
@@ -624,6 +624,17 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           {phase === 'hiding' ? 'Hiding ends in' : 'Seeking ends in'} {formatCountdown(phaseEndsAt)}
         </p>
       ) : null}
+
+      {player.role === 'hider' &&
+        (phase === 'hiding' || phase === 'seeking') &&
+        hidingStartedAtRef.current !== null && (
+          <p data-testid="elapsed-timer" className={styles.elapsedTimer}>
+            Hiding time:{' '}
+            {formatDuration(
+              (Date.now() - hidingStartedAtRef.current) + bonusSecondsRef.current * 1_000,
+            )}
+          </p>
+        )}
 
       <div className={styles.mapWrapper}>
         <div

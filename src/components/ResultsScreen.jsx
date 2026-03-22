@@ -8,21 +8,7 @@
  *   onPlayAgain  — callback invoked when the user taps "Play Again"
  */
 import styles from './ResultsScreen.module.css';
-
-/**
- * Format a duration in milliseconds as "Xh Ym Zs" or "Ym Zs".
- * @param {number} ms
- * @returns {string}
- */
-function formatDuration(ms) {
-  const totalSecs = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSecs / 3600);
-  const mins  = Math.floor((totalSecs % 3600) / 60);
-  const secs  = totalSecs % 60;
-  if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
-  if (mins > 0)  return `${mins}m ${secs}s`;
-  return `${secs}s`;
-}
+import { formatDuration } from './gameUtils.js';
 
 export default function ResultsScreen({ winner, elapsedMs, bonusSeconds = 0, onPlayAgain }) {
   const isHiderWin  = winner === 'hider';

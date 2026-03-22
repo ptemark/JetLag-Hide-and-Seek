@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { haversineKm, centerRadiusToBounds } from './gameUtils.js';
+import { haversineKm, centerRadiusToBounds, formatDuration } from './gameUtils.js';
 
 describe('haversineKm', () => {
   // (a) Identical points have zero distance.
@@ -25,5 +25,27 @@ describe('centerRadiusToBounds', () => {
     const dist = haversineKm(center, { lat: bounds.lat_max, lon: center.lon });
     // Must be within 1 % of the requested radius.
     expect(Math.abs(dist - radiusKm) / radiusKm).toBeLessThan(0.01);
+  });
+});
+
+describe('formatDuration', () => {
+  // (a) Zero milliseconds → "0s".
+  it('returns "0s" for 0 ms', () => {
+    expect(formatDuration(0)).toBe('0s');
+  });
+
+  // (b) 59 seconds → "59s" (no minutes component).
+  it('returns "59s" for 59 000 ms', () => {
+    expect(formatDuration(59_000)).toBe('59s');
+  });
+
+  // (c) 90 seconds → "1m 30s".
+  it('returns "1m 30s" for 90 000 ms', () => {
+    expect(formatDuration(90_000)).toBe('1m 30s');
+  });
+
+  // (d) 1 hour + 1 minute + 1 second → "1h 1m 1s".
+  it('returns "1h 1m 1s" for 3 661 000 ms', () => {
+    expect(formatDuration(3_661_000)).toBe('1h 1m 1s');
   });
 });

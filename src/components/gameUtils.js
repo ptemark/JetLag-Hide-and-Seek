@@ -52,6 +52,24 @@ export function centerRadiusToBounds({ lat, lon }, radiusKm) {
 }
 
 /**
+ * Format a duration in milliseconds as a human-readable string.
+ * Used to display the hider's accumulated hiding time during gameplay
+ * and on the ResultsScreen. (RULES.md §Winning: score = hiding time + bonuses)
+ *
+ * @param {number} ms  - Duration in milliseconds (non-negative).
+ * @returns {string}   - "Xh Ym Zs", "Ym Zs", or "Zs".
+ */
+export function formatDuration(ms) {
+  const totalSecs = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSecs / 3600);
+  const mins  = Math.floor((totalSecs % 3600) / 60);
+  const secs  = totalSecs % 60;
+  if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
+  if (mins > 0)  return `${mins}m ${secs}s`;
+  return `${secs}s`;
+}
+
+/**
  * Format an ISO timestamp as a MM:SS countdown from now.
  *
  * @param {string|null} iso  — ISO 8601 expiry timestamp, or null.

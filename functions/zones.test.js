@@ -255,6 +255,52 @@ describe('getZones — successful response', () => {
     expect(result.body.zones).toEqual([]);
   });
 
+  it('Overpass query includes all six required transit type conditions', async () => {
+    let capturedBody = '';
+    const capturingFetch = async (_url, opts) => {
+      capturedBody = decodeURIComponent(opts.body.replace(/^data=/, ''));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ elements: [] }),
+      };
+    };
+    await getZones(
+      { method: 'GET', query: { bounds: VALID_BOUNDS, scale: 'small' } },
+      capturingFetch,
+    );
+    expect(capturedBody).toContain('"public_transport"="stop_position"');
+    expect(capturedBody).toContain('"railway"="station"');
+    expect(capturedBody).toContain('"railway"="halt"');
+    expect(capturedBody).toContain('"amenity"="bus_station"');
+    expect(capturedBody).toContain('"amenity"="ferry_terminal"');
+    expect(capturedBody).toContain('"railway"="tram_stop"');
+  });
+
+  it('includes ferry terminal nodes in the returned zones', async () => {
+    const ferryNode = { id: 9001, lat: 51.505, lon: -0.115, tags: { name: 'Waterloo Pier', amenity: 'ferry_terminal' } };
+    const result = await getZones(
+      { method: 'GET', query: { bounds: VALID_BOUNDS, scale: 'small' } },
+      makeFetch([ferryNode]),
+    );
+    expect(result.status).toBe(200);
+    const ferry = result.body.zones.find((z) => z.stationId === '9001');
+    expect(ferry).toBeDefined();
+    expect(ferry.name).toBe('Waterloo Pier');
+  });
+
+  it('includes tram stop nodes in the returned zones', async () => {
+    const tramNode = { id: 9002, lat: 51.507, lon: -0.112, tags: { name: 'Aldwych Tram Stop', railway: 'tram_stop' } };
+    const result = await getZones(
+      { method: 'GET', query: { bounds: VALID_BOUNDS, scale: 'small' } },
+      makeFetch([tramNode]),
+    );
+    expect(result.status).toBe(200);
+    const tram = result.body.zones.find((z) => z.stationId === '9002');
+    expect(tram).toBeDefined();
+    expect(tram.name).toBe('Aldwych Tram Stop');
+  });
+
   it('filters out non-node elements returned by Overpass', async () => {
     const fetchWithWay = makeFetch([]);
     const wayFetch = async (url, opts) => {

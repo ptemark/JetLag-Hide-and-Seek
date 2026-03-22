@@ -30,6 +30,14 @@ const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
  * Build an Overpass QL query that returns all public-transit stop nodes
  * within a bounding box specified as south,west,north,east.
  *
+ * Transit types covered (per RULES.md §Game Scales: "trains, buses, ferries, trams"):
+ *   - public_transport=stop_position  (generic stop for any mode)
+ *   - railway=station                  (train/metro stations)
+ *   - railway=halt                     (small unstaffed train halts)
+ *   - amenity=bus_station              (bus stations)
+ *   - amenity=ferry_terminal           (ferry terminals)
+ *   - railway=tram_stop                (tram stops)
+ *
  * @param {number} south
  * @param {number} west
  * @param {number} north
@@ -45,6 +53,8 @@ function buildOverpassQuery(south, west, north, east) {
     `node["railway"="station"](${bbox});` +
     `node["railway"="halt"](${bbox});` +
     `node["amenity"="bus_station"](${bbox});` +
+    `node["amenity"="ferry_terminal"](${bbox});` +
+    `node["railway"="tram_stop"](${bbox});` +
     `);` +
     `out body;`
   );

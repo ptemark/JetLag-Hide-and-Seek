@@ -6,6 +6,7 @@ import AnswerPanel from './AnswerPanel.jsx';
 // Lazy-load non-critical game panels (RALPH.md §Performance / Mobile)
 const CardPanel = lazy(() => import('./CardPanel.jsx'));
 const ResultsScreen = lazy(() => import('./ResultsScreen.jsx'));
+const SeekerNotes = lazy(() => import('./SeekerNotes.jsx'));
 import ZoneSelector from './ZoneSelector.jsx';
 import { submitScore, listZones } from '../api.js';
 import { formatCountdown, formatDuration, haversineDistanceM, CARD_LABELS, CARD_DESCRIPTIONS } from './gameUtils.js';
@@ -759,7 +760,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       )}
 
       {player.role === 'seeker' && (
-        <QuestionPanel player={player} game={game} teamId={myTeam} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} hiderId={hiderId} />
+        <>
+          <QuestionPanel player={player} game={game} teamId={myTeam} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} hiderId={hiderId} />
+          <Suspense fallback={null}>
+            <SeekerNotes gameId={game.gameId} />
+          </Suspense>
+        </>
       )}
 
       {player.role === 'hider' && phase === 'hiding' && !lockedZone && (

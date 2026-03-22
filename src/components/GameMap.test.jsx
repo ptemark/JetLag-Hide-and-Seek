@@ -53,6 +53,11 @@ const { mockMap, mockMarker, mockTileLayer, mockRectangle, mockCircle, mockPolyl
 
 vi.mock('leaflet', () => ({ default: mockL }));
 vi.mock('leaflet/dist/leaflet.css', () => ({}));
+// Stub SeekerNotes to avoid lazy-import resolution issues in the test environment.
+// The component's own behaviour is covered by SeekerNotes.test.jsx.
+vi.mock('./SeekerNotes.jsx', () => ({
+  default: ({ gameId }) => <div data-testid="seeker-notes-stub" data-game-id={gameId}>SeekerNotes</div>,
+}));
 
 import * as api from '../api.js';
 import GameMap from './GameMap.jsx';
@@ -2073,5 +2078,36 @@ describe('zone-status banner (Task 167)', () => {
     });
 
     expect(screen.queryByTestId('zone-status')).not.toBeInTheDocument();
+  });
+});
+
+describe('SeekerNotes (Task 170)', () => {
+  beforeEach(() => {
+    MockWebSocket.last = null;
+    localStorage.clear();
+    global.navigator.geolocation = { getCurrentPosition: vi.fn() };
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  // (g) SeekerNotes stub renders when player.role === 'seeker'.
+  it('(g) renders SeekerNotes stub when player is a seeker', async () => {
+    const seeker = { ...player, role: 'seeker' };
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => { MockWebSocket.last.onopen?.(); });
+
+    expect(screen.getByTestId('seeker-notes-stub')).toBeInTheDocument();
+  });
+
+  // (h) SeekerNotes stub does not render for the hider.
+  it('(h) does not render SeekerNotes stub when player is the hider', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+
+    await act(async () => { MockWebSocket.last.onopen?.(); });
+
+    expect(screen.queryByTestId('seeker-notes-stub')).not.toBeInTheDocument();
   });
 });

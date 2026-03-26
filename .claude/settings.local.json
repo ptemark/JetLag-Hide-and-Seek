@@ -3,7 +3,17 @@
     "allow": [
       "Bash(find /c/Users/Peter/IntelliJProjects/JetLag-Hide-and-Seek -maxdepth 3 -type f -name .cursor* -o -name *copilot*)",
       "Bash(head:*)",
-      "Bash(wc -l /c/Users/Peter/IntelliJProjects/JetLag-Hide-and-Seek/src/components/*.jsx)"
+      "Bash(wc -l /c/Users/Peter/IntelliJProjects/JetLag-Hide-and-Seek/src/components/*.jsx)",
+      "Bash(xargs grep:*)",
+      "Bash(for file:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/Peter/IntelliJProjects/JetLag-Hide-and-Seek/**)",
+      "Bash(done)",
+      "Bash(grep -r \"class Component\" /c/Users/Peter/IntelliJProjects/JetLag-Hide-and-Seek/src/components/*.jsx)",
+      "Bash(cat api/[...path].js)",
+      "Bash(sed -n '255,262p' spec/TASKS.md)",
+      "Bash(sed -n '563,570p' spec/TASKS.md)",
+      "Bash(python3:*)"
     ]
   }
 }

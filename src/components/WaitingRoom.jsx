@@ -10,15 +10,9 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { startGame, lookupGame, markPlayerReady, fetchReadyStatus } from '../api.js';
+import { SCALE_DURATION_RANGES } from '../../config/gameRules.js';
 import Alert from './Alert.jsx';
 import styles from './WaitingRoom.module.css';
-
-/** Valid hiding duration ranges per scale (RULES.md §Game Scales), in minutes. */
-const SCALE_DURATION_RANGES = {
-  small:  { min: 30,  max: 60  },
-  medium: { min: 60,  max: 180 },
-  large:  { min: 180, max: 360 },
-};
 
 /** How often non-host players poll for game start, in milliseconds. */
 const POLL_INTERVAL_MS = 3000;

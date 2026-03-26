@@ -282,6 +282,23 @@ describe('GameForm — location search (Task 142)', () => {
       ).not.toBeInTheDocument()
     );
   });
+
+  // (Task 172) Result buttons must be visible without hover interaction.
+  it('result option buttons are present in the document with non-empty text content without requiring hover', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await typeAndWaitForResults(user, 'London');
+
+    const listbox = screen.getByRole('listbox', { name: /location results/i });
+    const options = within(listbox).getAllByRole('option');
+
+    expect(options.length).toBeGreaterThan(0);
+    options.forEach(option => {
+      expect(option).toBeInTheDocument();
+      expect(option.textContent.trim()).not.toBe('');
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

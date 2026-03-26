@@ -299,6 +299,37 @@ describe('GameForm — location search (Task 142)', () => {
       expect(option.textContent.trim()).not.toBe('');
     });
   });
+
+  // (Task 173) After a location is selected (map visible), typing again in the
+  // search box must still render the results dropdown above the Leaflet map.
+  it('shows results dropdown after a location is selected and new search text is entered', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    // Select a location so the map preview appears.
+    await typeAndWaitForResults(user, 'London');
+    await selectFirstResult();
+
+    // Map preview should now be visible.
+    await waitFor(() =>
+      expect(screen.getByTestId('preview-map')).toBeInTheDocument()
+    );
+
+    // Clear the search input and type a new query — the dropdown must re-appear
+    // even though the Leaflet map is now rendered on the page.
+    const searchInput = screen.getByLabelText(/search for a city, town or country/i);
+    await user.clear(searchInput);
+    await user.type(searchInput, 'Paris');
+
+    await waitFor(
+      () => expect(screen.getByRole('listbox', { name: /location results/i })).toBeInTheDocument(),
+      { timeout: 2000 },
+    );
+
+    // The dropdown must contain the mocked results.
+    const listbox = screen.getByRole('listbox', { name: /location results/i });
+    expect(within(listbox).getAllByRole('option').length).toBeGreaterThan(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

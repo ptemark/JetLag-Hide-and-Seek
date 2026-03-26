@@ -539,6 +539,40 @@ describe('AnswerPanel', () => {
     readSpy.mockRestore();
   });
 
+  it('shows photo preview img after file is selected for a photo question', async () => {
+    const user = userEvent.setup();
+    const photoQuestion = { ...QUESTION, questionId: 'q-photo', category: 'photo' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [photoQuestion] });
+
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/photo upload/i));
+
+    // No preview before file is chosen.
+    expect(screen.queryByTestId('photo-preview')).not.toBeInTheDocument();
+
+    const file = new File(['img'], 'photo.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText(/photo upload/i), file);
+
+    // StubFileReader sets result to 'data:image/png;base64,stub'.
+    await waitFor(() => expect(screen.getByTestId('photo-preview')).toBeInTheDocument());
+    expect(screen.getByTestId('photo-preview')).toHaveAttribute('src', 'data:image/png;base64,stub');
+  });
+
+  it('does not show photo preview img for non-photo questions', async () => {
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [QUESTION] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/your answer/i));
+    expect(screen.queryByTestId('photo-preview')).not.toBeInTheDocument();
+  });
+
+  it('does not show photo preview img before a file is selected for a photo question', async () => {
+    const photoQuestion = { ...QUESTION, questionId: 'q-photo', category: 'photo' };
+    api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [photoQuestion] });
+    render(<AnswerPanel player={HIDER} game={GAME} />);
+    await waitFor(() => screen.getByLabelText(/photo upload/i));
+    expect(screen.queryByTestId('photo-preview')).not.toBeInTheDocument();
+  });
+
   // ── Thermometer hints ──────────────────────────────────────────────────────
 
   it('shows "warmer" thermometer hint when current distance < previous distance', async () => {

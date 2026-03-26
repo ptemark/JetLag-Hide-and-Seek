@@ -34,3 +34,12 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.photoPreview {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  margin-top: 0.5rem;
+}

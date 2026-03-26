@@ -203,6 +203,14 @@ export default function AnswerPanel({ player, game, refreshTrigger = 0 }) {
                   />
                 </label>
               )}
+              {q.category === 'photo' && photos[q.questionId] && (
+                <img
+                  src={photos[q.questionId]}
+                  alt="Photo preview"
+                  data-testid="photo-preview"
+                  className={styles.photoPreview}
+                />
+              )}
               <label>
                 Your answer
                 <textarea

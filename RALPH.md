@@ -306,7 +306,11 @@ Before committing:
 
 1. Run `npm run ci:local` — all steps must pass.
 2. If `.github/workflows/` was changed: run `actionlint .github/workflows/ci.yml` — zero errors.
-3. `git diff --staged` — confirm no secrets or temporary debug code.
+3. `git diff --staged` — confirm no secrets or temporary debug code. If secrets are found:
+   a. `git reset HEAD <file>` to unstage the affected file(s).
+   b. Open each file and remove or replace the secret with a placeholder (e.g. `process.env.SECRET_NAME`).
+   c. Re-stage the corrected file(s) and re-run `git diff --staged` to confirm clean.
+   d. Do **not** proceed to commit until the staged diff is free of secrets.
 4. Commit format:
 
 ```

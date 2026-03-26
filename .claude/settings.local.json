@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/Peter/IntelliJProjects/JetLag-Hide-and-Seek -maxdepth 3 -type f -name .cursor* -o -name *copilot*)",
+      "Bash(head:*)",
+      "Bash(wc -l /c/Users/Peter/IntelliJProjects/JetLag-Hide-and-Seek/src/components/*.jsx)"
+    ]
+  }
+}

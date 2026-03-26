@@ -30,6 +30,14 @@
 
   /* Highlight white */
   --color-white: #FDFAF4;
+
+  /* Translucent tints — semantic overlay colours for banners and state indicators */
+  --color-error-tint: rgba(200, 58, 24, 0.15);
+  --color-warning-tint: rgba(245, 200, 74, 0.15);
+  --color-success-tint: rgba(76, 175, 130, 0.15);
+  --color-accent-tint: rgba(240, 135, 48, 0.12);
+  --color-accent-tint-strong: rgba(240, 135, 48, 0.15);
+  --color-accent-tint-light: rgba(240, 135, 48, 0.10);
 }
 
 /* Universal box-sizing reset */

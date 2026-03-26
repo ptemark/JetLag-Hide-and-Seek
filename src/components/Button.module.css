@@ -47,7 +47,7 @@
 }
 
 .ghost:hover:not(:disabled) {
-  background: rgba(240, 135, 48, 0.12);
+  background: var(--color-accent-tint);
 }
 
 /* Danger variant */

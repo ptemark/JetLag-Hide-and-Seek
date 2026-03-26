@@ -107,7 +107,7 @@
 
 /* Error/alert banner — uses sunset-4 (error colour) tint, matches DESIGN.md §22 alert style */
 .alertBanner {
-  background: rgba(200, 58, 24, 0.15);
+  background: var(--color-error-tint);
   border-left: 3px solid var(--color-error);
   color: var(--color-text-primary);
   border-radius: 0 4px 4px 0;
@@ -117,7 +117,7 @@
 
 /* Warning banner — amber tint using sunset-1 */
 .warningBanner {
-  background: rgba(245, 200, 74, 0.15);
+  background: var(--color-warning-tint);
   border-left: 3px solid var(--color-sunset-1);
   color: var(--color-text-primary);
   border-radius: 0 4px 4px 0;
@@ -127,7 +127,7 @@
 
 /* Info/success banner — green tint using success colour */
 .infoBanner {
-  background: rgba(76, 175, 130, 0.15);
+  background: var(--color-success-tint);
   border-left: 3px solid var(--color-success);
   color: var(--color-text-primary);
   border-radius: 0 4px 4px 0;
@@ -137,7 +137,7 @@
 
 /* Capture result banner — neutral accent tint */
 .captureBanner {
-  background: rgba(240, 135, 48, 0.15);
+  background: var(--color-accent-tint-strong);
   border-left: 3px solid var(--color-accent);
   color: var(--color-text-primary);
   border-radius: 0 4px 4px 0;

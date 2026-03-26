@@ -300,6 +300,28 @@ describe('GameForm — location search (Task 142)', () => {
     });
   });
 
+  // (Task 175) Result buttons must be keyboard-focusable — Tab moves focus into
+  // the results list and the focused element is a listbox option.
+  it('result option buttons are focusable via keyboard Tab (a11y)', async () => {
+    const user = setupUser();
+    render(<GameForm player={PLAYER} onGameReady={() => {}} />);
+
+    await typeAndWaitForResults(user, 'London');
+
+    const listbox = screen.getByRole('listbox', { name: /location results/i });
+    const options = within(listbox).getAllByRole('option');
+
+    // All result buttons must be focusable (tabIndex is 0 or not explicitly -1).
+    options.forEach(option => {
+      expect(option.tabIndex).not.toBe(-1);
+    });
+
+    // Programmatically focus the first option and verify document.activeElement.
+    options[0].focus();
+    expect(document.activeElement).toBe(options[0]);
+    expect(document.activeElement).toHaveAttribute('role', 'option');
+  });
+
   // (Task 173) After a location is selected (map visible), typing again in the
   // search box must still render the results dropdown above the Leaflet map.
   it('shows results dropdown after a location is selected and new search text is entered', async () => {

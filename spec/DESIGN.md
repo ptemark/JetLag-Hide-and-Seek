@@ -463,6 +463,25 @@ Internet
               shuts down after last game ends + IDLE_SHUTDOWN_DELAY_MS
 ```
 
+### Vercel Routing Rules (non-negotiable)
+
+Vercel uses **`path-to-regexp`** for route matching — not a full regex engine. Negative lookaheads (`(?!...)`) and other advanced regex constructs are **not reliably supported** and must never appear in `vercel.json`.
+
+**The only permitted `vercel.json` routing configuration is:**
+
+```json
+"routes": [
+  { "handle": "filesystem" },
+  { "src": "/(.*)", "dest": "/index.html" }
+]
+```
+
+`{ "handle": "filesystem" }` instructs Vercel to resolve static files and serverless functions first. Any path not matched by a file or function falls through to the SPA `index.html` catchall. This guarantees all `/api/*` requests reach `api/[...path].js` regardless of path depth.
+
+**Never use `rewrites` with regex lookaheads to exclude API paths** (e.g. `/((?!api/).*)` ). This pattern appears to work for shallow paths like `/api/games` but silently misfires on deeper paths like `/api/games/:id/join`, causing those requests to receive an HTML response instead of JSON from the function. The frontend then fails to parse the body, `body?.error` is null, and the error surfaces as a misleading fallback message (e.g. `"joinGame failed: 404"`) rather than a real API error.
+
+**Vercel function entry point:** `api/[...path].js` is the single catch-all for all `/api/*` traffic. It strips the `/api` prefix from `req.url` before delegating to `functions/router.js`. Any change to this stripping logic must be tested against paths with two or more segments (e.g. `/api/games/:id/join`, `/api/games/:id/zone`) — not just root-level paths like `/api/games`.
+
 ---
 
 ## 2️⃣2️⃣ Frontend Visual Design

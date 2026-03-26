@@ -109,11 +109,16 @@ export function getGame(req, pool = null) {
  *
  * POST /games  { size?, bounds? }  → 201 { gameId, size, status, ... }
  *
+ * Uses async/await so that rejections from the DB path (e.g. Neon cold-start,
+ * FK constraint because host_player_id is not yet in the players table) are
+ * caught and returned as a structured 400/500 response rather than propagating
+ * as an unhandled rejection to the router's generic 500 handler.
+ *
  * @param {{ method: string, body: unknown }} req
  * @param {import('pg').Pool|null} [pool]
- * @returns {{ status: number, body: object } | Promise<{ status: number, body: object }>}
+ * @returns {Promise<{ status: number, body: object }>}
  */
-export function handleCreateGame(req, pool = null) {
+export async function handleCreateGame(req, pool = null) {
   if (req.method !== 'POST') {
     return { status: 405, body: { error: 'Method Not Allowed' } };
   }
@@ -121,11 +126,8 @@ export function handleCreateGame(req, pool = null) {
   const { size = 'medium', bounds = {}, seekerTeams = 0, playerId = null } = req.body ?? {};
 
   try {
-    const result = createGame({ size, bounds, seekerTeams, hostPlayerId: playerId }, pool);
-    if (result && typeof result.then === 'function') {
-      return result.then(game => ({ status: 201, body: game }));
-    }
-    return { status: 201, body: result };
+    const game = await createGame({ size, bounds, seekerTeams, hostPlayerId: playerId }, pool);
+    return { status: 201, body: game };
   } catch (err) {
     return { status: 400, body: { error: err.message } };
   }

@@ -83,32 +83,32 @@ describe('createGame (in-process)', () => {
 describe('handleCreateGame (in-process)', () => {
   beforeEach(() => _clearStore());
 
-  it('returns 405 for non-POST', () => {
-    const res = handleCreateGame({ method: 'GET', body: {} });
+  it('returns 405 for non-POST', async () => {
+    const res = await handleCreateGame({ method: 'GET', body: {} });
     expect(res.status).toBe(405);
   });
 
-  it('returns 201 with a new game on valid POST', () => {
-    const res = handleCreateGame(makePostReq({}, { size: 'small' }));
+  it('returns 201 with a new game on valid POST', async () => {
+    const res = await handleCreateGame(makePostReq({}, { size: 'small' }));
     expect(res.status).toBe(201);
     expect(res.body.size).toBe('small');
     expect(res.body.status).toBe('waiting');
   });
 
-  it('returns 400 for invalid size', () => {
-    const res = handleCreateGame(makePostReq({}, { size: 'giant' }));
+  it('returns 400 for invalid size', async () => {
+    const res = await handleCreateGame(makePostReq({}, { size: 'giant' }));
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/size/);
   });
 
-  it('stores playerId as hostPlayerId in the created game', () => {
-    const res = handleCreateGame(makePostReq({}, { size: 'small', playerId: 'player-42' }));
+  it('stores playerId as hostPlayerId in the created game', async () => {
+    const res = await handleCreateGame(makePostReq({}, { size: 'small', playerId: 'player-42' }));
     expect(res.status).toBe(201);
     expect(res.body.hostPlayerId).toBe('player-42');
   });
 
-  it('hostPlayerId is null when no playerId in body', () => {
-    const res = handleCreateGame(makePostReq({}, { size: 'small' }));
+  it('hostPlayerId is null when no playerId in body', async () => {
+    const res = await handleCreateGame(makePostReq({}, { size: 'small' }));
     expect(res.status).toBe(201);
     expect(res.body.hostPlayerId).toBeNull();
   });
@@ -615,6 +615,26 @@ describe('handleCreateGame (with pool)', () => {
     );
     // 400 from the createGame validation (size check fires before pool.query).
     expect(res.status).toBe(400);
+  });
+
+  // Task 174 — async error handling gap: dbCreateGame rejections must be caught
+  // and returned as a structured response instead of propagating to the router.
+  it('returns 400 when dbCreateGame rejects (e.g. FK violation or DB cold start)', async () => {
+    // Pool.query resolves validation but rejects on INSERT — simulates a FK
+    // constraint failure when host_player_id is not yet in the players table.
+    const pool = {
+      query: vi.fn().mockRejectedValue(
+        new Error('insert or update on table "games" violates foreign key constraint'),
+      ),
+    };
+    const res = await handleCreateGame(
+      { method: 'POST', body: { size: 'medium', bounds: {}, seekerTeams: 0, playerId: 'nonexistent-player' } },
+      pool,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeTruthy();
+    // Crucially the rejection must NOT propagate — the handler must resolve.
+    expect(typeof res.status).toBe('number');
   });
 });
 

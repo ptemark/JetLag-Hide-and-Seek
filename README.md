@@ -53,18 +53,39 @@ npm install
 # 2. Copy the environment template and fill in values
 cp .env.example .env.development
 
-# 3. Start the frontend dev server (Vite, port 5173)
-npm run dev
-
-# 4. Run all tests
+# 3. Run all tests
 npm test
 
-# 5. Production build
+# 4. Production build
 npm run build
 
-# 6. Full local CI (install + test + build)
+# 5. Full local CI (install + test + build)
 npm run ci:local
 ```
+
+### Full local dev startup sequence (frontend + API)
+
+`npm run dev` starts the Vite dev server on port 5173. Its `server.proxy`
+configuration forwards all `/api/*` requests to `http://localhost:3000`, where
+the Vercel function runner must be listening.
+
+Run these two commands in separate terminals:
+
+```bash
+# Terminal 1 — Vercel function runner (serves /api/* on port 3000)
+vercel dev --listen 3000
+
+# Terminal 2 — Vite dev server (serves the React SPA on port 5173)
+npm run dev
+```
+
+Then open `http://localhost:5173` in your browser. API calls from the React app
+will be proxied to the local function runner automatically.
+
+> **Note:** `vercel dev` requires the [Vercel CLI](https://vercel.com/docs/cli)
+> (`npm i -g vercel`) and a linked Vercel project (`vercel link`). For
+> database-backed routes you also need a valid `DATABASE_URL` in your
+> `.env.development` (or `.env.local`) file.
 
 ### Key environment variables
 

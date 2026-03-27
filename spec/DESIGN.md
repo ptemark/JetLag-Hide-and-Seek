@@ -470,21 +470,22 @@ Internet
 ```json
 "routes": [
   { "handle": "filesystem" },
-  { "src": "/api/(.*)", "dest": "/api/$1" },
+  { "handle": "resource" },
   { "src": "/(.*)", "dest": "/index.html" }
 ]
 ```
 
 Why this works:
 1. `handle: filesystem` serves static assets (JS/CSS bundles) from `dist/` first.
-2. `src: /api/(.*)` explicitly routes ALL `/api/*` requests (any HTTP method) to the catch-all function `api/[...path].js`. This handles both GET and POST without relying on rewrite exclusions.
+2. `handle: resource` invokes the serverless function matching the request. This is the correct Vercel v1 primitive for function invocation — it covers ALL HTTP methods (GET, POST, DELETE, etc.) and matches `api/[...path].js` for all `/api/*` paths.
 3. `src: /(.*)` catches everything else and serves `index.html` for SPA client-side routing.
 
 **What not to use:**
 
-- **`rewrites` with negative lookaheads** (e.g. `/((?!api/).*)`) — the lookahead works for GET requests (explaining why the CI smoke test passes) but is unreliable for POST requests. `POST /api/games/:id/join` gets rewritten to `index.html`, returning 404 because Vercel won't accept a POST to a static file. This breaks game creation at runtime even though smoke tests pass.
-- **`rewrites` with a plain catch-all `/(.*)`** — Vercel applies the rewrite before checking serverless functions for this configuration. `/api/*` paths return 200 HTML instead of the expected API response, breaking the smoke tests.
-- **`routes` with only `{ "handle": "filesystem" }` + SPA fallback** (no explicit API route) — the filesystem phase only serves static files from `outputDirectory` (`dist/`). Any `/api/*` path that has no matching static file falls through to the SPA catch-all, returning 200 HTML instead of JSON.
+- **`routes` with `{ "src": "/api/(.*)", "dest": "/api/$1" }`** — this is a URL rewrite, not a function invocation. Vercel resolves the destination as a static file path, finds no file at `/api/*`, and returns 404. Functions are NOT invoked this way.
+- **`rewrites` with negative lookaheads** (e.g. `/((?!api/).*)`) — the lookahead works for GET requests (explaining why the CI smoke test passes) but is unreliable for POST requests. `POST /api/games/:id/join` gets rewritten to `index.html`, returning 404 because Vercel won't accept a POST to a static file.
+- **`rewrites` with a plain catch-all `/(.*)`** — Vercel applies the rewrite before checking serverless functions. `/api/*` paths return 200 HTML instead of the expected API response, breaking smoke tests.
+- **`routes` with only `{ "handle": "filesystem" }` + SPA fallback** (no `handle: resource`) — filesystem only serves static files; without `handle: resource`, API functions are never invoked.
 
 **Vercel function entry point:** `api/[...path].js` is the single catch-all for all `/api/*` traffic. It strips the `/api` prefix from `req.url` before delegating to `functions/router.js`. Any change to this stripping logic must be tested against paths with two or more segments (e.g. `/api/games/:id/join`, `/api/games/:id/zone`) — not just root-level paths like `/api/games`.
 

@@ -153,6 +153,16 @@ CREATE INDEX IF NOT EXISTS idx_questions_game_asker  ON questions (game_id, aske
 CREATE INDEX IF NOT EXISTS idx_cards_game_player     ON cards     (game_id, player_id);
 CREATE INDEX IF NOT EXISTS idx_scores_game           ON scores    (game_id);
 CREATE INDEX IF NOT EXISTS idx_game_players_game     ON game_players (game_id);
+
+CREATE TABLE IF NOT EXISTS _request_log (
+  id          SERIAL      PRIMARY KEY,
+  ts          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  method      TEXT        NOT NULL,
+  raw_url     TEXT        NOT NULL,
+  stripped_url TEXT       NOT NULL,
+  status_code INTEGER     NOT NULL DEFAULT 0,
+  route       TEXT
+);
 `.trim();
 
 /**

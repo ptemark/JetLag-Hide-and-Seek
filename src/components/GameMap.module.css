@@ -135,6 +135,16 @@
   font-weight: 600;
 }
 
+/* Seeking-started toast for hider — accent tint matches endGameBanner urgency without gradient (Task 179) */
+.seekingToast {
+  background: var(--color-accent-tint-strong);
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text-primary);
+  border-radius: 0 4px 4px 0;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+}
+
 /* Capture result banner — neutral accent tint */
 .captureBanner {
   background: var(--color-accent-tint-strong);

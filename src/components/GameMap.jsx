@@ -31,6 +31,8 @@ const MAX_RECONNECT_ATTEMPTS = 6; // 1 s, 2 s, 4 s, 8 s, 16 s, 30 s
 const SPOT_ON_TRANSIT_LABEL = 'Board off transit to spot';
 // Duration (ms) that the card-drawn toast is visible before auto-dismissing (Task 168).
 const CARD_TOAST_DURATION_MS = 4_000;
+// Duration (ms) that the seeking-started toast is visible before auto-dismissing (Task 179).
+const SEEKING_TOAST_DURATION_MS = 5_000;
 
 /**
  * Compute the centre {lat, lng} of a bounds object.
@@ -110,6 +112,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [movementLocked, setMovementLocked] = useState(false); // server blocked hider movement (End Game)
   const [cardRefresh, setCardRefresh] = useState(0);          // increments on card_drawn WS event for this player
   const [drawnCardToast, setDrawnCardToast] = useState(null); // { type, label, description } | null — hider card-drawn toast
+  const [seekingStartedToast, setSeekingStartedToast] = useState(false); // true for SEEKING_TOAST_DURATION_MS after hiding→seeking transition (Task 179)
   const [locationRejected, setLocationRejected] = useState(false); // server rejected location as out of bounds
   const [availableZones, setAvailableZones] = useState([]);        // transit stations fetched from /api/zones
   const [zonesError, setZonesError] = useState(null);              // error fetching transit zones
@@ -170,6 +173,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     const id = setTimeout(() => setDrawnCardToast(null), CARD_TOAST_DURATION_MS);
     return () => clearTimeout(id);
   }, [drawnCardToast]);
+
+  // ── Auto-dismiss seeking-started toast after SEEKING_TOAST_DURATION_MS (Task 179) ──
+  useEffect(() => {
+    if (!seekingStartedToast) return;
+    const id = setTimeout(() => setSeekingStartedToast(false), SEEKING_TOAST_DURATION_MS);
+    return () => clearTimeout(id);
+  }, [seekingStartedToast]);
 
   // ── Update player markers when players state changes ───────────────────────
   useEffect(() => {
@@ -356,6 +366,10 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
         setOutOfZone(false);              // zone warnings reset on phase transition
         setHiderOutOfZone(false);
         setMovementLocked(false);
+        setSeekingStartedToast(false);    // reset before potentially setting below
+        if (msg.newPhase === 'seeking') {
+          setSeekingStartedToast(true);
+        }
         if (msg.newPhase === 'hiding') {
           endGameActiveRef.current = false;
           setEndGameActive(false);
@@ -624,6 +638,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       {drawnCardToast !== null && player.role === 'hider' && (
         <p role="status" data-testid="card-drawn-toast" className={styles.infoBanner}>
           New card: {drawnCardToast.label} — {drawnCardToast.description}
+        </p>
+      )}
+
+      {seekingStartedToast && player.role === 'hider' && (
+        <p role="alert" data-testid="seeking-started-toast" className={styles.seekingToast}>
+          Seeking has begun — stay in your zone!
         </p>
       )}
 

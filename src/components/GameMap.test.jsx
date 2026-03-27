@@ -159,7 +159,7 @@ describe('GameMap', () => {
         data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
       });
     });
-    expect(screen.getByText(/seeking/i)).toBeInTheDocument();
+    expect(screen.getByText('seeking')).toBeInTheDocument();
   });
 
   it('shows seekers win alert on capture message', async () => {
@@ -1683,7 +1683,7 @@ describe('GameMap', () => {
       });
     });
     // The phase display should now show 'seeking'.
-    expect(screen.getByText(/seeking/i)).toBeInTheDocument();
+    expect(screen.getByText('seeking')).toBeInTheDocument();
   });
 
   it('ZoneSelector renders for hider after phase_change to hiding', async () => {
@@ -2146,5 +2146,81 @@ describe('SeekerNotes (Task 170)', () => {
     await act(async () => { MockWebSocket.last.onopen?.(); });
 
     expect(screen.queryByTestId('seeker-notes-stub')).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Seeking-started toast (Task 179)
+// ---------------------------------------------------------------------------
+describe('seeking-started toast (Task 179)', () => {
+  beforeEach(() => {
+    MockWebSocket.last = null;
+    global.navigator.geolocation = { getCurrentPosition: vi.fn() };
+    // Re-establish mocks cleared by vi.restoreAllMocks() in afterEach.
+    mockL.map.mockReturnValue(mockMap);
+    mockMap.setView.mockReturnValue(mockMap);
+    mockMarker.bindTooltip.mockReturnThis();
+    mockMarker.addTo.mockReturnThis();
+    mockPolyline.addTo.mockReturnThis();
+    mockL.tileLayer.mockReturnValue(mockTileLayer);
+    mockL.rectangle.mockReturnValue(mockRectangle);
+    mockL.circle.mockReturnValue(mockCircle);
+    mockL.circleMarker.mockReturnValue(mockMarker);
+    mockL.polyline.mockReturnValue(mockPolyline);
+    api.listQuestions.mockResolvedValue({ questions: [] });
+    api.fetchCards.mockResolvedValue({ hand: [] });
+    api.submitScore.mockResolvedValue({});
+    api.listZones.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  // (a) Toast absent initially.
+  it('(a) seeking-started toast is not present on initial render', () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('seeking-started-toast')).not.toBeInTheDocument();
+  });
+
+  // (b) Toast appears for hider after phase_change → seeking.
+  it('(b) seeking-started toast appears for hider on phase_change to seeking', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+    });
+    expect(screen.getByTestId('seeking-started-toast')).toBeInTheDocument();
+    expect(screen.getByTestId('seeking-started-toast')).toHaveTextContent('Seeking has begun');
+  });
+
+  // (c) Toast does not appear for seeker.
+  it('(c) seeking-started toast does not appear for seeker', async () => {
+    const seeker = { playerId: 's1', name: 'Bob', role: 'seeker' };
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+    });
+    expect(screen.queryByTestId('seeking-started-toast')).not.toBeInTheDocument();
+  });
+
+  // (d) Toast auto-dismisses after SEEKING_TOAST_DURATION_MS.
+  it('(d) seeking-started toast auto-dismisses after SEEKING_TOAST_DURATION_MS', async () => {
+    vi.useFakeTimers();
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+    });
+    expect(screen.getByTestId('seeking-started-toast')).toBeInTheDocument();
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.queryByTestId('seeking-started-toast')).not.toBeInTheDocument();
   });
 });

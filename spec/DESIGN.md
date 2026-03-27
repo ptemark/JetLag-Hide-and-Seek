@@ -465,20 +465,22 @@ Internet
 
 ### Vercel Routing Rules (non-negotiable)
 
-Vercel uses **`path-to-regexp`** for route matching — not a full regex engine. Negative lookaheads (`(?!...)`) and other advanced regex constructs are **not reliably supported** and must never appear in `vercel.json`.
+Vercel evaluates **`rewrites` after serverless functions**. A catch-all rewrite will never intercept `/api/*` requests — the function `api/[...path].js` always takes priority.
 
 **The only permitted `vercel.json` routing configuration is:**
 
 ```json
-"routes": [
-  { "handle": "filesystem" },
-  { "src": "/(.*)", "dest": "/index.html" }
+"rewrites": [
+  { "source": "/(.*)", "destination": "/index.html" }
 ]
 ```
 
-`{ "handle": "filesystem" }` instructs Vercel to resolve static files and serverless functions first. Any path not matched by a file or function falls through to the SPA `index.html` catchall. This guarantees all `/api/*` requests reach `api/[...path].js` regardless of path depth.
+This routes all SPA paths to `index.html` for client-side routing, while all `/api/*` paths continue to reach `api/[...path].js` unchanged because Vercel routes functions before applying rewrites.
 
-**Never use `rewrites` with regex lookaheads to exclude API paths** (e.g. `/((?!api/).*)` ). This pattern appears to work for shallow paths like `/api/games` but silently misfires on deeper paths like `/api/games/:id/join`, causing those requests to receive an HTML response instead of JSON from the function. The frontend then fails to parse the body, `body?.error` is null, and the error surfaces as a misleading fallback message (e.g. `"joinGame failed: 404"`) rather than a real API error.
+**What not to use:**
+
+- **`routes` with `{ "handle": "filesystem" }`** — the filesystem phase only serves files from `outputDirectory` (`dist/`). It does NOT route to serverless functions in `api/`. Any `/api/*` path that has no matching static file falls through to the SPA catch-all, returning 200 HTML instead of the expected JSON response. This breaks the smoke tests (admin returns 200 instead of 401/503; unknown route returns 200 instead of 404).
+- **`rewrites` with negative lookaheads** (e.g. `/((?!api/).*)`) — Vercel's `path-to-regexp` does not reliably support lookaheads and may silently ignore the lookahead, treating the pattern as `/(.*)`  and rewriting all paths including `/api/*`.
 
 **Vercel function entry point:** `api/[...path].js` is the single catch-all for all `/api/*` traffic. It strips the `/api` prefix from `req.url` before delegating to `functions/router.js`. Any change to this stripping logic must be tested against paths with two or more segments (e.g. `/api/games/:id/join`, `/api/games/:id/zone`) — not just root-level paths like `/api/games`.
 

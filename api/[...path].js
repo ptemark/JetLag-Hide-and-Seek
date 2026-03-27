@@ -58,11 +58,13 @@ export default async function handler(req, res) {
   // Intercept writeHead to capture the status code for logging.
   let statusCode = 200;
   let matchedRoute = null;
-  const origWriteHead = res.writeHead.bind(res);
-  res.writeHead = (code, headers) => {
-    statusCode = code;
-    return origWriteHead(code, headers);
-  };
+  if (typeof res.writeHead === 'function') {
+    const origWriteHead = res.writeHead.bind(res);
+    res.writeHead = (code, headers) => {
+      statusCode = code;
+      return origWriteHead(code, headers);
+    };
+  }
 
   console.log(`[api] ${req.method} raw=${rawUrl} stripped=${strippedUrl}`);
 

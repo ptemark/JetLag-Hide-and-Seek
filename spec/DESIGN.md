@@ -465,22 +465,20 @@ Internet
 
 ### Vercel Routing Rules (non-negotiable)
 
-Vercel evaluates **`rewrites` after serverless functions**. A catch-all rewrite will never intercept `/api/*` requests — the function `api/[...path].js` always takes priority.
-
 **The only permitted `vercel.json` routing configuration is:**
 
 ```json
 "rewrites": [
-  { "source": "/(.*)", "destination": "/index.html" }
+  { "source": "/((?!api/).*)", "destination": "/index.html" }
 ]
 ```
 
-This routes all SPA paths to `index.html` for client-side routing, while all `/api/*` paths continue to reach `api/[...path].js` unchanged because Vercel routes functions before applying rewrites.
+This routes all non-API SPA paths to `index.html` for client-side routing. The negative lookahead `(?!api/)` prevents the rewrite from matching `/api/*` paths, which continue to reach `api/[...path].js` unchanged.
 
 **What not to use:**
 
-- **`routes` with `{ "handle": "filesystem" }`** — the filesystem phase only serves files from `outputDirectory` (`dist/`). It does NOT route to serverless functions in `api/`. Any `/api/*` path that has no matching static file falls through to the SPA catch-all, returning 200 HTML instead of the expected JSON response. This breaks the smoke tests (admin returns 200 instead of 401/503; unknown route returns 200 instead of 404).
-- **`rewrites` with negative lookaheads** (e.g. `/((?!api/).*)`) — Vercel's `path-to-regexp` does not reliably support lookaheads and may silently ignore the lookahead, treating the pattern as `/(.*)`  and rewriting all paths including `/api/*`.
+- **`rewrites` with a plain catch-all `/(.*)`** — despite Vercel documenting that rewrites are applied after serverless functions, in practice this configuration causes `/api/*` paths to return 200 HTML (the SPA) instead of the expected API response. This breaks the smoke tests.
+- **`routes` with `{ "handle": "filesystem" }`** — the filesystem phase only serves static files from `outputDirectory` (`dist/`). It does NOT route to serverless functions in `api/`. Any `/api/*` path that has no matching static file falls through to the SPA catch-all, returning 200 HTML instead of the expected JSON response. This breaks the smoke tests (admin returns 200 instead of 401/503; unknown route returns 200 instead of 404).
 
 **Vercel function entry point:** `api/[...path].js` is the single catch-all for all `/api/*` traffic. It strips the `/api` prefix from `req.url` before delegating to `functions/router.js`. Any change to this stripping logic must be tested against paths with two or more segments (e.g. `/api/games/:id/join`, `/api/games/:id/zone`) — not just root-level paths like `/api/games`.
 

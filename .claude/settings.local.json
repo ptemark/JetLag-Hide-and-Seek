@@ -13,7 +13,21 @@
       "Bash(cat api/[...path].js)",
       "Bash(sed -n '255,262p' spec/TASKS.md)",
       "Bash(sed -n '563,570p' spec/TASKS.md)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(npm test:*)",
+      "Bash(cmd /c \"npm test 2>&1\")",
+      "Read(//c/Program Files/nodejs/**)",
+      "Read(//c/Program Files//**)",
+      "Bash(gh run:*)",
+      "Bash(export 'PATH=/c/Program Files/nodejs:$PATH')",
+      "Bash(where gh:*)",
+      "Read(//c/Users/Peter/**)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(gh api:*)",
+      "Bash(npm run:*)",
+      "Bash(npx vitest:*)",
+      "Bash(cd:*)"
     ]
   }
 }

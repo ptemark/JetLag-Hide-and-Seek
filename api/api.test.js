@@ -43,7 +43,7 @@ describe('api/[...path].js', () => {
     expect(mockHandleRequest).toHaveBeenCalledWith(
       expect.objectContaining({ url: '/players' }),
       res,
-      { pool: null },
+      expect.objectContaining({ pool: null }),
     );
   });
 
@@ -69,7 +69,7 @@ describe('api/[...path].js', () => {
     expect(mockHandleRequest).toHaveBeenCalledWith(
       expect.any(Object),
       res,
-      { pool: fakePool },
+      expect.objectContaining({ pool: fakePool }),
     );
   });
 

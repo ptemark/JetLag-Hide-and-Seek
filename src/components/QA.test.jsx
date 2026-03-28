@@ -770,8 +770,9 @@ describe('AnswerPanel', () => {
     const q = { ...QUESTION, expiresAt };
     api.listQuestions.mockResolvedValue({ playerId: 'p2', questions: [q] });
     render(<AnswerPanel player={HIDER} game={GAME} />);
-    await waitFor(() => screen.getByLabelText(/your answer/i));
-    expect(screen.getByText(/answer by:/i)).toBeInTheDocument();
+    // Wait for the countdown effect to fire (tick() runs immediately after questions load,
+    // but the second render cycle must complete before "Answer by:" appears in the DOM).
+    await waitFor(() => expect(screen.getByText(/answer by:/i)).toBeInTheDocument());
   });
 
   it('does not render "Answer by:" when a pending question has no expiresAt', async () => {

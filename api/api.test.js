@@ -50,7 +50,7 @@ describe('api/[...path].js', () => {
   it('creates pool and calls createTables when DATABASE_URL is set', async () => {
     process.env.DATABASE_URL = 'postgresql://localhost/test';
 
-    const fakePool = { fake: 'pool' };
+    const fakePool = { fake: 'pool', query: vi.fn().mockResolvedValue({ rows: [] }) };
     const mockCreatePool = vi.fn().mockReturnValue(fakePool);
     const mockCreateTables = vi.fn().mockResolvedValue(undefined);
     const mockHandleRequest = vi.fn().mockResolvedValue(undefined);
@@ -76,7 +76,7 @@ describe('api/[...path].js', () => {
   it('reuses the same pool across multiple invocations (warm start)', async () => {
     process.env.DATABASE_URL = 'postgresql://localhost/test';
 
-    const mockCreatePool = vi.fn().mockReturnValue({ fake: 'pool' });
+    const mockCreatePool = vi.fn().mockReturnValue({ fake: 'pool', query: vi.fn().mockResolvedValue({ rows: [] }) });
     const mockCreateTables = vi.fn().mockResolvedValue(undefined);
     const mockHandleRequest = vi.fn().mockResolvedValue(undefined);
 

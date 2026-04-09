@@ -125,11 +125,18 @@ export async function handleCreateGame(req, pool = null) {
 
   const { size = 'medium', bounds = {}, seekerTeams = 0, playerId = null } = req.body ?? {};
 
+  if (!VALID_SIZES.includes(size)) {
+    return { status: 400, body: { error: `size must be one of: ${VALID_SIZES.join(', ')}` } };
+  }
+  if (seekerTeams !== 0 && seekerTeams !== 2) {
+    return { status: 400, body: { error: 'seekerTeams must be 0 (disabled) or 2' } };
+  }
+
   try {
     const game = await createGame({ size, bounds, seekerTeams, hostPlayerId: playerId }, pool);
     return { status: 201, body: game };
-  } catch (err) {
-    return { status: 400, body: { error: err.message } };
+  } catch {
+    return { status: 500, body: { error: 'Internal Server Error' } };
   }
 }
 

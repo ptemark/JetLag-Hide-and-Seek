@@ -49,23 +49,6 @@ import { lockHiderZone } from './gameZone.js';
 import { defaultLimiter } from './rateLimiter.js';
 
 /**
- * GET /__logs — return the 50 most-recent request log entries for debugging.
- * Purges entries older than 24 hours to keep the table small.
- */
-async function getRequestLogs(req, pool) {
-  if (!pool) {
-    return { status: 200, body: { logs: [], note: 'no database pool — logging unavailable' } };
-  }
-  // Purge old entries (fire and forget)
-  pool.query(`DELETE FROM _request_log WHERE ts < NOW() - INTERVAL '24 hours'`).catch(() => {});
-  const result = await pool.query(
-    `SELECT id, ts, method, raw_url, stripped_url, status_code, route
-     FROM _request_log ORDER BY id DESC LIMIT 50`,
-  );
-  return { status: 200, body: { logs: result.rows } };
-}
-
-/**
  * Parse the JSON request body from an http.IncomingMessage.
  *
  * @param {import('node:http').IncomingMessage} httpReq
@@ -96,7 +79,6 @@ const BODYLESS_METHODS = new Set(['GET', 'DELETE', 'HEAD', 'OPTIONS']);
  * pattern is a regex; named groups become req.params.
  */
 const ROUTES = [
-  { method: 'GET',    pattern: /^\/__logs$/, handler: getRequestLogs },
   { method: 'POST',   pattern: /^\/players$/, handler: registerPlayer },
   { method: 'POST',   pattern: /^\/games$/, handler: handleCreateGame },
   { method: 'GET',    pattern: /^\/games\/(?<id>[^/]+)$/, handler: getGame },
@@ -149,13 +131,10 @@ function clientKey(httpReq) {
  *   Rate-limiter instance.  Defaults to the shared defaultLimiter.
  * @param {import('pg').Pool|null} [opts.pool]
  *   Database pool passed through to every route handler as the second argument.
- * @param {((route: string) => void)|undefined} [opts.onRouteMatched]
- *   Called with the matched route pattern string (or 'no_match') for logging.
  */
 export async function handleRequest(httpReq, httpRes, opts = {}) {
   const limiter = opts.limiter ?? defaultLimiter;
   const pool = opts.pool ?? null;
-  const onRouteMatched = opts.onRouteMatched ?? null;
 
   // --- Rate limiting ---
   const key = clientKey(httpReq);
@@ -195,7 +174,6 @@ export async function handleRequest(httpReq, httpRes, opts = {}) {
   for (const route of ROUTES) {
     const match = urlPath.match(route.pattern);
     if (match && method === route.method) {
-      onRouteMatched?.(route.pattern.toString());
       const req = { method, path: urlPath, params: match.groups ?? {}, query, body, headers: httpReq.headers ?? {} };
       let result;
       try {
@@ -216,7 +194,6 @@ export async function handleRequest(httpReq, httpRes, opts = {}) {
   const statusCode = pathExists ? 405 : 404;
   const errorMsg = pathExists ? 'Method Not Allowed' : 'Not Found';
 
-  onRouteMatched?.('no_match');
   httpRes.writeHead(statusCode, { 'Content-Type': 'application/json' });
   httpRes.end(JSON.stringify({ error: errorMsg }));
 }

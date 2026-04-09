@@ -619,19 +619,18 @@ describe('handleCreateGame (with pool)', () => {
 
   // Task 174 — async error handling gap: dbCreateGame rejections must be caught
   // and returned as a structured response instead of propagating to the router.
-  it('returns 400 when dbCreateGame rejects (e.g. FK violation or DB cold start)', async () => {
-    // Pool.query resolves validation but rejects on INSERT — simulates a FK
-    // constraint failure when host_player_id is not yet in the players table.
+  it('returns 500 when dbCreateGame rejects (e.g. DB cold start or transient error)', async () => {
+    // Pool.query rejects on INSERT — simulates a transient DB error.
     const pool = {
       query: vi.fn().mockRejectedValue(
-        new Error('insert or update on table "games" violates foreign key constraint'),
+        new Error('connection timeout'),
       ),
     };
     const res = await handleCreateGame(
-      { method: 'POST', body: { size: 'medium', bounds: {}, seekerTeams: 0, playerId: 'nonexistent-player' } },
+      { method: 'POST', body: { size: 'medium', bounds: {}, seekerTeams: 0, playerId: 'some-player' } },
       pool,
     );
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(500);
     expect(res.body.error).toBeTruthy();
     // Crucially the rejection must NOT propagate — the handler must resolve.
     expect(typeof res.status).toBe('number');

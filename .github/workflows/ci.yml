@@ -45,10 +45,50 @@ jobs:
           path: dist/
           retention-days: 1
 
-  # ── 2. Deploy staging serverless (Vercel preview) ─────────────────────────
+  # ── 2. Integration tests (DB-backed) ──────────────────────────────────────
+  integration-test:
+    name: Integration tests
+    needs: test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: jetlag
+          POSTGRES_PASSWORD: jetlag
+          POSTGRES_DB: jetlag_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          DATABASE_URL: postgresql://jetlag:jetlag@localhost:5432/jetlag_test
+          GAME_SERVER_URL: ''
+          ADMIN_API_KEY: ''
+
+  # ── 3. Deploy staging serverless (Vercel preview) ─────────────────────────
   deploy-staging-serverless:
     name: Deploy staging serverless (Vercel preview)
-    needs: test
+    needs: [test, integration-test]
     runs-on: ubuntu-latest
     outputs:
       staging_url: ${{ steps.deploy.outputs.staging_url }}
@@ -109,10 +149,10 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-  # ── 3. Deploy staging managed game server (Docker → GHCR) ─────────────────
+  # ── 4. Deploy staging managed game server (Docker → GHCR) ─────────────────
   deploy-staging-server:
     name: Deploy staging managed game server
-    needs: test
+    needs: [test, integration-test]
     runs-on: ubuntu-latest
 
     permissions:
@@ -158,7 +198,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"image\":\"${IMAGE}:staging\"}"
 
-  # ── 4. Smoke-test staging ──────────────────────────────────────────────────
+  # ── 5. Smoke-test staging ──────────────────────────────────────────────────
   smoke-test:
     name: Smoke-test staging
     needs: [deploy-staging-serverless, deploy-staging-server]
@@ -185,7 +225,7 @@ jobs:
           SMOKE_TEST_URL: ${{ needs.deploy-staging-serverless.outputs.staging_url }}
           STAGING_GAME_SERVER_URL: ${{ secrets.STAGING_GAME_SERVER_URL }}
 
-  # ── 5. Deploy serverless (Vercel production) ───────────────────────────────
+  # ── 6. Deploy serverless (Vercel production) ───────────────────────────────
   # Production deploys only run on pushes to main AND only after staging
   # smoke tests pass, ensuring every production release is validated.
   deploy-serverless:
@@ -224,7 +264,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-  # ── 6. Deploy managed game server (Docker → GHCR production) ──────────────
+  # ── 7. Deploy managed game server (Docker → GHCR production) ──────────────
   deploy-server:
     name: Deploy managed game server (production)
     needs: smoke-test

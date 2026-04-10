@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke": "node scripts/smoke.js",
-    "ci:local": "npm ci && npm test && npm run build"
+    "test:integration": "vitest run --config vitest.integration.config.js --passWithNoTests",
+    "ci:local": "npm ci && npm test && npm run test:integration && npm run build"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

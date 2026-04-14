@@ -192,8 +192,20 @@ describe('createPool', () => {
     expect(config.connectionString).toBe('postgresql://user:pass@host/db');
   });
 
-  it('enables SSL with rejectUnauthorized false', () => {
+  it('disables SSL when sslmode is not in the connection string', () => {
     createPool('postgresql://user:pass@host/db');
+    const [config] = Pool.mock.calls[0];
+    expect(config.ssl).toBe(false);
+  });
+
+  it('enables SSL with rejectUnauthorized false when sslmode=require', () => {
+    createPool('postgresql://user:pass@host/db?sslmode=require');
+    const [config] = Pool.mock.calls[0];
+    expect(config.ssl).toEqual({ rejectUnauthorized: false });
+  });
+
+  it('enables SSL with rejectUnauthorized false when sslmode=prefer', () => {
+    createPool('postgresql://user:pass@host/db?sslmode=prefer');
     const [config] = Pool.mock.calls[0];
     expect(config.ssl).toEqual({ rejectUnauthorized: false });
   });

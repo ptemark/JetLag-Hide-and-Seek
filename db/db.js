@@ -176,9 +176,17 @@ function createPool(connectionString) {
   if (!connectionString) {
     throw new Error('createPool: connectionString is required');
   }
+  // Enable SSL only when the connection string explicitly requests it.
+  // Hosted providers (Neon, Supabase) use ?sslmode=require; local and CI
+  // Postgres instances typically have SSL disabled.
+  const url = new URL(connectionString);
+  const sslMode = url.searchParams.get('sslmode');
+  const ssl = (sslMode === 'require' || sslMode === 'prefer')
+    ? { rejectUnauthorized: false }
+    : false;
   return new Pool({
     connectionString,
-    ssl: { rejectUnauthorized: false },
+    ssl,
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,

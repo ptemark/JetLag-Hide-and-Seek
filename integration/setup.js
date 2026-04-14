@@ -24,6 +24,7 @@ export async function setup() {
  * @param {import('pg').Pool} pool
  */
 export async function teardown(pool) {
+  if (!pool) return;
   await pool.query('TRUNCATE games, players CASCADE');
   await pool.end();
 }

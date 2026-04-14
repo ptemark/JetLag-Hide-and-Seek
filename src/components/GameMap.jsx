@@ -33,6 +33,8 @@ const SPOT_ON_TRANSIT_LABEL = 'Board off transit to spot';
 const CARD_TOAST_DURATION_MS = 4_000;
 // Duration (ms) that the seeking-started toast is visible before auto-dismissing (Task 179).
 const SEEKING_TOAST_DURATION_MS = 5_000;
+// Duration (ms) that the question-expired toast is visible before auto-dismissing (Task 180).
+const QUESTION_EXPIRED_TOAST_MS = 4_000;
 
 /**
  * Compute the centre {lat, lng} of a bounds object.
@@ -113,6 +115,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [cardRefresh, setCardRefresh] = useState(0);          // increments on card_drawn WS event for this player
   const [drawnCardToast, setDrawnCardToast] = useState(null); // { type, label, description } | null — hider card-drawn toast
   const [seekingStartedToast, setSeekingStartedToast] = useState(false); // true for SEEKING_TOAST_DURATION_MS after hiding→seeking transition (Task 179)
+  const [questionExpiredToast, setQuestionExpiredToast] = useState(false); // true for QUESTION_EXPIRED_TOAST_MS after question_expired WS event (Task 180)
   const [locationRejected, setLocationRejected] = useState(false); // server rejected location as out of bounds
   const [availableZones, setAvailableZones] = useState([]);        // transit stations fetched from /api/zones
   const [zonesError, setZonesError] = useState(null);              // error fetching transit zones
@@ -180,6 +183,13 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     const id = setTimeout(() => setSeekingStartedToast(false), SEEKING_TOAST_DURATION_MS);
     return () => clearTimeout(id);
   }, [seekingStartedToast]);
+
+  // ── Auto-dismiss question-expired toast after QUESTION_EXPIRED_TOAST_MS (Task 180) ──
+  useEffect(() => {
+    if (!questionExpiredToast) return;
+    const id = setTimeout(() => setQuestionExpiredToast(false), QUESTION_EXPIRED_TOAST_MS);
+    return () => clearTimeout(id);
+  }, [questionExpiredToast]);
 
   // ── Update player markers when players state changes ───────────────────────
   useEffect(() => {
@@ -405,6 +415,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       } else if (msg.type === 'question_expired') {
         setPendingQuestionExpiresAt(null);
         setQaRefresh((n) => n + 1);
+        setQuestionExpiredToast(true);
       } else if (msg.type === 'zone_locked') {
         setLockedZone(msg.zone ?? null);
       } else if (msg.type === 'player_transit') {
@@ -644,6 +655,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
       {seekingStartedToast && player.role === 'hider' && (
         <p role="alert" data-testid="seeking-started-toast" className={styles.seekingToast}>
           Seeking has begun — stay in your zone!
+        </p>
+      )}
+
+      {questionExpiredToast && player.role === 'seeker' && (
+        <p role="status" data-testid="question-expired-toast" className={styles.infoBanner}>
+          Your question expired — ask another
         </p>
       )}
 

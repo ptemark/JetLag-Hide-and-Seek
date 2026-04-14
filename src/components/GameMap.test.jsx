@@ -2224,3 +2224,82 @@ describe('seeking-started toast (Task 179)', () => {
     expect(screen.queryByTestId('seeking-started-toast')).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Question-expired toast (Task 180)
+// ---------------------------------------------------------------------------
+describe('question-expired toast (Task 180)', () => {
+  const seeker = { playerId: 's1', name: 'Bob', role: 'seeker' };
+  const hider = { playerId: 'h1', name: 'Alice', role: 'hider' };
+  const game = { gameId: 'g1', size: 'small', bounds: { lat_min: 1, lat_max: 2, lon_min: 1, lon_max: 2 } };
+  const serverUrl = 'ws://localhost:3001';
+
+  beforeEach(() => {
+    MockWebSocket.last = null;
+    global.navigator.geolocation = { getCurrentPosition: vi.fn() };
+    mockL.map.mockReturnValue(mockMap);
+    mockMap.setView.mockReturnValue(mockMap);
+    mockMarker.bindTooltip.mockReturnThis();
+    mockMarker.addTo.mockReturnThis();
+    mockPolyline.addTo.mockReturnThis();
+    mockL.tileLayer.mockReturnValue(mockTileLayer);
+    mockL.rectangle.mockReturnValue(mockRectangle);
+    mockL.circle.mockReturnValue(mockCircle);
+    mockL.circleMarker.mockReturnValue(mockMarker);
+    mockL.polyline.mockReturnValue(mockPolyline);
+    api.listQuestions.mockResolvedValue({ questions: [] });
+    api.fetchCards.mockResolvedValue({ hand: [] });
+    api.submitScore.mockResolvedValue({});
+    api.listZones.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  // (a) Toast absent initially.
+  it('(a) question-expired toast is not present on initial render', () => {
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.queryByTestId('question-expired-toast')).not.toBeInTheDocument();
+  });
+
+  // (b) Toast appears for seeker after question_expired WS event.
+  it('(b) question-expired toast appears for seeker after question_expired event', async () => {
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_expired', questionId: 'q1' }),
+      });
+    });
+    expect(screen.getByTestId('question-expired-toast')).toBeInTheDocument();
+    expect(screen.getByTestId('question-expired-toast')).toHaveTextContent('Your question expired — ask another');
+  });
+
+  // (c) Toast does not appear for hider.
+  it('(c) question-expired toast does not appear for hider', async () => {
+    render(<GameMap player={hider} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_expired', questionId: 'q1' }),
+      });
+    });
+    expect(screen.queryByTestId('question-expired-toast')).not.toBeInTheDocument();
+  });
+
+  // (d) Toast auto-dismisses after QUESTION_EXPIRED_TOAST_MS.
+  it('(d) question-expired toast auto-dismisses after QUESTION_EXPIRED_TOAST_MS', async () => {
+    vi.useFakeTimers();
+    render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'question_expired', questionId: 'q1' }),
+      });
+    });
+    expect(screen.getByTestId('question-expired-toast')).toBeInTheDocument();
+    await act(async () => {
+      vi.advanceTimersByTime(4000);
+    });
+    expect(screen.queryByTestId('question-expired-toast')).not.toBeInTheDocument();
+  });
+});

@@ -20,6 +20,6 @@ export default defineConfig({
     // smoke.test.js imports scripts/smoke.js which has a #!/usr/bin/env node
     // shebang that Vitest cannot parse. Smoke tests run separately via
     // `npm run smoke` against a live deployment URL, not during unit test runs.
-    exclude: ['**/node_modules/**', 'scripts/smoke.test.js'],
+    exclude: ['**/node_modules/**', 'scripts/smoke.test.js', 'integration/**'],
   },
 });

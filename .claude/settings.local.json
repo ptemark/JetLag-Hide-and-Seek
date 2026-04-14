@@ -27,7 +27,19 @@
       "Bash(gh api:*)",
       "Bash(npm run:*)",
       "Bash(npx vitest:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(git checkout:*)",
+      "Bash(git restore:*)",
+      "Bash(vercel --version)",
+      "Bash(STAGING_URL=\"https://jet-lag-hide-and-seek-iota.vercel.app\")",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\" \"$STAGING_URL/api/admin\")",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\" -X POST \"$STAGING_URL/api/games/test-uuid/join\" -H \"Content-Type: application/json\" -d '{\"\"playerId\"\":\"\"p1\"\",\"\"role\"\":\"\"hider\"\"}')",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\" -X POST \"$STAGING_URL/api/games\" -H \"Content-Type: application/json\" -d '{\"\"size\"\":\"\"small\"\",\"\"bounds\"\":{}}')",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"$STAGING_URL/api/games/test-id\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST \"$STAGING_URL/api/games/test-id/join\" -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST \"$STAGING_URL/api/games/test-id/start\" -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"$STAGING_URL/api/live/test-id\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"$STAGING_URL/api/zones?bounds=0,0,1,1&scale=small\")"
     ]
   }
 }

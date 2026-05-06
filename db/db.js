@@ -131,6 +131,13 @@ CREATE TABLE IF NOT EXISTS game_zones (
   locked_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS game_ready_players (
+  game_id          UUID        NOT NULL REFERENCES games(id)   ON DELETE CASCADE,
+  player_id        UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  marked_ready_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (game_id, player_id)
+);
+
 CREATE TABLE IF NOT EXISTS question_photos (
   id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   question_id  UUID        NOT NULL UNIQUE REFERENCES questions(id) ON DELETE CASCADE,

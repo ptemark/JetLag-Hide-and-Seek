@@ -165,6 +165,21 @@ CREATE TABLE IF NOT EXISTS game_zones (
 );
 
 -- -------------------------------------------------------------------------
+-- game_ready_players (Task 192)
+-- Tracks which players have tapped the Ready button in the WaitingRoom.
+-- DB-backed because serverless Lambda invocations don't share in-process Maps;
+-- without persistence the lobby ready counter always showed 0/0 in production.
+-- ON DELETE CASCADE on both FKs means TRUNCATE games or DELETE FROM players
+-- automatically removes orphan ready rows.
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS game_ready_players (
+  game_id          UUID        NOT NULL REFERENCES games(id)   ON DELETE CASCADE,
+  player_id        UUID        NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  marked_ready_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (game_id, player_id)
+);
+
+-- -------------------------------------------------------------------------
 -- question_photos
 -- Optional photo uploaded by the hider for a photo-category question.
 -- One photo per question (enforced by unique constraint).

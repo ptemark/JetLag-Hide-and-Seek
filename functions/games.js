@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbGetGameZone, dbCleanupStaleGames, dbJoinGame } from '../db/gameStore.js';
+import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbGetGameZone, dbCleanupStaleGames, dbJoinGame, dbSetReady, dbGetReadyCounts } from '../db/gameStore.js';
 import { checkAdminAuth } from './auth.js';
 import { SCALE_DURATION_RANGES } from '../config/gameRules.js';
 export { SCALE_DURATION_RANGES };
@@ -355,14 +355,25 @@ export function _clearGamePlayers() {
  * POST /games/:gameId/ready  { playerId, ready: boolean }
  *   → { readyCount: number, totalCount: number }
  *
+ * When a pg pool is provided the ready state is persisted to the
+ * `game_ready_players` table (Task 192) so it survives serverless cold
+ * starts and is consistent across Lambda instances.  Without a pool the
+ * in-process Map is used (tests / local dev).
+ *
  * @param {{ params: { gameId: string }, body: { playerId?: string, ready?: boolean } }} req
  * @param {import('pg').Pool|null} [pool]
  */
-export function markReady(req, pool = null) {
+export async function markReady(req, pool = null) {
   const { gameId } = req.params ?? {};
   const { playerId, ready = true } = req.body ?? {};
   if (!gameId)   return { status: 400, body: { error: 'gameId is required' } };
   if (!playerId) return { status: 400, body: { error: 'playerId is required' } };
+
+  if (pool) {
+    await dbSetReady(pool, { gameId, playerId, ready: !!ready });
+    const counts = await dbGetReadyCounts(pool, gameId);
+    return { status: 200, body: counts };
+  }
 
   if (!_readyPlayers.has(gameId)) _readyPlayers.set(gameId, new Set());
   const readySet = _readyPlayers.get(gameId);
@@ -386,9 +397,14 @@ export function markReady(req, pool = null) {
  * @param {{ params: { gameId: string } }} req
  * @param {import('pg').Pool|null} [pool]
  */
-export function getReadyStatus(req, pool = null) {
+export async function getReadyStatus(req, pool = null) {
   const { gameId } = req.params ?? {};
   if (!gameId) return { status: 400, body: { error: 'gameId is required' } };
+
+  if (pool) {
+    const counts = await dbGetReadyCounts(pool, gameId);
+    return { status: 200, body: counts };
+  }
 
   const readyCount = _readyPlayers.get(gameId)?.size ?? 0;
   const totalCount = _gamePlayers.get(gameId)?.size ?? 0;

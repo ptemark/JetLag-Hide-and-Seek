@@ -225,6 +225,54 @@ export async function dbGetGamePlayerCounts(pool, gameId) {
   return counts;
 }
 
+// ── Ready store (Task 192) ────────────────────────────────────────────────────
+
+/**
+ * Mark a player as ready (insert) or not ready (delete) for a game.
+ * Idempotent: inserting an already-ready player is a no-op; deleting an
+ * absent row is also a no-op.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ gameId: string, playerId: string, ready: boolean }} options
+ * @returns {Promise<void>}
+ */
+export async function dbSetReady(pool, { gameId, playerId, ready }) {
+  if (ready) {
+    await pool.query(
+      `INSERT INTO game_ready_players (game_id, player_id)
+       VALUES ($1, $2)
+       ON CONFLICT (game_id, player_id) DO NOTHING`,
+      [gameId, playerId],
+    );
+  } else {
+    await pool.query(
+      `DELETE FROM game_ready_players WHERE game_id = $1 AND player_id = $2`,
+      [gameId, playerId],
+    );
+  }
+}
+
+/**
+ * Return ready and total player counts for a game.
+ * `readyCount` counts rows in `game_ready_players`; `totalCount` is the sum
+ * of hider and seeker counts from `game_players`.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {string} gameId
+ * @returns {Promise<{ readyCount: number, totalCount: number }>}
+ */
+export async function dbGetReadyCounts(pool, gameId) {
+  const readyRes = await pool.query(
+    `SELECT COUNT(*)::int AS cnt FROM game_ready_players WHERE game_id = $1`,
+    [gameId],
+  );
+  const { hiderCount, seekerCount } = await dbGetGamePlayerCounts(pool, gameId);
+  return {
+    readyCount: readyRes.rows[0]?.cnt ?? 0,
+    totalCount: hiderCount + seekerCount,
+  };
+}
+
 /**
  * Insert or update a score for a player in a game.
  * On conflict (same game + player pair), updates score_seconds, bonus_seconds, and captured_at.

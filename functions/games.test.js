@@ -670,53 +670,53 @@ describe('markReady (in-process)', () => {
     _clearStore();
   });
 
-  it('returns 400 when gameId is missing', () => {
-    const res = markReady({ params: {}, body: { playerId: 'p1' } });
+  it('returns 400 when gameId is missing', async () => {
+    const res = await markReady({ params: {}, body: { playerId: 'p1' } });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/gameId/i);
   });
 
-  it('returns 400 when playerId is missing', () => {
-    const res = markReady({ params: { gameId: 'g1' }, body: {} });
+  it('returns 400 when playerId is missing', async () => {
+    const res = await markReady({ params: { gameId: 'g1' }, body: {} });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/playerId/i);
   });
 
-  it('marks a player ready and returns readyCount: 1', () => {
+  it('marks a player ready and returns readyCount: 1', async () => {
     // Simulate a joined player so totalCount reflects correctly.
     joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
 
-    const res = markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+    const res = await markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
 
     expect(res.status).toBe(200);
     expect(res.body.readyCount).toBe(1);
     expect(res.body.totalCount).toBe(1);
   });
 
-  it('calling markReady with the same playerId twice is idempotent', () => {
+  it('calling markReady with the same playerId twice is idempotent', async () => {
     joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
-    markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+    await markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
 
-    const res = markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+    const res = await markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
 
     expect(res.body.readyCount).toBe(1);
   });
 
-  it('removes a player from ready set when ready:false', () => {
+  it('removes a player from ready set when ready:false', async () => {
     joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
-    markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+    await markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
 
-    const res = markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: false } });
+    const res = await markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: false } });
 
     expect(res.status).toBe(200);
     expect(res.body.readyCount).toBe(0);
     expect(res.body.totalCount).toBe(1);
   });
 
-  it('ready defaults to true when not specified', () => {
+  it('ready defaults to true when not specified', async () => {
     joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
 
-    const res = markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1' } });
+    const res = await markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1' } });
 
     expect(res.body.readyCount).toBe(1);
   });
@@ -728,27 +728,116 @@ describe('getReadyStatus (in-process)', () => {
     _clearGamePlayers();
   });
 
-  it('returns 400 when gameId is missing', () => {
-    const res = getReadyStatus({ params: {} });
+  it('returns 400 when gameId is missing', async () => {
+    const res = await getReadyStatus({ params: {} });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/gameId/i);
   });
 
-  it('returns readyCount:0 and totalCount:0 for a game with no activity', () => {
-    const res = getReadyStatus({ params: { gameId: 'g1' } });
+  it('returns readyCount:0 and totalCount:0 for a game with no activity', async () => {
+    const res = await getReadyStatus({ params: { gameId: 'g1' } });
     expect(res.status).toBe(200);
     expect(res.body.readyCount).toBe(0);
     expect(res.body.totalCount).toBe(0);
   });
 
-  it('reflects current ready and total counts after joins and readies', () => {
+  it('reflects current ready and total counts after joins and readies', async () => {
     joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p1', role: 'seeker' } });
     joinGame({ params: { gameId: 'g1' }, body: { playerId: 'p2', role: 'hider' } });
-    markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
+    await markReady({ params: { gameId: 'g1' }, body: { playerId: 'p1', ready: true } });
 
-    const res = getReadyStatus({ params: { gameId: 'g1' } });
+    const res = await getReadyStatus({ params: { gameId: 'g1' } });
 
     expect(res.body.readyCount).toBe(1);
     expect(res.body.totalCount).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// markReady / getReadyStatus (DB-backed, Task 192)
+// ---------------------------------------------------------------------------
+
+describe('markReady (with pool)', () => {
+  it('issues an INSERT … ON CONFLICT DO NOTHING when ready:true', async () => {
+    const queries = [];
+    const pool = {
+      query: vi.fn(async (sql) => {
+        queries.push(sql);
+        // First call: dbSetReady INSERT — returns nothing.
+        // Second call: SELECT COUNT(*) — return 1.
+        // Third call: dbGetGamePlayerCounts — return hider/seeker rows.
+        if (/INSERT INTO game_ready_players/i.test(sql)) return { rows: [] };
+        if (/COUNT\(\*\)::int AS cnt FROM game_ready_players/i.test(sql)) return { rows: [{ cnt: 1 }] };
+        if (/FROM game_players/i.test(sql)) return { rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 1 }] };
+        return { rows: [] };
+      }),
+    };
+
+    const res = await markReady(
+      { params: { gameId: 'g-uuid' }, body: { playerId: 'p-uuid', ready: true } },
+      pool,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ readyCount: 1, totalCount: 2 });
+    expect(queries.some((q) => /INSERT INTO game_ready_players/i.test(q))).toBe(true);
+    expect(queries.some((q) => /ON CONFLICT \(game_id, player_id\) DO NOTHING/i.test(q))).toBe(true);
+    expect(queries.some((q) => /SELECT COUNT\(\*\)::int AS cnt FROM game_ready_players/i.test(q))).toBe(true);
+  });
+
+  it('issues a DELETE when ready:false', async () => {
+    const queries = [];
+    const pool = {
+      query: vi.fn(async (sql) => {
+        queries.push(sql);
+        if (/DELETE FROM game_ready_players/i.test(sql)) return { rows: [] };
+        if (/COUNT\(\*\)::int AS cnt FROM game_ready_players/i.test(sql)) return { rows: [{ cnt: 0 }] };
+        if (/FROM game_players/i.test(sql)) return { rows: [{ role: 'seeker', count: 1 }] };
+        return { rows: [] };
+      }),
+    };
+
+    const res = await markReady(
+      { params: { gameId: 'g-uuid' }, body: { playerId: 'p-uuid', ready: false } },
+      pool,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ readyCount: 0, totalCount: 1 });
+    expect(queries.some((q) => /DELETE FROM game_ready_players/i.test(q))).toBe(true);
+  });
+
+  it('returns 400 when playerId missing without touching the pool', async () => {
+    const pool = { query: vi.fn() };
+    const res = await markReady({ params: { gameId: 'g1' }, body: {} }, pool);
+    expect(res.status).toBe(400);
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('getReadyStatus (with pool)', () => {
+  it('queries game_ready_players and game_players for counts', async () => {
+    const queries = [];
+    const pool = {
+      query: vi.fn(async (sql) => {
+        queries.push(sql);
+        if (/COUNT\(\*\)::int AS cnt FROM game_ready_players/i.test(sql)) return { rows: [{ cnt: 2 }] };
+        if (/FROM game_players/i.test(sql)) return { rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 2 }] };
+        return { rows: [] };
+      }),
+    };
+
+    const res = await getReadyStatus({ params: { gameId: 'g-uuid' } }, pool);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ readyCount: 2, totalCount: 3 });
+    expect(queries.some((q) => /SELECT COUNT\(\*\)::int AS cnt FROM game_ready_players/i.test(q))).toBe(true);
+  });
+
+  it('returns 400 when gameId missing without touching the pool', async () => {
+    const pool = { query: vi.fn() };
+    const res = await getReadyStatus({ params: {} }, pool);
+    expect(res.status).toBe(400);
+    expect(pool.query).not.toHaveBeenCalled();
   });
 });

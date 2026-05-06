@@ -85,18 +85,13 @@ cause cross-file interference (e.g., file A truncates while file B is mid-test).
 
 ## Handlers NOT Covered by Integration Tests
 
-Two handler categories cannot be tested with direct calls against the DB:
+One handler category cannot be tested with direct calls against the DB:
 
 **`getLiveState` (`functions/liveState.js`)** — This handler does not accept a `pool`
 argument. Its second argument is `{ serverUrl?, gsm? }`. Without a running managed
 server or an in-process `GameStateManager`, it returns 503. Live state is entirely
 in-memory in the managed server; there is nothing DB-backed to test here. It is
 already covered by `functions/liveState.test.js` (unit tests) and smoke tests.
-
-**`markReady` / `getReadyStatus` (`functions/games.js`)** — These handlers accept a
-pool argument but **never use it**. They read and write the in-process `_readyPlayers`
-Map regardless of whether a pool is passed. There is no DB persistence to test.
-They are already covered by the existing unit tests.
 
 ---
 
@@ -737,8 +732,6 @@ Do not add integration tests for these:
 
 - **`getLiveState`** — not DB-backed; requires a running managed server or in-process
   `GameStateManager`. Already covered by unit tests and smoke tests.
-- **`markReady` / `getReadyStatus`** — in-memory only even when pool is passed. No DB
-  persistence to test. Already covered by unit tests.
 - **`cleanupStaleGames`** — admin-only; requires `Authorization` header with `ADMIN_API_KEY`.
   Functionally a DELETE with an age filter; low-risk to defer.
 - **Photo upload/download** (`uploadQuestionPhoto`, `getQuestionPhoto`) — binary blob

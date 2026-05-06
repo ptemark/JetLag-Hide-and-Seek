@@ -369,6 +369,61 @@ Seekers enter hiding zone (detected server-side via proximity check)
 duration; when the timer expires the manager fires `onPhaseChange`, which broadcasts the new
 phase to all connected clients and writes the updated `status` to Postgres.
 
+### 19a — Lobby & Start-Game Contract
+
+The waiting → hiding transition is the most failure-prone part of the flow because it crosses
+all three tiers (browser, serverless, managed server) and the database. The contract below is
+authoritative; deviations have caused player-stuck-in-lobby bugs in the past (see Tasks
+191–196).
+
+**Authority of `games.status`.** Postgres `games.status` is the single source of truth that
+non-host clients use to detect game start. Non-host `WaitingRoom` polls `GET /api/games/:id`
+on a 3 s interval (`POLL_INTERVAL_MS`) and advances to `GameMap` the moment the polled status
+is no longer `'waiting'`. Therefore the managed server's `gameLoopManager.onPhaseChange` MUST
+write every transition (`hiding`, `seeking`, `finished`) to Postgres via
+`store.dbUpdateGameStatus` — not just `'finished'`. If any transition is missed, every
+non-host player is permanently stuck on the lobby screen even though the game is running.
+
+**Lobby visibility (player list).** While in the lobby, every connected client (host and
+non-host) periodically polls `GET /api/games/:id` and renders the returned `players` array.
+The list shows each player's name, role, optional team letter, and a host badge for the
+player whose `playerId === game.hostPlayerId`. The poll cadence matches the game-start poll
+(reuse the same interval). The list is the only mechanism by which players see each other
+before the game starts; there is no WebSocket connection during the waiting phase.
+
+**Start-game preconditions.** A game is startable iff:
+
+1. The game's `status === 'waiting'`.
+2. At least one player has joined with `role = 'hider'`.
+3. At least one player has joined with `role = 'seeker'`.
+
+The host's "Start Game" button is disabled until all three conditions hold. Non-host clients
+do not render a Start button at all. The serverless `handleStartGame` re-validates 1–3 and
+returns 400 `insufficient_players` if violated.
+
+**No pre-start hider-zone requirement.** `RULES.md §Hiding Rules` rule 2 says the hiding zone
+is centered on the final transit station the hider reaches *during* the hiding period. Zone
+selection therefore happens after the game starts, in `ZoneSelector` (rendered inside
+`GameMap` when `phase === 'hiding' && !lockedZone`). `handleStartGame` MUST NOT require a
+zone before allowing start; doing so makes the game un-startable in the standard flow.
+
+**Ready confirmation is advisory.** `markReady` / `getReadyStatus` provide a soft "all
+players have gathered" signal (RULES.md §Setup). It is NOT a start-game precondition: the
+host may start regardless of ready count. Counts must be DB-backed when a pool is provided
+so they survive across serverless cold starts and Lambda instances.
+
+**Timer visibility on connect.** When a client connects to the WebSocket mid-phase (typical
+for non-host players who advance from lobby to GameMap a few seconds after the host starts
+the game), the `game_state_sync` payload MUST include `phaseEndsAt` (ISO string) so the
+client can render the countdown immediately. Without it, the client waits up to 30 s for the
+next periodic `timer_sync` and the timer banner is blank.
+
+**Hiding period begins immediately.** On `POST /internal/games/:gameId/start`, the managed
+server calls `gameLoopManager.startGame(gameId, opts)` followed by
+`gameLoopManager.beginHiding(gameId)` in the same request handler. The hider's countdown
+starts from `Date.now()` at that moment; both teams see identical `phaseEndsAt` values
+because they are derived server-side from the same `phaseStartedAt`.
+
 ---
 
 ## 2️⃣0️⃣ Key File Reference

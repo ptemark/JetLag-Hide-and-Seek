@@ -1369,6 +1369,157 @@ describe('createServer — hider timeout victory', () => {
     vi.useRealTimers();
   });
 
+  // -------------------------------------------------------------------------
+  // Task 191 — onPhaseChange persists every transition (not only 'finished')
+  // -------------------------------------------------------------------------
+
+  it('persists hiding status to DB when game transitions to hiding phase', () => {
+    vi.useFakeTimers();
+    const updateStatusFn = vi.fn().mockResolvedValue(undefined);
+    const s = createServer({
+      tickInterval: 50,
+      hidingDuration: 60_000,
+      seekingDuration: 600_000,
+      store: { dbUpdateGameStatus: updateStatusFn, dbExpireStaleQuestions: vi.fn().mockResolvedValue([]) },
+    });
+
+    s.gameLoopManager.startGame('phase-db-hiding');
+    expect(updateStatusFn).not.toHaveBeenCalled(); // 'waiting' is the initial phase, no transition fired
+
+    s.gameLoopManager.beginHiding('phase-db-hiding');
+
+    expect(updateStatusFn).toHaveBeenCalledTimes(1);
+    expect(updateStatusFn).toHaveBeenCalledWith({ gameId: 'phase-db-hiding', status: 'hiding' });
+
+    s.gameLoopManager.stopGame('phase-db-hiding');
+    vi.useRealTimers();
+  });
+
+  it('persists seeking status to DB when hiding phase elapses', () => {
+    vi.useFakeTimers();
+    const HIDING = 200;
+    const updateStatusFn = vi.fn().mockResolvedValue(undefined);
+    const s = createServer({
+      tickInterval: 50,
+      hidingDuration: HIDING,
+      seekingDuration: 600_000,
+      store: { dbUpdateGameStatus: updateStatusFn, dbExpireStaleQuestions: vi.fn().mockResolvedValue([]) },
+    });
+
+    s.gameLoopManager.startGame('phase-db-seeking');
+    s.gameLoopManager.beginHiding('phase-db-seeking');
+    updateStatusFn.mockClear();
+
+    // Advance past hidingDuration so the manager auto-transitions to seeking.
+    vi.advanceTimersByTime(HIDING + 100);
+
+    expect(updateStatusFn).toHaveBeenCalledWith({ gameId: 'phase-db-seeking', status: 'seeking' });
+
+    s.gameLoopManager.stopGame('phase-db-seeking');
+    vi.useRealTimers();
+  });
+
+  it('logs error and keeps running when dbUpdateGameStatus rejects on phase change', async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.fn();
+    const mockLogger = {
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: errorSpy,
+      startTimer: () => ({ end: () => {} }),
+    };
+    const updateStatusFn = vi.fn().mockRejectedValue(new Error('connection refused'));
+    const s = createServer({
+      tickInterval: 50,
+      hidingDuration: 60_000,
+      seekingDuration: 600_000,
+      logger: mockLogger,
+      store: { dbUpdateGameStatus: updateStatusFn, dbExpireStaleQuestions: vi.fn().mockResolvedValue([]) },
+    });
+
+    s.gameLoopManager.startGame('phase-db-fail');
+    s.gameLoopManager.beginHiding('phase-db-fail');
+
+    // Allow the rejected promise's .catch handler to run.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(updateStatusFn).toHaveBeenCalledWith({ gameId: 'phase-db-fail', status: 'hiding' });
+    // logger.error called with a category, an event name, and a context object containing the error.
+    expect(errorSpy).toHaveBeenCalled();
+    const errorCall = errorSpy.mock.calls.find(
+      ([, eventName]) => eventName === 'phase_db_update_error',
+    );
+    expect(errorCall).toBeTruthy();
+    expect(errorCall[2]).toMatchObject({
+      gameId: 'phase-db-fail',
+      newPhase: 'hiding',
+      error: 'connection refused',
+    });
+
+    // Manager is still running and can transition further (no unhandled rejection bubble).
+    expect(s.gameLoopManager.getPhase('phase-db-fail')).toBe('hiding');
+
+    s.gameLoopManager.stopGame('phase-db-fail');
+    vi.useRealTimers();
+  });
+
+  it('writes finished status exactly once on capture (not duplicated by onPhaseChange)', async () => {
+    vi.useFakeTimers();
+    const updateStatusFn = vi.fn().mockResolvedValue(undefined);
+    const submitScoreFn  = vi.fn().mockResolvedValue(undefined);
+    const s = createServer({
+      tickInterval: 5000,
+      seekingDuration: 600_000,
+      endGameTimeoutMs: 200,
+      store: {
+        dbUpdateGameStatus: updateStatusFn,
+        dbSubmitScore: submitScoreFn,
+        dbExpireStaleQuestions: vi.fn().mockResolvedValue([]),
+      },
+    });
+
+    const mockWs = createMockWs();
+    s.wss.emit('connection', mockWs, { url: '/?playerId=spotter1', headers: { host: 'localhost' } });
+    mockWs.emit('message', JSON.stringify({ type: 'join_game', gameId: 'finish-once-game', role: 'seeker' }));
+    s.gameLoopManager.startGame('finish-once-game');
+    s.gameLoopManager.beginHiding('finish-once-game');
+    s.gameLoopManager.beginSeeking('finish-once-game');
+
+    // Allow any in-flight phase-change DB writes to settle.
+    await Promise.resolve();
+    await Promise.resolve();
+    updateStatusFn.mockClear();
+
+    s.gameStateManager.addPlayerToGame('finish-once-game', 'hider1', 'hider');
+    s.gameStateManager.updatePlayerLocation('finish-once-game', 'hider1', 0, 0);
+    s.gameStateManager.updatePlayerLocation('finish-once-game', 'spotter1', 0, 0);
+    s.gameStateManager.setGameZone('finish-once-game', { stationId: 's1', lat: 0, lon: 0, radiusM: 1000 });
+
+    // Trigger End Game (phase 1).
+    const gameState = s.gameStateManager.getGameState('finish-once-game');
+    await s.stateDispatcher.dispatch(gameState);
+
+    // Spotter sends spot_hider — captures the hider, finishes the game.
+    mockWs.emit('message', JSON.stringify({
+      type: 'spot_hider',
+      gameId: 'finish-once-game',
+      hiderId: 'hider1',
+    }));
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const finishedCalls = updateStatusFn.mock.calls.filter(
+      ([arg]) => arg?.status === 'finished' && arg?.gameId === 'finish-once-game',
+    );
+    expect(finishedCalls.length).toBe(1);
+
+    vi.useRealTimers();
+  });
+
   it('broadcasts end_game_started (not capture) when all seekers enter zone (phase 1)', async () => {
     vi.useFakeTimers();
     const s = createServer({ tickInterval: 5000, seekingDuration: 600_000, endGameTimeoutMs: 600_000 });

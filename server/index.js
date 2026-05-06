@@ -659,6 +659,24 @@ export function createServer({
   // Broadcast phase changes to all players in the affected game
   gameLoopManager.onPhaseChange = (gameId, oldPhase, newPhase) => {
     gameStateManager.setGameStatus(gameId, newPhase);
+
+    // Persist the phase transition to Postgres so non-host players polling
+    // GET /api/games/:id see the status change and advance from the lobby.
+    // 'finished' is excluded here because the capture / end-game-timeout
+    // branches below already write that status (alongside score in the
+    // capture case); a duplicate write would be redundant.
+    // See DESIGN.md §19a "Authority of games.status".
+    if (newPhase !== 'finished' && store) {
+      store.dbUpdateGameStatus({ gameId, status: newPhase }).catch((err) => {
+        logger.error(LogCategory.ERROR, 'phase_db_update_error', {
+          gameId,
+          oldPhase,
+          newPhase,
+          error: err?.message,
+        });
+      });
+    }
+
     wsHandler.broadcastToGame(gameId, { type: 'phase_change', gameId, oldPhase, newPhase });
 
     if (newPhase === 'seeking') {

@@ -1148,24 +1148,22 @@ describe('POST /internal/games/:gameId/start', () => {
     expect(body.error).toBe('insufficient_players');
   });
 
-  // Task 101 — hider zone requirement before game start
-  it('returns 400 no_hider_zone when no zones registered for game', async () => {
+  // Task 195 — no pre-start hider-zone requirement (RULES.md §Hiding Rules rule 2).
+  it('returns 204 when hider+seeker are present even with no zones registered', async () => {
     server = createServer({ tickInterval: 5000 });
     await server.start(0);
     const port = server.httpServer.address().port;
     server.gameStateManager.createGame('no-zone-game');
     server.gameStateManager.addPlayerToGame('no-zone-game', 'h1', 'hider');
     server.gameStateManager.addPlayerToGame('no-zone-game', 's1', 'seeker');
-    // No zones registered.
+    // No zones registered — zone is selected during the hiding phase.
 
     const res = await fetch(`http://localhost:${port}/internal/games/no-zone-game/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scale: 'small' }),
     });
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBe('no_hider_zone');
+    expect(res.status).toBe(204);
   });
 
   it('returns 204 when players and zones are registered', async () => {

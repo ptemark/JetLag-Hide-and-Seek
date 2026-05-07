@@ -466,12 +466,13 @@ Prerequisite for each test: call makePlayer + makeGame before joining.
 
 ```
 Setup: makePlayer(hider) + makePlayer(seeker) + makeGame + makeJoin(hider) +
-       makeJoin(seeker) + makeZone (zone MUST exist before calling start)
+       makeJoin(seeker)
 
 ✓ all preconditions met → 204 (no body content expected)
 ✓ no hider in game → 400, body.error='insufficient_players'
 ✓ no seeker in game → 400, body.error='insufficient_players'
-✓ hider zone not locked → 400, body.error='no_hider_zone'
+✓ no zone locked → 204 (Task 195: hider locks the zone during the hiding
+   phase, not before start; RULES.md §Hiding Rules rule 2)
 ```
 
 > IMPORTANT: `handleStartGame` does NOT update the game's status in the database.

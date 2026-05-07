@@ -16,12 +16,35 @@ import WaitingRoom from './WaitingRoom.jsx';
 const GAME   = { gameId: 'g1', size: 'medium', status: 'waiting', seekerTeams: 0 };
 const PLAYER = { playerId: 'p1', name: 'Alice', role: 'seeker' };
 
+const STARTABLE_PLAYERS = [
+  { playerId: 'p1', name: 'Alice', role: 'hider' },
+  { playerId: 'p2', name: 'Bob', role: 'seeker' },
+];
+
 beforeEach(() => {
   vi.clearAllMocks();
   // Default stubs — prevent unhandled rejections from background poll.
   api.fetchReadyStatus.mockResolvedValue({ readyCount: 0, totalCount: 0 });
   api.markPlayerReady.mockResolvedValue({ readyCount: 1, totalCount: 1 });
 });
+
+/**
+ * Render WaitingRoom with the polling interval intercepted, then fire one
+ * tick so the players state is populated. Used by tests that need to click
+ * the Start Game button, which is disabled until at least one hider and
+ * one seeker are present (Task 194).
+ */
+async function renderAndPopulate(jsx, players = STARTABLE_PLAYERS) {
+  let captured;
+  vi.spyOn(global, 'setInterval').mockImplementation((fn) => { captured = fn; return 1; });
+  vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+  api.lookupGame.mockResolvedValue({
+    gameId: 'g1', status: 'waiting', players, hostPlayerId: 'p1',
+  });
+  const result = render(jsx);
+  if (captured) await captured();
+  return result;
+}
 
 // ---------------------------------------------------------------------------
 // Display
@@ -90,10 +113,14 @@ describe('WaitingRoom team display', () => {
 // ---------------------------------------------------------------------------
 
 describe('WaitingRoom Start Game button', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('calls startGame with the correct gameId, scale, and default hidingDurationMin', async () => {
     const user = userEvent.setup();
     api.startGame.mockResolvedValue(undefined);
-    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+    await renderAndPopulate(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
 
@@ -106,7 +133,7 @@ describe('WaitingRoom Start Game button', () => {
     const user = userEvent.setup();
     const onStart = vi.fn();
     api.startGame.mockResolvedValue(undefined);
-    render(<WaitingRoom game={GAME} player={PLAYER} onStart={onStart} />);
+    await renderAndPopulate(<WaitingRoom game={GAME} player={PLAYER} onStart={onStart} />);
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
 
@@ -117,7 +144,7 @@ describe('WaitingRoom Start Game button', () => {
     const user = userEvent.setup();
     api.startGame.mockResolvedValue(undefined);
     const smallGame = { ...GAME, size: 'small' };
-    render(<WaitingRoom game={smallGame} player={PLAYER} onStart={() => {}} />);
+    await renderAndPopulate(<WaitingRoom game={smallGame} player={PLAYER} onStart={() => {}} />);
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
 
@@ -129,7 +156,7 @@ describe('WaitingRoom Start Game button', () => {
   it('shows an error message when startGame rejects', async () => {
     const user = userEvent.setup();
     api.startGame.mockRejectedValue(new Error('server unreachable'));
-    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+    await renderAndPopulate(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
 
@@ -142,7 +169,7 @@ describe('WaitingRoom Start Game button', () => {
     const user = userEvent.setup();
     const onStart = vi.fn();
     api.startGame.mockRejectedValue(new Error('network error'));
-    render(<WaitingRoom game={GAME} player={PLAYER} onStart={onStart} />);
+    await renderAndPopulate(<WaitingRoom game={GAME} player={PLAYER} onStart={onStart} />);
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
 
@@ -155,7 +182,7 @@ describe('WaitingRoom Start Game button', () => {
     api.startGame
       .mockRejectedValueOnce(new Error('first error'))
       .mockResolvedValue(undefined);
-    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+    await renderAndPopulate(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
@@ -198,7 +225,7 @@ describe('WaitingRoom duration picker', () => {
   it('passes the user-selected hidingDurationMin to startGame', async () => {
     const user = userEvent.setup();
     api.startGame.mockResolvedValue(undefined);
-    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+    await renderAndPopulate(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
 
     const input = screen.getByLabelText(/hiding duration/i);
     await user.clear(input);
@@ -209,6 +236,8 @@ describe('WaitingRoom duration picker', () => {
     await waitFor(() =>
       expect(api.startGame).toHaveBeenCalledWith({ gameId: 'g1', scale: 'medium', hidingDurationMin: 90 })
     );
+
+    vi.restoreAllMocks();
   });
 });
 
@@ -272,7 +301,9 @@ describe('WaitingRoom non-host polling', () => {
     const onStart = vi.fn();
     const onGameStarted = vi.fn();
 
-    render(<WaitingRoom game={GAME} player={PLAYER} onStart={onStart} onGameStarted={onGameStarted} />);
+    await renderAndPopulate(
+      <WaitingRoom game={GAME} player={PLAYER} onStart={onStart} onGameStarted={onGameStarted} />
+    );
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
 
@@ -560,5 +591,70 @@ describe('WaitingRoom player list', () => {
     unmount();
 
     expect(global.clearInterval).toHaveBeenCalledWith(intervalId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Start Game gating (Task 194)
+// DESIGN.md §19a "Start-game preconditions"
+// ---------------------------------------------------------------------------
+
+describe('WaitingRoom Start Game gating', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('disables the Start Game button and shows a hint when no players are loaded', () => {
+    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+
+    const button = screen.getByRole('button', { name: /start game/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /need at least one hider and one seeker to start/i
+    );
+  });
+
+  it('keeps the button disabled when only hiders are present', async () => {
+    await renderAndPopulate(
+      <WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />,
+      [{ playerId: 'p1', name: 'Alice', role: 'hider' }],
+    );
+
+    const button = screen.getByRole('button', { name: /start game/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent(/need at least one hider and one seeker/i);
+  });
+
+  it('keeps the button disabled when only seekers are present', async () => {
+    await renderAndPopulate(
+      <WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />,
+      [{ playerId: 'p2', name: 'Bob', role: 'seeker' }],
+    );
+
+    const button = screen.getByRole('button', { name: /start game/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent(/need at least one hider and one seeker/i);
+  });
+
+  it('enables the button and hides the hint when one hider and one seeker are present', async () => {
+    await renderAndPopulate(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+
+    const button = screen.getByRole('button', { name: /start game/i });
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute('aria-disabled', 'false');
+    expect(
+      screen.queryByText(/need at least one hider and one seeker/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not call startGame when the disabled button is clicked', async () => {
+    const user = userEvent.setup();
+    api.startGame.mockResolvedValue(undefined);
+    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: /start game/i }));
+
+    expect(api.startGame).not.toHaveBeenCalled();
   });
 });

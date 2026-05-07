@@ -196,9 +196,27 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
         </span>
       </div>
       {readyError && <Alert>{readyError}</Alert>}
-      {onStart && (
-        <button onClick={handleStart}>Start Game</button>
-      )}
+      {onStart && (() => {
+        const hiderCount = players.filter((p) => p.role === 'hider').length;
+        const seekerCount = players.filter((p) => p.role === 'seeker').length;
+        const canStart = hiderCount >= 1 && seekerCount >= 1;
+        return (
+          <>
+            <button
+              onClick={handleStart}
+              disabled={!canStart}
+              aria-disabled={!canStart}
+            >
+              Start Game
+            </button>
+            {!canStart && (
+              <small role="status" className={styles.startHint}>
+                Need at least one hider and one seeker to start.
+              </small>
+            )}
+          </>
+        );
+      })()}
       {error && <Alert>{error}</Alert>}
     </div>
   );

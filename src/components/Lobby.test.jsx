@@ -80,11 +80,48 @@ const PLAYER = { playerId: 'p1', name: 'Alice', role: 'seeker', createdAt: '2026
 const BOUNDS = { lat_min: 51.5, lat_max: 51.6, lon_min: -0.1, lon_max: 0.0 };
 const GAME   = { gameId: 'g1', size: 'medium', status: 'waiting', hostPlayerId: 'p1', bounds: BOUNDS };
 
+const STARTABLE_PLAYERS = [
+  { playerId: 'p1', name: 'Alice', role: 'hider' },
+  { playerId: 'p2', name: 'Bob', role: 'seeker' },
+];
+
+/**
+ * Intercept WaitingRoom's polling interval and arrange a `lookupGame` mock
+ * that returns at least one hider and one seeker, so the host's Start Game
+ * button becomes enabled (Task 194 gating). Returns a function that fires
+ * the captured polling callback once.
+ */
+function setupReadyToStart() {
+  // WaitingRoom polls at exactly POLL_INTERVAL_MS (3000 ms). Only intercept that
+  // call — testing-library's `waitFor` uses its own short-interval setInterval
+  // internally and must keep working.
+  const POLL_MS = 3000;
+  const realSetInterval = global.setInterval;
+  let captured;
+  vi.spyOn(global, 'setInterval').mockImplementation((fn, ms) => {
+    if (ms === POLL_MS) { captured = fn; return -1; }
+    return realSetInterval(fn, ms);
+  });
+  api.lookupGame.mockResolvedValue({
+    gameId: 'g1', status: 'waiting', players: STARTABLE_PLAYERS, hostPlayerId: 'p1',
+  });
+  return async function fireTick() {
+    if (!captured) throw new Error('WaitingRoom poll setInterval was not captured before render');
+    await act(async () => { await captured(); });
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  // Restore joinGame to the default resolved value after any test that
-  // may have set mockRejectedValue (clearAllMocks does not reset implementations).
+  // Re-apply default resolved values for api mocks. Required because
+  // `vi.restoreAllMocks()` (used by some tests via afterEach to clean up
+  // spies) also resets implementations of vi.fn() mocks back to undefined.
   api.joinGame.mockResolvedValue({ gameId: 'g1', playerId: 'p1', role: 'seeker', team: null });
+  api.markPlayerReady.mockResolvedValue({ readyCount: 0, totalCount: 0 });
+  api.fetchReadyStatus.mockResolvedValue({ readyCount: 0, totalCount: 0 });
+  api.listQuestions.mockResolvedValue([]);
+  api.fetchCards.mockResolvedValue([]);
+  api.fetchLeaderboard.mockResolvedValue([]);
   // Reset feature flag to off so existing tests are unaffected.
   ENV.features.adminDashboard = false;
   // Reset captured marker handler between tests.
@@ -686,11 +723,16 @@ describe('Lobby', () => {
 // ---------------------------------------------------------------------------
 
 describe('Lobby server URL', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('passes ENV.wsUrl as serverUrl prop to GameMap', async () => {
     const user = userEvent.setup();
     api.registerPlayer.mockResolvedValue(PLAYER);
     api.createGame.mockResolvedValue(GAME); // GAME.hostPlayerId === PLAYER.playerId
     api.startGame.mockResolvedValue();
+    const fireTick = setupReadyToStart();
 
     render(<Lobby />);
 
@@ -700,6 +742,12 @@ describe('Lobby server URL', () => {
 
     await user.click(screen.getByRole('button', { name: /create game/i }));
     await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+
+    // Populate the player list so the host's Start Game button enables (Task 194).
+    await fireTick();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /start game/i })).toBeEnabled()
+    );
 
     await user.click(screen.getByRole('button', { name: /start game/i }));
     await waitFor(() => expect(GameMap).toHaveBeenCalled());
@@ -748,6 +796,10 @@ describe('Lobby admin dashboard', () => {
 // ---------------------------------------------------------------------------
 
 describe('Lobby player identity persistence', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   // (a) Valid saved player — PlayerForm is NOT rendered; GameForm IS rendered
   it('skips PlayerForm when valid player is in localStorage', () => {
     localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
@@ -821,11 +873,18 @@ describe('Lobby player identity persistence', () => {
     localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
     api.createGame.mockResolvedValue(GAME);
     api.startGame.mockResolvedValue();
+    const fireTick = setupReadyToStart();
     render(<Lobby />);
 
     // GameForm is shown immediately (player restored); create a game
     await user.click(screen.getByRole('button', { name: /create game/i }));
     await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+
+    // Populate the player list so the host's Start Game button enables (Task 194).
+    await fireTick();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /start game/i })).toBeEnabled()
+    );
 
     // Start game (host path)
     await user.click(screen.getByRole('button', { name: /start game/i }));
@@ -842,6 +901,10 @@ describe('Lobby player identity persistence', () => {
 // ---------------------------------------------------------------------------
 
 describe('Lobby game session persistence', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   // (a) Valid game + playing=true → GameMap rendered on mount
   it('renders GameMap on mount when game and playing are both saved', () => {
     localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
@@ -877,10 +940,15 @@ describe('Lobby game session persistence', () => {
     localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
     api.createGame.mockResolvedValue(GAME);
     api.startGame.mockResolvedValue();
+    const fireTick = setupReadyToStart();
     render(<Lobby />);
 
     await user.click(screen.getByRole('button', { name: /create game/i }));
     await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+    await fireTick();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /start game/i })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: /start game/i }));
     await waitFor(() => expect(GameMap).toHaveBeenCalled());
 
@@ -922,11 +990,16 @@ describe('Lobby game session persistence', () => {
     localStorage.setItem('jetlag_player', JSON.stringify(PLAYER));
     api.createGame.mockResolvedValue(GAME);
     api.startGame.mockResolvedValue();
+    const fireTick = setupReadyToStart();
     render(<Lobby />);
 
     // Create and start a game
     await user.click(screen.getByRole('button', { name: /create game/i }));
     await waitFor(() => screen.getByRole('heading', { name: /waiting room/i }));
+    await fireTick();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /start game/i })).toBeEnabled()
+    );
     await user.click(screen.getByRole('button', { name: /start game/i }));
     await waitFor(() => expect(GameMap).toHaveBeenCalled());
 

@@ -136,3 +136,10 @@
   font-weight: 600;
   font-size: 0.85rem;
 }
+
+.startHint {
+  display: block;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}

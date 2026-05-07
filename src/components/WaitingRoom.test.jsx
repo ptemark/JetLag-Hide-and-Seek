@@ -450,3 +450,115 @@ describe('WaitingRoom ready mechanic', () => {
     expect(global.clearInterval).toHaveBeenCalledWith(intervalId);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Player list (Task 193)
+// DESIGN.md §19a "Lobby visibility (player list)"
+// ---------------------------------------------------------------------------
+
+describe('WaitingRoom player list', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const TWO_PLAYERS = {
+    gameId: 'g1',
+    status: 'waiting',
+    players: [
+      { playerId: 'p1', name: 'Alice', role: 'hider' },
+      { playerId: 'p2', name: 'Bob',   role: 'seeker', team: 'A' },
+    ],
+    hostPlayerId: 'p1',
+  };
+
+  it('renders both player names after a poll tick', async () => {
+    let capturedCallback;
+    vi.spyOn(global, 'setInterval').mockImplementation((fn) => { capturedCallback = fn; return 1; });
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+    api.lookupGame.mockResolvedValue(TWO_PLAYERS);
+
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await capturedCallback();
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice')).toBeInTheDocument();
+      expect(screen.getByText('Bob')).toBeInTheDocument();
+    });
+  });
+
+  it('renders role badges for each player', async () => {
+    let capturedCallback;
+    vi.spyOn(global, 'setInterval').mockImplementation((fn) => { capturedCallback = fn; return 1; });
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+    api.lookupGame.mockResolvedValue(TWO_PLAYERS);
+
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+    await capturedCallback();
+
+    await waitFor(() => {
+      expect(screen.getByText('hider')).toBeInTheDocument();
+      expect(screen.getByText('seeker')).toBeInTheDocument();
+    });
+  });
+
+  it('shows team label only for the seeker with a team assignment', async () => {
+    let capturedCallback;
+    vi.spyOn(global, 'setInterval').mockImplementation((fn) => { capturedCallback = fn; return 1; });
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+    api.lookupGame.mockResolvedValue(TWO_PLAYERS);
+
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+    await capturedCallback();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Team A/)).toBeInTheDocument();
+    });
+  });
+
+  it('renders the host marker beside the host but not other players', async () => {
+    let capturedCallback;
+    vi.spyOn(global, 'setInterval').mockImplementation((fn) => { capturedCallback = fn; return 1; });
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+    api.lookupGame.mockResolvedValue(TWO_PLAYERS);
+
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+    await capturedCallback();
+
+    const hostMarker = await screen.findByText(/★ host/);
+    const aliceItem = screen.getByText('Alice').closest('li');
+    const bobItem = screen.getByText('Bob').closest('li');
+    expect(aliceItem).toContainElement(hostMarker);
+    expect(bobItem).not.toContainElement(hostMarker);
+  });
+
+  it('keeps the previously-rendered list when a subsequent lookup rejects', async () => {
+    let capturedCallback;
+    vi.spyOn(global, 'setInterval').mockImplementation((fn) => { capturedCallback = fn; return 1; });
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+    api.lookupGame
+      .mockResolvedValueOnce(TWO_PLAYERS)
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValueOnce(TWO_PLAYERS);
+
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await capturedCallback();
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+
+    await capturedCallback();
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.getByText('Bob')).toBeInTheDocument();
+  });
+
+  it('clears the poll interval on unmount', () => {
+    const intervalId = 314;
+    vi.spyOn(global, 'setInterval').mockReturnValue(intervalId);
+    vi.spyOn(global, 'clearInterval').mockImplementation(() => {});
+
+    const { unmount } = render(<WaitingRoom game={GAME} player={PLAYER} />);
+    unmount();
+
+    expect(global.clearInterval).toHaveBeenCalledWith(intervalId);
+  });
+});

@@ -29,6 +29,8 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
   const [readyCount, setReadyCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [readyError, setReadyError] = useState(null);
+  const [players, setPlayers] = useState([]);
+  const [hostPlayerId, setHostPlayerId] = useState(game.hostPlayerId ?? null);
   const copyTimerRef = useRef(null);
 
   const showTeam = (game.seekerTeams ?? 0) >= 2 && player?.role === 'seeker' && player?.team;
@@ -37,15 +39,21 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
   // Clear any pending clipboard reset timer on unmount to prevent state updates.
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
-  // Poll ready status for all players (including host) so everyone sees the count.
+  // Poll ready status and player list for all players (including host) so everyone
+  // sees both the count and who has joined the lobby.
   useEffect(() => {
     const id = setInterval(async () => {
-      try {
-        const status = await fetchReadyStatus(game.gameId);
-        setReadyCount(status.readyCount);
-        setTotalCount(status.totalCount);
-      } catch {
-        // ignore transient poll failures
+      const [readyResult, lookupResult] = await Promise.all([
+        fetchReadyStatus(game.gameId).catch(() => null),
+        lookupGame(game.gameId).catch(() => null),
+      ]);
+      if (readyResult) {
+        setReadyCount(readyResult.readyCount);
+        setTotalCount(readyResult.totalCount);
+      }
+      if (lookupResult) {
+        setPlayers(lookupResult.players ?? []);
+        if (lookupResult.hostPlayerId) setHostPlayerId(lookupResult.hostPlayerId);
       }
     }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
@@ -159,6 +167,21 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
           <small> ({range.min}–{range.max} min for {game.size} scale)</small>
         </div>
       )}
+      <section aria-label="Players in lobby" className={styles.playerSection}>
+        <h3 className={styles.playerHeading}>Players ({players.length})</h3>
+        <ul className={styles.playerList}>
+          {players.map((p) => (
+            <li key={p.playerId} className={styles.playerItem}>
+              <span>{p.name}</span>
+              <span className={styles.roleBadge}>{p.role}</span>
+              {p.team && <span> · Team {p.team}</span>}
+              {p.playerId === hostPlayerId && (
+                <span className={styles.hostMarker}>★ host</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </section>
       <div className={styles.readyRow}>
         <button
           type="button"

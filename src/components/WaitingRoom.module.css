@@ -99,3 +99,40 @@
   font-size: 0.875rem;
   color: var(--color-text-secondary);
 }
+
+.playerSection {
+  margin: 0.75rem 0;
+}
+
+.playerHeading {
+  font-size: 1rem;
+  margin: 0 0 0.25rem 0;
+}
+
+.playerList {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+}
+
+.playerItem {
+  padding: 0.25rem 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.roleBadge {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.hostMarker {
+  color: var(--color-accent);
+  font-weight: 600;
+  font-size: 0.85rem;
+}

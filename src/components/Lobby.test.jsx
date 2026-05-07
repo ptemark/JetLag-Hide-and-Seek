@@ -57,6 +57,8 @@ vi.mock('../api.js', () => ({
   fetchLeaderboard: vi.fn().mockResolvedValue([]),
   lockZone: vi.fn(),
   fetchAdminStatus: vi.fn(),
+  markPlayerReady:  vi.fn().mockResolvedValue({ readyCount: 0, totalCount: 0 }),
+  fetchReadyStatus: vi.fn().mockResolvedValue({ readyCount: 0, totalCount: 0 }),
 }));
 
 // Mock ENV so individual tests can toggle feature flags without relying on

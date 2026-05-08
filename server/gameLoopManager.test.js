@@ -559,6 +559,80 @@ describe('GameLoopManager — extendPhase / getPhaseExtension', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GameLoopManager — getPhaseEndsAt (Task 196)
+// ---------------------------------------------------------------------------
+
+describe('GameLoopManager — getPhaseEndsAt', () => {
+  let mgr;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mgr = new GameLoopManager({ tickInterval: 100, hidingDuration: 60_000, seekingDuration: 600_000 });
+  });
+
+  afterEach(() => {
+    for (const gameId of [...mgr._games.keys()]) mgr.stopGame(gameId);
+    vi.useRealTimers();
+  });
+
+  it('returns null for unregistered game', () => {
+    expect(mgr.getPhaseEndsAt('nonexistent')).toBeNull();
+  });
+
+  it('returns null in WAITING phase', () => {
+    mgr.startGame('g1');
+    expect(mgr.getPhaseEndsAt('g1')).toBeNull();
+  });
+
+  it('returns null after game finishes', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    mgr.finishGame('g1');
+    expect(mgr.getPhaseEndsAt('g1')).toBeNull();
+  });
+
+  it('returns ISO ≈ now + hidingDuration in HIDING phase with 0 ms elapsed', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    const expected = Date.now() + 60_000;
+    const actual = Date.parse(mgr.getPhaseEndsAt('g1'));
+    expect(actual).toBe(expected);
+  });
+
+  it('reflects per-game hidingDurationMs override', () => {
+    mgr.startGame('g1', { hidingDurationMs: 30_000 });
+    mgr.beginHiding('g1');
+    const expected = Date.now() + 30_000;
+    expect(Date.parse(mgr.getPhaseEndsAt('g1'))).toBe(expected);
+  });
+
+  it('returns ISO ≈ phase-start + seekingDuration in SEEKING phase', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    mgr.beginSeeking('g1');
+    const expected = Date.now() + 600_000;
+    expect(Date.parse(mgr.getPhaseEndsAt('g1'))).toBe(expected);
+  });
+
+  it('extendPhase increases the returned timestamp', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    const before = Date.parse(mgr.getPhaseEndsAt('g1'));
+    mgr.extendPhase('g1', 15_000);
+    const after = Date.parse(mgr.getPhaseEndsAt('g1'));
+    expect(after - before).toBe(15_000);
+  });
+
+  it('returns a valid ISO 8601 string', () => {
+    mgr.startGame('g1');
+    mgr.beginHiding('g1');
+    const value = mgr.getPhaseEndsAt('g1');
+    expect(typeof value).toBe('string');
+    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GameLoopManager — per-game duration overrides (Task 68)
 // ---------------------------------------------------------------------------
 

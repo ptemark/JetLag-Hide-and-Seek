@@ -466,6 +466,11 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           endGameActiveRef.current = msg.endGameActive;
           setEndGameActive(msg.endGameActive);
         }
+        // Render the countdown banner immediately for late-joiners (e.g. non-host
+        // players advancing from lobby a few seconds after Start). Without this,
+        // the banner stays blank until the next periodic timer_sync (~30 s).
+        // See DESIGN.md §19a "Timer visibility on connect".
+        if ('phaseEndsAt' in msg) setPhaseEndsAt(msg.phaseEndsAt ?? null);
         // Restore zone circle for reconnecting players (RULES.md §Hiding Rules: seekers see zone
         // only at End Game; hider always sees their own locked zone).
         if (Array.isArray(msg.zones) && msg.zones.length > 0) {

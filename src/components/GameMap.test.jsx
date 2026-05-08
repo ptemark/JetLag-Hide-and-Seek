@@ -1572,6 +1572,27 @@ describe('GameMap', () => {
     expect(zonesAlert).toBeTruthy();
   });
 
+  it('game_state_sync with phaseEndsAt renders countdown without prior timer_sync', async () => {
+    const hidingGame = { ...game, status: 'hiding' };
+    const phaseEndsAt = new Date(Date.now() + 12 * 60 * 1000).toISOString();
+    render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({
+          type: 'game_state_sync',
+          gameId: 'g1',
+          phase: 'hiding',
+          zones: [],
+          endGameActive: false,
+          phaseEndsAt,
+        }),
+      });
+    });
+    const banner = screen.getByTestId('timer-banner');
+    expect(banner).toBeInTheDocument();
+    expect(banner.textContent).toMatch(/hiding ends in/i);
+  });
+
   it('game_state_sync sets endGameActive and shows end-game banner for hider', async () => {
     render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
     await act(async () => {

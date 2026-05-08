@@ -196,6 +196,28 @@ export class GameLoopManager {
     return null;
   }
 
+  /**
+   * Return the ISO timestamp when the current timed phase ends, or null when
+   * no countdown applies (waiting/finished/unknown game). The returned value
+   * accounts for any accumulated `phaseExtensionMs`.
+   *
+   * Used by `game_state_sync` so a client connecting mid-phase can render the
+   * countdown immediately without waiting for the next periodic `timer_sync`.
+   * See DESIGN.md §19a "Timer visibility on connect".
+   *
+   * @param {string} gameId
+   * @returns {string|null} ISO 8601 timestamp, or null
+   */
+  getPhaseEndsAt(gameId) {
+    const entry = this._games.get(gameId);
+    if (!entry) return null;
+    if (entry.phase !== GamePhase.HIDING && entry.phase !== GamePhase.SEEKING) return null;
+    const baseDuration = this.getGameDuration(gameId, entry.phase);
+    if (baseDuration == null) return null;
+    const extension = entry.phaseExtensionMs ?? 0;
+    return new Date(entry.phaseStartedAt + baseDuration + extension).toISOString();
+  }
+
   /** Number of games currently being managed. */
   getActiveGameCount() {
     return this._games.size;

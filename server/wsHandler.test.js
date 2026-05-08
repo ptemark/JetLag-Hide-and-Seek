@@ -1365,4 +1365,45 @@ describe('WsHandler — game_state_sync on join', () => {
     const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
     expect(sync.players).toEqual([]);
   });
+
+  // -------------------------------------------------------------------------
+  // phaseEndsAt — Task 196
+  // -------------------------------------------------------------------------
+
+  it('game_state_sync includes phaseEndsAt from gameLoopManager', () => {
+    const endsAt = new Date(Date.now() + 60_000).toISOString();
+    glm.getPhaseEndsAt = vi.fn().mockReturnValue(endsAt);
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    expect(sync.phaseEndsAt).toBe(endsAt);
+  });
+
+  it('game_state_sync prefers getPhaseEndsAtFor when both are present', () => {
+    const endsAt = new Date(Date.now() + 90_000).toISOString();
+    glm.getPhaseEndsAt = vi.fn().mockReturnValue(new Date(Date.now() + 60_000).toISOString());
+    glm.getPhaseEndsAtFor = vi.fn().mockReturnValue(endsAt);
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    expect(glm.getPhaseEndsAtFor).toHaveBeenCalledWith('g1');
+    expect(sync.phaseEndsAt).toBe(endsAt);
+  });
+
+  it('game_state_sync sets phaseEndsAt to null when phase is waiting', () => {
+    glm.getPhase = vi.fn().mockReturnValue('waiting');
+    glm.getPhaseEndsAt = vi.fn().mockReturnValue(null);
+    ws.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws).find(m => m.type === 'game_state_sync');
+    expect(sync.phaseEndsAt).toBeNull();
+  });
+
+  it('game_state_sync omits phaseEndsAt when gameLoopManager is absent', () => {
+    const handlerNoGlm = new WsHandler(loop, gsm);
+    const ws3 = mockWs();
+    handlerNoGlm.handleConnection(ws3, 'p3');
+    ws3.send.mockClear();
+    ws3.emit('message', JSON.stringify({ type: 'join_game', gameId: 'g1' }));
+    const sync = sentMessages(ws3).find(m => m.type === 'game_state_sync');
+    expect(sync).toBeDefined();
+    expect(sync.phaseEndsAt).toBeUndefined();
+  });
 });

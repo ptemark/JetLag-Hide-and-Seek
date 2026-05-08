@@ -538,15 +538,24 @@ export function createServer({
       const phaseEndsAt = new Date(startedAt + endGameTimeoutMs).toISOString();
       return { type: 'timer_sync', gameId, phase, phaseEndsAt };
     }
-    if (phase !== 'hiding' && phase !== 'seeking') return null;
-    const baseDuration = gameLoopManager.getGameDuration(gameId, phase);
-    if (baseDuration == null) return null;
-    const extension = gameLoopManager.getPhaseExtension(gameId);
-    const duration = baseDuration + extension;
-    const elapsed = gameLoopManager.getPhaseElapsed(gameId);
-    const phaseEndsAt = new Date(Date.now() - elapsed + duration).toISOString();
+    const phaseEndsAt = gameLoopManager.getPhaseEndsAt(gameId);
+    if (phaseEndsAt == null) return null;
     return { type: 'timer_sync', gameId, phase, phaseEndsAt };
   }
+
+  /**
+   * Compute the ISO end-of-phase timestamp for a game including the End Game
+   * branch (which lives on this closure's `_endGameStartedAt`). Exposed on
+   * the loop manager so wsHandler can include it in `game_state_sync`.
+   * See DESIGN.md §19a "Timer visibility on connect".
+   */
+  gameLoopManager.getPhaseEndsAtFor = (gameId) => {
+    if (gameStateManager.isEndGameActive(gameId)) {
+      const startedAt = _endGameStartedAt.get(gameId);
+      return startedAt != null ? new Date(startedAt + endGameTimeoutMs).toISOString() : null;
+    }
+    return gameLoopManager.getPhaseEndsAt(gameId);
+  };
 
   // Guard against duplicate capture processing when ticks overlap async work.
   const _capturingGames = new Set();

@@ -216,6 +216,12 @@ export class WsHandler {
       };
       if (this.gameLoopManager) {
         syncPayload.phase = this.gameLoopManager.getPhase(gameId);
+        // Include phaseEndsAt so late-joiners see the countdown immediately
+        // without waiting for the next periodic timer_sync. Prefer the
+        // closure-bound helper that handles the End Game branch when present.
+        // See DESIGN.md §19a "Timer visibility on connect".
+        const endsAtFn = this.gameLoopManager.getPhaseEndsAtFor ?? this.gameLoopManager.getPhaseEndsAt;
+        syncPayload.phaseEndsAt = endsAtFn ? endsAtFn.call(this.gameLoopManager, gameId) ?? null : null;
       }
       this._send(ws, syncPayload);
     }

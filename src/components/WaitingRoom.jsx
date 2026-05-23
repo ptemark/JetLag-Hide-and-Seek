@@ -40,13 +40,18 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
   // Poll ready status and player list for all players (including host) so everyone
-  // sees both the count and who has joined the lobby.
+  // sees both the count and who has joined the lobby. Fire once immediately on
+  // mount so the Start Game button can activate as soon as both roles are present,
+  // instead of staying disabled for POLL_INTERVAL_MS while waiting for the first
+  // tick (Task 200).
   useEffect(() => {
-    const id = setInterval(async () => {
+    let cancelled = false;
+    const tick = async () => {
       const [readyResult, lookupResult] = await Promise.all([
         fetchReadyStatus(game.gameId).catch(() => null),
         lookupGame(game.gameId).catch(() => null),
       ]);
+      if (cancelled) return;
       if (readyResult) {
         setReadyCount(readyResult.readyCount);
         setTotalCount(readyResult.totalCount);
@@ -55,8 +60,13 @@ export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
         setPlayers(lookupResult.players ?? []);
         if (lookupResult.hostPlayerId) setHostPlayerId(lookupResult.hostPlayerId);
       }
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    };
+    tick();
+    const id = setInterval(tick, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
     // Run once on mount. game.gameId is stable during the WaitingRoom's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

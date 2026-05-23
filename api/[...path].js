@@ -27,11 +27,15 @@ export default async function handler(req, res) {
     try {
       await _tablesReady;
     } catch (err) {
-      // DB unavailable (e.g. Neon waking from pause, transient connection error).
-      // Reset so the next request retries table setup rather than re-throwing
-      // the same cached rejection forever across warm Lambda invocations.
-      console.error('[api] createTables failed — resetting pool:', err.message);
-      _pool = null;
+      // Transient migration failure (Neon waking from pause, FK race on cold
+      // start). Reset `_tablesReady` so the next request retries the
+      // migration, but keep `_pool` alive — the pool itself is healthy and
+      // tables almost certainly already exist from a prior cold start.
+      // Nulling the pool here would silently fall back to the in-process
+      // store, which is EMPTY on this Lambda instance and inconsistent
+      // across instances, causing UI counts to flicker between real values
+      // and zero (Task 200).
+      console.error('[api] createTables failed — will retry on next request:', err.message);
       _tablesReady = null;
     }
   }

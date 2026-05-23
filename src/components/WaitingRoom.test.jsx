@@ -23,9 +23,13 @@ const STARTABLE_PLAYERS = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default stubs — prevent unhandled rejections from background poll.
+  // Default stubs — prevent unhandled rejections from the immediate-on-mount
+  // poll (Task 200) and the background interval.
   api.fetchReadyStatus.mockResolvedValue({ readyCount: 0, totalCount: 0 });
   api.markPlayerReady.mockResolvedValue({ readyCount: 1, totalCount: 1 });
+  api.lookupGame.mockResolvedValue({
+    gameId: 'g1', status: 'waiting', players: [], hostPlayerId: 'p1',
+  });
 });
 
 /**
@@ -591,6 +595,31 @@ describe('WaitingRoom player list', () => {
     unmount();
 
     expect(global.clearInterval).toHaveBeenCalledWith(intervalId);
+  });
+
+  // Task 200: the lobby poll must fire once on mount so the player list is
+  // available immediately, instead of waiting POLL_INTERVAL_MS (3 s) for the
+  // first tick. Without this, the host's Start Game button stays disabled
+  // for 3 s after entering the lobby even when both roles are present.
+  it('fetches the player list immediately on mount, not only on interval ticks', async () => {
+    api.lookupGame.mockResolvedValue(TWO_PLAYERS);
+
+    render(<WaitingRoom game={GAME} player={PLAYER} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice')).toBeInTheDocument();
+      expect(screen.getByText('Bob')).toBeInTheDocument();
+    });
+  });
+
+  it('enables the Start Game button immediately when both roles are already present (no 3 s wait)', async () => {
+    api.lookupGame.mockResolvedValue(TWO_PLAYERS);
+
+    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /start game/i })).toBeEnabled();
+    });
   });
 });
 

@@ -129,4 +129,48 @@ describe('api/[...path].js', () => {
       expect.any(Object),
     );
   });
+
+  // Task 200: a transient createTables failure must NOT silently null the
+  // pool. Doing so would force the router into the in-process store, which
+  // is empty on that Lambda instance and inconsistent across instances —
+  // the root cause of the "ready count flickers from 2/2 to 0/2" bug.
+  it('keeps the pool alive when createTables rejects (does not silently fall back to in-memory)', async () => {
+    process.env.DATABASE_URL = 'postgresql://localhost/test';
+
+    const fakePool = { fake: 'pool', query: vi.fn().mockResolvedValue({ rows: [] }) };
+    const mockCreatePool = vi.fn().mockReturnValue(fakePool);
+    // First call rejects (cold-start migration race); subsequent calls succeed.
+    const mockCreateTables = vi.fn()
+      .mockRejectedValueOnce(new Error('relation does not exist'))
+      .mockResolvedValue(undefined);
+    const mockHandleRequest = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock('../db/db.js', () => ({ createPool: mockCreatePool, createTables: mockCreateTables }));
+    vi.doMock('../functions/router.js', () => ({ handleRequest: mockHandleRequest }));
+
+    const { default: handler } = await import('./[...path].js');
+
+    // First request — createTables rejects. The handler must still pass the
+    // pool through so downstream handlers query Postgres rather than reading
+    // an empty in-process Map.
+    await handler({ method: 'POST', url: '/api/players', body: {} }, makeRes());
+    expect(mockHandleRequest).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      expect.objectContaining({ pool: fakePool }),
+    );
+
+    // Second request — should reuse the same pool. createTables is NOT
+    // re-invoked because the pool is still cached; tables either already
+    // exist (the common case after a prior cold start) or queries will
+    // throw real errors that surface to the client as 500.
+    await handler({ method: 'POST', url: '/api/players', body: {} }, makeRes());
+    expect(mockHandleRequest).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      expect.objectContaining({ pool: fakePool }),
+    );
+    expect(mockCreatePool).toHaveBeenCalledTimes(1);
+    expect(mockCreateTables).toHaveBeenCalledTimes(1);
+  });
 });

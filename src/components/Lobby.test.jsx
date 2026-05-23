@@ -119,6 +119,13 @@ beforeEach(() => {
   api.joinGame.mockResolvedValue({ gameId: 'g1', playerId: 'p1', role: 'seeker', team: null });
   api.markPlayerReady.mockResolvedValue({ readyCount: 0, totalCount: 0 });
   api.fetchReadyStatus.mockResolvedValue({ readyCount: 0, totalCount: 0 });
+  // WaitingRoom now fetches lookupGame immediately on mount (Task 200), so a
+  // default resolved value is required for every test that renders WaitingRoom
+  // (directly or via Lobby) — otherwise the immediate call returns undefined
+  // and `undefined.catch(...)` throws an unhandled rejection.
+  api.lookupGame.mockResolvedValue({
+    gameId: 'g1', status: 'waiting', players: [], hostPlayerId: 'p1',
+  });
   api.listQuestions.mockResolvedValue([]);
   api.fetchCards.mockResolvedValue([]);
   api.fetchLeaderboard.mockResolvedValue([]);

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRateLimiter } from './rateLimiter.js';
 
 // ---------------------------------------------------------------------------
@@ -278,5 +278,67 @@ describe('createRateLimiter — maxEntries pruning', () => {
     expect(store.has('ip-3')).toBe(true);
     expect(store.has('ip-1')).toBe(false);
     expect(store.has('ip-2')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// defaultLimiter — env-var configuration
+// ---------------------------------------------------------------------------
+
+describe('defaultLimiter — env var configuration', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+  });
+
+  async function freshDefaultLimiter() {
+    vi.resetModules();
+    const mod = await import('./rateLimiter.js');
+    return mod.defaultLimiter;
+  }
+
+  it('uses RATE_LIMIT_MAX_REQUESTS when set', async () => {
+    vi.stubEnv('RATE_LIMIT_MAX_REQUESTS', '2');
+    const limiter = await freshDefaultLimiter();
+    expect(limiter.check('a').allowed).toBe(true);
+    expect(limiter.check('a').allowed).toBe(true);
+    expect(limiter.check('a').allowed).toBe(false);
+  });
+
+  it('uses RATE_LIMIT_WINDOW_MS when set', async () => {
+    // Window short enough to verify the value takes effect: a request must succeed,
+    // be rejected within the window, and succeed again after the window elapses.
+    vi.stubEnv('RATE_LIMIT_MAX_REQUESTS', '1');
+    vi.stubEnv('RATE_LIMIT_WINDOW_MS', '50');
+    const limiter = await freshDefaultLimiter();
+    expect(limiter.check('b').allowed).toBe(true);
+    expect(limiter.check('b').allowed).toBe(false);
+    await new Promise((resolve) => { setTimeout(resolve, 70); });
+    expect(limiter.check('b').allowed).toBe(true);
+  });
+
+  it('falls back to defaults when env vars are absent', async () => {
+    vi.stubEnv('RATE_LIMIT_MAX_REQUESTS', '');
+    vi.stubEnv('RATE_LIMIT_WINDOW_MS', '');
+    const limiter = await freshDefaultLimiter();
+    // Default is 100 — first 100 should succeed.
+    for (let i = 0; i < 100; i++) expect(limiter.check('c').allowed).toBe(true);
+    expect(limiter.check('c').allowed).toBe(false);
+  });
+
+  it('falls back to defaults when env vars are non-numeric', async () => {
+    vi.stubEnv('RATE_LIMIT_MAX_REQUESTS', 'not-a-number');
+    vi.stubEnv('RATE_LIMIT_WINDOW_MS', 'oops');
+    const limiter = await freshDefaultLimiter();
+    for (let i = 0; i < 100; i++) expect(limiter.check('d').allowed).toBe(true);
+    expect(limiter.check('d').allowed).toBe(false);
+  });
+
+  it('falls back to defaults when env vars are non-positive', async () => {
+    vi.stubEnv('RATE_LIMIT_MAX_REQUESTS', '0');
+    vi.stubEnv('RATE_LIMIT_WINDOW_MS', '-5');
+    const limiter = await freshDefaultLimiter();
+    for (let i = 0; i < 100; i++) expect(limiter.check('e').allowed).toBe(true);
+    expect(limiter.check('e').allowed).toBe(false);
   });
 });

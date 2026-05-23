@@ -1,14 +1,40 @@
 # JetLag: The Game
 
+[![CI](https://github.com/ptemark/JetLag-Hide-and-Seek/actions/workflows/ci.yml/badge.svg)](https://github.com/ptemark/JetLag-Hide-and-Seek/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)](https://nodejs.org/)
+
 A mobile-first, serverless hide-and-seek game using zones around transit stations, challenge cards, and real-time location updates.
 
-## Overview
+## Gameplay Overview
 
-JetLag is a real-world transit hide-and-seek game where:
-- **Hiders** travel via public transit and hide within a zone around their final station.
-- **Seekers** ask questions to deduce the hider's location and find them before time runs out.
+JetLag is a real-world transit hide-and-seek game played across a city or region.
+
+- **Hiders** travel via public transit during a configurable hiding period. When they reach their final station they lock a hiding zone (a circle around that station) and must remain inside it for the rest of the game.
+- **Seekers** chase the hider. Once the hiding period ends, they may ask **one question at a time** drawn from six categories (thermometer, transit, measuring, matching, tentacle, photo). Each answered question awards the seeker a **challenge card** from the hider deck.
+- **End Game** begins when seekers physically enter the hider's zone (and are off transit). The hider's GPS freezes; seekers have a short window to spot them.
+- **Win conditions:**
+  - **Seekers win** by reaching the hider's zone and confirming a spot before the End Game timer expires.
+  - **Hider wins** by surviving until the seeking-phase timer expires, or by evading the spot during End Game.
 
 See [`spec/RULES.md`](spec/RULES.md) for the full rulebook and [`spec/DESIGN.md`](spec/DESIGN.md) for architecture decisions.
+
+### Question Types
+
+| Category | What the seeker learns |
+|----------|------------------------|
+| `thermometer` | Whether the hider is getting warmer (closer) or colder (further) relative to recent seeker movement. |
+| `transit` | Whether the hider's station lies on a specified transit route the seeker is travelling. |
+| `measuring` | Whether the hider is closer or further from a named feature than the seekers are. |
+| `matching` | Whether a nearest feature (airport, river, landmark) matches between hider and seekers. |
+| `tentacle` | Whether the hider is within a given radius of a specified point. |
+| `photo` | Hider must send a photo matching the asked criteria. Longer expiry window than other categories. |
+
+### Challenge Cards
+
+Answering a question awards the seeker exactly one challenge card drawn from the **Hider Deck**. Three card types exist: **time bonus** (extends the hiding/seeking timer), **powerup** (e.g. false-zone decoy broadcast to mislead seekers), and **curse** (temporarily blocks the cursed side from acting, e.g. submitting questions).
+
+Per-category draw probabilities are defined in [`config/gameRules.js`](config/gameRules.js) — for example, `photo` answers favour time-bonus draws, while `tentacle` answers favour curses. A hider may hold at most 6 cards at a time.
 
 ---
 
@@ -53,21 +79,23 @@ npm install
 # 2. Copy the environment template and fill in values
 cp .env.example .env.development
 
-# 3. Run all tests
+# 3. Run all unit tests (Vitest, no DB required)
 npm test
 
 # 4. Production build
 npm run build
 
-# 5. Full local CI (install + test + build)
+# 5. Full local CI (install + unit tests + integration tests + build)
 npm run ci:local
 ```
 
-### Full local dev startup sequence (frontend + API)
+### Dev workflow
 
-`npm run dev` starts the Vite dev server on port 5173. Its `server.proxy`
-configuration forwards all `/api/*` requests to `http://localhost:3000`, where
-the Vercel function runner must be listening.
+Day-to-day development uses two long-running processes (frontend SPA + serverless function runner) and one test loop.
+
+#### Start the app locally
+
+`npm run dev` starts the Vite dev server on port 5173. Its `server.proxy` configuration forwards all `/api/*` requests to `http://localhost:3000`, where the Vercel function runner must be listening.
 
 Run these two commands in separate terminals:
 
@@ -87,6 +115,25 @@ will be proxied to the local function runner automatically.
 > database-backed routes you also need a valid `DATABASE_URL` in your
 > `.env.development` (or `.env.local`) file.
 
+#### Run tests
+
+```bash
+# Unit tests only (fast, no DB required)
+npm test
+
+# Unit tests in watch mode
+npm run test:watch
+
+# Integration tests (require a real Postgres URL)
+DATABASE_URL=postgresql://user:pass@host:5432/db npm run test:integration
+
+# A single test file
+npx vitest run src/components/GameMap.test.jsx
+npx vitest run --reporter=verbose functions/games.test.js
+```
+
+Integration tests live in `integration/*.test.js` and exercise serverless handlers against a real Postgres database. The suite skips itself if `DATABASE_URL` is not set, so it is safe to omit when iterating on frontend or pure-logic changes. CI provisions a disposable Postgres service and runs the integration job before any deploy.
+
 ### Key environment variables
 
 | Variable | Required | Description |
@@ -99,6 +146,8 @@ will be proxied to the local function runner automatically.
 | `IDLE_SHUTDOWN_DELAY_MS` | Optional | Grace period (ms) before container exits when idle. Default `0`. |
 | `ALERT_WEBHOOK_URL` | Optional | Webhook for failure alerts (Slack, PagerDuty, etc.) |
 | `SCALE_WEBHOOK_URL` | Optional | Webhook for auto-scale events |
+| `RATE_LIMIT_WINDOW_MS` | Optional | Rate limiter window in ms. Default `60000` (60 s). See `functions/rateLimiter.js`. |
+| `RATE_LIMIT_MAX_REQUESTS` | Optional | Max requests per IP per window. Default `100`. See `functions/rateLimiter.js`. |
 
 See [`.env.example`](.env.example) for the full list.
 
@@ -264,11 +313,26 @@ Required GitHub secrets:
 
 ## Game Scales
 
-| Scale  | Area              | Hiding Period | Zone Radius |
-|--------|-------------------|---------------|-------------|
-| Small  | City/town         | 30–60 min     | 500 m       |
-| Medium | Large city/metro  | 60–180 min    | 500 m       |
-| Large  | Region/country    | 180+ min      | 1 km        |
+| Scale  | Area              | Hiding Period | Zone Radius | Photo question timeout |
+|--------|-------------------|---------------|-------------|------------------------|
+| Small  | City/town         | 30–60 min     | 500 m       | 10 min                 |
+| Medium | Large city/metro  | 60–180 min    | 500 m       | 15 min                 |
+| Large  | Region/country    | 180+ min      | 1 km        | 20 min                 |
+
+Photo question expiry values are defined per scale in `functions/questions.js` (`PHOTO_EXPIRY_MS_BY_SCALE`).
+
+---
+
+## Troubleshooting
+
+**Vite proxy is not forwarding API calls (404 from `/api/*` in dev).**
+Confirm `vercel dev --listen 3000` is running in a second terminal. Vite's `server.proxy` forwards every `/api/*` request to `http://localhost:3000`; without the function runner on that port, requests fall through to the SPA and return the index HTML or 404. Re-check the port matches in `vite.config.js`.
+
+**`DATABASE_URL must be set to run integration tests`.**
+The integration suite (`integration/*.test.js`) connects to a real Postgres database — there is no mock fallback. Provide a live URL: `DATABASE_URL=postgresql://user:pass@host:5432/db npm run test:integration`. A local Postgres container works (`docker run -e POSTGRES_PASSWORD=jetlag -p 5432:5432 postgres:16`). Unit tests (`npm test`) do not require Postgres.
+
+**WebSocket connection refused (browser console: `WebSocket connection to 'ws://…' failed`).**
+Confirm `VITE_WS_URL` points at a reachable URL and that the managed game-server container is running. In local dev that means starting the server with `npm start` (or `docker run … jetlag-server`) on the port referenced by `VITE_WS_URL` — by default `ws://localhost:3002` per `.env.example`. The browser must be able to reach it; check firewall / port forwarding for non-localhost hosts.
 
 ---
 

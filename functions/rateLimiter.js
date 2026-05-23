@@ -106,5 +106,22 @@ export function createRateLimiter({
   return { check, _clear };
 }
 
-/** Shared default limiter (100 req / 60 s per client). */
-export const defaultLimiter = createRateLimiter();
+/**
+ * Shared default limiter — 100 req / 60 s per client.
+ *
+ * Both values may be overridden at process start via env vars:
+ *   RATE_LIMIT_WINDOW_MS     — window duration in ms (default 60000)
+ *   RATE_LIMIT_MAX_REQUESTS  — max requests per IP per window (default 100)
+ * Invalid (non-positive, non-finite) values fall back to defaults.
+ */
+function envInt(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+export const defaultLimiter = createRateLimiter({
+  windowMs: envInt('RATE_LIMIT_WINDOW_MS', 60_000),
+  maxRequests: envInt('RATE_LIMIT_MAX_REQUESTS', 100),
+});

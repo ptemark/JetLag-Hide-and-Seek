@@ -68,7 +68,13 @@ Goal:
 Seekers may ask questions to locate the Hider.
 
 ### Question Timing
-- Ask a question only after the previous question is answered.
+- **Questions are locked during the hiding period.** Seekers cannot ask any
+  question until the game has transitioned to the seeking phase. The hiding
+  period is the Hider's time to travel to and settle in their hiding zone
+  (see §Hiding Rules rule 2); letting Seekers probe locations beforehand
+  would leak the Hider's whereabouts before they have chosen a zone.
+- Once seeking begins, ask a question only after the previous question is answered.
+- When the game finishes, no further questions can be asked.
 - Hider must answer truthfully within time limits:
     - Standard: **5 min**
     - Photo: **10–20 min (varies by game size)**

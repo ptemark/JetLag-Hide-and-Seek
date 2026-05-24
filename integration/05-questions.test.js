@@ -1,6 +1,7 @@
 import { setup, teardown }                    from './setup.js';
 import { submitQuestion, listQuestions,
          submitAnswer }                        from '../functions/questions.js';
+import { dbUpdateGameStatus }                  from '../db/gameStore.js';
 import { makePlayer, makeGame, makeJoin }      from './helpers.js';
 
 describe.skipIf(!process.env.DATABASE_URL)('questions', () => {
@@ -29,6 +30,9 @@ describe.skipIf(!process.env.DATABASE_URL)('questions', () => {
     const game = await makeGame(pool, { size });
     await makeJoin(pool, game.gameId, hider.playerId,  'hider');
     await makeJoin(pool, game.gameId, seeker.playerId, 'seeker');
+    // Task 202: submitQuestion now rejects unless game.status === 'seeking'.
+    // Advance the game past the hiding phase before submitting in tests.
+    await dbUpdateGameStatus(pool, { gameId: game.gameId, status: 'seeking' });
     const res = await submitQuestion(
       { method: 'POST', body: { gameId: game.gameId, askerId: seeker.playerId, targetId: hider.playerId, category, text } },
       pool, '', null, null,
@@ -166,6 +170,7 @@ describe.skipIf(!process.env.DATABASE_URL)('questions', () => {
     const game = await makeGame(pool);
     await makeJoin(pool, game.gameId, hider.playerId,  'hider');
     await makeJoin(pool, game.gameId, seeker.playerId, 'seeker');
+    await dbUpdateGameStatus(pool, { gameId: game.gameId, status: 'seeking' });
 
     const submitted = await submitQuestion(
       { method: 'POST', body: { gameId: game.gameId, askerId: seeker.playerId, targetId: hider.playerId, category: 'thermometer', text: 'Can you hear me?' } },
@@ -193,5 +198,59 @@ describe.skipIf(!process.env.DATABASE_URL)('questions', () => {
     );
     expect(listRes.status).toBe(200);
     expect(listRes.body.questions).toEqual([]);
+  });
+
+  // ── Task 202 — phase gating (RULES.md §Asking Questions) ─────────────────
+
+  it('(l) submitQuestion during waiting phase → 409 questions_locked', async () => {
+    const game = await makeGame(pool); // default status = 'waiting'
+    await makeJoin(pool, game.gameId, hider.playerId,  'hider');
+    await makeJoin(pool, game.gameId, seeker.playerId, 'seeker');
+
+    const res = await submitQuestion(
+      { method: 'POST', body: { gameId: game.gameId, askerId: seeker.playerId, targetId: hider.playerId, category: 'thermometer', text: 'Where?' } },
+      pool, '', null, null,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('questions_locked');
+    expect(res.body.gameStatus).toBe('waiting');
+  });
+
+  it('(m) submitQuestion during hiding phase → 409 questions_locked', async () => {
+    const game = await makeGame(pool);
+    await makeJoin(pool, game.gameId, hider.playerId,  'hider');
+    await makeJoin(pool, game.gameId, seeker.playerId, 'seeker');
+    await dbUpdateGameStatus(pool, { gameId: game.gameId, status: 'hiding' });
+
+    const res = await submitQuestion(
+      { method: 'POST', body: { gameId: game.gameId, askerId: seeker.playerId, targetId: hider.playerId, category: 'thermometer', text: 'Where?' } },
+      pool, '', null, null,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('questions_locked');
+    expect(res.body.gameStatus).toBe('hiding');
+    expect(res.body.message).toMatch(/hiding period/i);
+  });
+
+  it('(n) submitQuestion during finished phase → 409 questions_locked', async () => {
+    const game = await makeGame(pool);
+    await makeJoin(pool, game.gameId, hider.playerId,  'hider');
+    await makeJoin(pool, game.gameId, seeker.playerId, 'seeker');
+    await dbUpdateGameStatus(pool, { gameId: game.gameId, status: 'finished' });
+
+    const res = await submitQuestion(
+      { method: 'POST', body: { gameId: game.gameId, askerId: seeker.playerId, targetId: hider.playerId, category: 'thermometer', text: 'Where?' } },
+      pool, '', null, null,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('questions_locked');
+  });
+
+  it('(o) submitQuestion against an unknown gameId → 404', async () => {
+    const res = await submitQuestion(
+      { method: 'POST', body: { gameId: '00000000-0000-0000-0000-000000000000', askerId: seeker.playerId, targetId: hider.playerId, category: 'thermometer', text: 'Hi?' } },
+      pool, '', null, null,
+    );
+    expect(res.status).toBe(404);
   });
 });

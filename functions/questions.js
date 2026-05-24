@@ -26,8 +26,34 @@ import {
   dbSaveQuestionPhoto,
   dbGetQuestionPhoto,
   dbGetCurseExpiry,
+  dbGetGame,
 } from '../db/gameStore.js';
 import { drawCardInProcess, randomCardDescriptor, _curses } from './cards.js';
+
+/**
+ * Reject submitQuestion when the game is not in the seeking phase.
+ *
+ * RULES.md §Asking Questions / §Question Timing: questions are only valid
+ * during the seeking phase. Allowing them during hiding would leak the
+ * hider's position before they have selected their hiding zone (RULES.md
+ * §Hiding Rules rule 2). 'finished' is also rejected — the game is over.
+ *
+ * Returns the 409 response body when the game is not 'seeking', or null
+ * when the submission may proceed.
+ */
+function rejectIfNotSeeking(game) {
+  if (game.status === 'seeking') return null;
+  return {
+    status: 409,
+    body: {
+      error: 'questions_locked',
+      gameStatus: game.status,
+      message: game.status === 'hiding'
+        ? 'Questions unlock when the hiding period ends.'
+        : 'Questions can only be asked during the seeking phase.',
+    },
+  };
+}
 
 /** Answer deadline in milliseconds for non-photo categories. */
 const DEFAULT_EXPIRY_MS = 5 * 60 * 1000;
@@ -503,7 +529,15 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
       ? fetchMatchingData({ gameId, seekerId: askerId, featureType: matchingFeatureType }, gameServerUrl, adminApiKey, fetchFn)
       : Promise.resolve({ matchingHiderFeatureName: null, matchingSeekerFeatureName: null, matchingFeaturesMatch: null });
 
-    return dbGetCurseExpiry(pool, gameId).then(curseExpiry => {
+    // Gate: questions are only allowed during the seeking phase
+    // (RULES.md §Asking Questions). Check before any side-effecting fetches.
+    return (async () => {
+      const game = await dbGetGame(pool, gameId);
+      if (!game) return { status: 404, body: { error: 'game not found' } };
+      const lockedResponse = rejectIfNotSeeking(game);
+      if (lockedResponse) return lockedResponse;
+
+      const curseExpiry = await dbGetCurseExpiry(pool, gameId);
       if (curseExpiry && new Date(curseExpiry) > new Date()) {
         return { status: 409, body: { error: 'curse_active', curseEndsAt: curseExpiry } };
       }
@@ -536,7 +570,7 @@ export function submitQuestion(req, pool = null, gameServerUrl, fetchFn = global
           return { status: 201, body: row };
         }),
       );
-    });
+    })();
   }
 
   // Check for an active curse in the in-process store.

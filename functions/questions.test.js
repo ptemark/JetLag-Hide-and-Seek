@@ -26,6 +26,22 @@ function makeQuestion(overrides = {}) {
   };
 }
 
+/**
+ * Return the two `mockResolvedValueOnce` payloads `dbGetGame` consumes —
+ * a games row and the joined players rows. Used by every pool-backed
+ * submitQuestion test so it can pass the phase gate added in Task 202.
+ * Pass status='hiding' to simulate a game still in the hiding phase.
+ */
+function gameLookupMocks(gameId = 'g-1', status = 'seeking') {
+  return [
+    { rows: [{
+      id: gameId, size: 'medium', bounds: {}, status,
+      seeker_teams: 0, host_player_id: null, created_at: new Date().toISOString(),
+    }] },
+    { rows: [] },
+  ];
+}
+
 // ── submitQuestion ────────────────────────────────────────────────────────────
 
 describe('submitQuestion', () => {
@@ -160,8 +176,11 @@ describe('submitQuestion', () => {
       category: 'photo', text: 'snap', status: 'pending', expiresAt,
       createdAt: new Date().toISOString(),
     };
+    const [gamesMock, playersMock] = gameLookupMocks('g-s', 'seeking');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)                               // dbGetGame — games row
+        .mockResolvedValueOnce(playersMock)                             // dbGetGame — players join
         .mockResolvedValueOnce({ rows: [{ curse_expires_at: null }] })  // dbGetCurseExpiry
         .mockResolvedValueOnce({ rows: [] })                            // pending check
         // No SELECT games query — gameScale supplied in body
@@ -176,8 +195,8 @@ describe('submitQuestion', () => {
       pool,
     );
     expect(result.status).toBe(201);
-    // Verify only 3 queries fired (curse + pending + INSERT) — no extra SELECT games.
-    expect(pool.query).toHaveBeenCalledTimes(3);
+    // 5 queries: dbGetGame (games + players) + curse + pending + INSERT.
+    expect(pool.query).toHaveBeenCalledTimes(5);
   });
 
   it('allows a new question after the previous one is answered', async () => {
@@ -195,8 +214,11 @@ describe('submitQuestion', () => {
       questionId: 'q-1', gameId: 'g-1', askerId: 'a-1', targetId: 't-1',
       category: 'photo', text: 'test', status: 'pending', expiresAt, createdAt: new Date().toISOString(),
     };
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)
+        .mockResolvedValueOnce(playersMock)
         .mockResolvedValueOnce({ rows: [{ curse_expires_at: null }] })  // dbGetCurseExpiry — no curse
         .mockResolvedValueOnce({ rows: [] })                            // pending check returns none
         .mockResolvedValueOnce({ rows: [
@@ -211,9 +233,46 @@ describe('submitQuestion', () => {
     expect(result.body.expiresAt).toBeTruthy();
   });
 
-  it('returns 409 via pool when a pending question exists for the game', async () => {
+  // Task 202 — questions are locked outside the seeking phase.
+  it('returns 409 questions_locked via pool when the game is still in hiding phase', async () => {
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'hiding');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)
+        .mockResolvedValueOnce(playersMock),
+    };
+    const result = await submitQuestion({ method: 'POST', body: makeQuestion() }, pool);
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('questions_locked');
+    expect(result.body.gameStatus).toBe('hiding');
+  });
+
+  it('returns 409 questions_locked via pool when the game is finished', async () => {
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'finished');
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)
+        .mockResolvedValueOnce(playersMock),
+    };
+    const result = await submitQuestion({ method: 'POST', body: makeQuestion() }, pool);
+    expect(result.status).toBe(409);
+    expect(result.body.error).toBe('questions_locked');
+  });
+
+  it('returns 404 via pool when the game does not exist', async () => {
+    const pool = {
+      query: vi.fn().mockResolvedValueOnce({ rows: [] }), // dbGetGame — empty
+    };
+    const result = await submitQuestion({ method: 'POST', body: makeQuestion() }, pool);
+    expect(result.status).toBe(404);
+  });
+
+  it('returns 409 via pool when a pending question exists for the game', async () => {
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
+    const pool = {
+      query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)
+        .mockResolvedValueOnce(playersMock)
         .mockResolvedValueOnce({ rows: [{ curse_expires_at: null }] })  // dbGetCurseExpiry — no curse
         .mockResolvedValueOnce({ rows: [{ id: 'existing-q' }] }),       // pending check returns one
     };
@@ -224,8 +283,12 @@ describe('submitQuestion', () => {
 
   it('returns 409 curse_active via pool when a curse is active for the game', async () => {
     const curseEndsAt = new Date(Date.now() + 90_000).toISOString();
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
     const pool = {
-      query: vi.fn().mockResolvedValueOnce({ rows: [{ curse_expires_at: curseEndsAt }] }),
+      query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)
+        .mockResolvedValueOnce(playersMock)
+        .mockResolvedValueOnce({ rows: [{ curse_expires_at: curseEndsAt }] }),
     };
     const result = await submitQuestion({ method: 'POST', body: makeQuestion() }, pool);
     expect(result.status).toBe(409);
@@ -240,8 +303,11 @@ describe('submitQuestion', () => {
       questionId: 'q-nc', gameId: 'g-1', askerId: 'a-1', targetId: 't-1',
       category: 'matching', text: 'test', status: 'pending', expiresAt, createdAt: new Date().toISOString(),
     };
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)
+        .mockResolvedValueOnce(playersMock)
         .mockResolvedValueOnce({ rows: [{ curse_expires_at: pastCurse }] })  // expired curse
         .mockResolvedValueOnce({ rows: [] })                                  // no pending question
         .mockResolvedValueOnce({ rows: [
@@ -315,8 +381,11 @@ describe('submitQuestion', () => {
       questionId: 'q-pool', gameId: 'g-1', askerId: 'a-1', targetId: 't-1',
       category: 'matching', text: 'test', status: 'pending', expiresAt, createdAt: new Date().toISOString(),
     };
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)
+        .mockResolvedValueOnce(playersMock)
         .mockResolvedValueOnce({ rows: [{ curse_expires_at: null }] })  // dbGetCurseExpiry
         .mockResolvedValueOnce({ rows: [] })                            // no pending question
         .mockResolvedValueOnce({ rows: [
@@ -1145,8 +1214,11 @@ describe('submitQuestion — thermometer enrichment', () => {
     const expiresAt = new Date(Date.now() + 300_000);
     const capturedArgs = {};
 
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)       // dbGetGame — games
+        .mockResolvedValueOnce(playersMock)     // dbGetGame — players
         .mockResolvedValueOnce({ rows: [] })   // no active curse
         .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
         .mockImplementationOnce((sql, params) => {
@@ -1298,8 +1370,11 @@ describe('submitQuestion — tentacle enrichment', () => {
     const expiresAt = new Date(Date.now() + 300_000);
     const capturedArgs = {};
 
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)       // dbGetGame — games
+        .mockResolvedValueOnce(playersMock)     // dbGetGame — players
         .mockResolvedValueOnce({ rows: [] })   // no active curse
         .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
         .mockImplementationOnce((sql, params) => {
@@ -1465,8 +1540,11 @@ describe('submitQuestion — measuring enrichment', () => {
     const expiresAt = new Date(Date.now() + 300_000);
     const capturedArgs = {};
 
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)       // dbGetGame — games
+        .mockResolvedValueOnce(playersMock)     // dbGetGame — players
         .mockResolvedValueOnce({ rows: [] })   // no active curse
         .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
         .mockImplementationOnce((sql, params) => {
@@ -1603,8 +1681,11 @@ describe('submitQuestion — transit enrichment', () => {
     const expiresAt = new Date(Date.now() + 300_000);
     const capturedArgs = {};
 
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)       // dbGetGame — games
+        .mockResolvedValueOnce(playersMock)     // dbGetGame — players
         .mockResolvedValueOnce({ rows: [] })   // no active curse
         .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
         .mockImplementationOnce((sql, params) => {
@@ -1798,8 +1879,11 @@ describe('submitQuestion — matching enrichment', () => {
     const expiresAt = new Date(Date.now() + 300_000);
     const capturedArgs = {};
 
+    const [gamesMock, playersMock] = gameLookupMocks('game-1', 'seeking');
     const pool = {
       query: vi.fn()
+        .mockResolvedValueOnce(gamesMock)       // dbGetGame — games
+        .mockResolvedValueOnce(playersMock)     // dbGetGame — players
         .mockResolvedValueOnce({ rows: [] })   // no active curse
         .mockResolvedValueOnce({ rows: [] })   // pending check: no conflict
         .mockImplementationOnce((sql, params) => {

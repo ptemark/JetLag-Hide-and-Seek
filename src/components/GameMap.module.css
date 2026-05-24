@@ -103,6 +103,33 @@
   padding: 0.5rem 0;
 }
 
+/* ── Phase banner ───────────────────────────────────────────────────────────── */
+/* Prominent, top-of-page indicator of the current game phase. Both teams
+ * see this so it is immediately obvious whether the hiding period is still
+ * in progress or seeking has begun (DESIGN.md §19a "Phase banner contract"). */
+.phaseBanner {
+  margin: 0.5rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-family: 'Oswald', sans-serif;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 1.05rem;
+  color: var(--color-bg);
+}
+.phaseBannerHiding {
+  background: var(--color-sunset-1);
+}
+.phaseBannerSeeking {
+  background: var(--color-accent);
+}
+.phaseBannerFinished {
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+
 /* ── Status banners ─────────────────────────────────────────────────────────── */
 
 /* Error/alert banner — uses sunset-4 (error colour) tint, matches DESIGN.md §22 alert style */

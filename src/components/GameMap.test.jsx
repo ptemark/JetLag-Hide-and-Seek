@@ -162,6 +162,39 @@ describe('GameMap', () => {
     expect(screen.getByText('seeking')).toBeInTheDocument();
   });
 
+  // ── Task 202 — prominent phase banner ────────────────────────────────────
+  it('renders a phase banner with role-specific copy during the hiding phase', () => {
+    const hidingGame = { ...game, status: 'hiding' };
+    render(<GameMap player={player} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    const banner = screen.getByTestId('phase-banner');
+    expect(banner).toHaveAttribute('data-phase', 'hiding');
+    expect(banner).toHaveTextContent(/hiding period/i);
+  });
+
+  it('shows different phase-banner copy for hider vs seeker', () => {
+    const hiderPlayer  = { playerId: 'h', name: 'H', role: 'hider' };
+    const seekerPlayer = { playerId: 's', name: 'S', role: 'seeker' };
+    const hidingGame = { ...game, status: 'hiding' };
+    const { unmount } = render(<GameMap player={hiderPlayer}  game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.getByTestId('phase-banner')).toHaveTextContent(/find your hiding spot/i);
+    unmount();
+    render(<GameMap player={seekerPlayer} game={hidingGame} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.getByTestId('phase-banner')).toHaveTextContent(/questions unlock when seeking begins/i);
+  });
+
+  it('switches the phase banner to seeking copy when phase_change arrives', async () => {
+    render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
+    expect(screen.getByTestId('phase-banner')).toHaveAttribute('data-phase', 'hiding');
+    await act(async () => {
+      MockWebSocket.last.onmessage?.({
+        data: JSON.stringify({ type: 'phase_change', newPhase: 'seeking' }),
+      });
+    });
+    const banner = screen.getByTestId('phase-banner');
+    expect(banner).toHaveAttribute('data-phase', 'seeking');
+    expect(banner).toHaveTextContent(/seeking period/i);
+  });
+
   it('shows seekers win alert on capture message', async () => {
     render(<GameMap player={player} game={game} zones={[]} serverUrl={serverUrl} />);
     await act(async () => {
@@ -348,7 +381,10 @@ describe('GameMap', () => {
   it('displays player role in header', () => {
     const seeker = { ...player, role: 'seeker' };
     render(<GameMap player={seeker} game={game} zones={[]} serverUrl={serverUrl} />);
-    expect(screen.getByText(/seeker/i)).toBeInTheDocument();
+    // "seeker" appears in the header span and may also appear in the phase
+    // banner copy ("questions unlock when seeking begins"). Scope to the
+    // header span via a closer text match.
+    expect(screen.getByText(/\(seeker\)/i)).toBeInTheDocument();
   });
 
   it('renders zone circles on the Leaflet map', () => {
@@ -1463,7 +1499,12 @@ describe('GameMap', () => {
         data: JSON.stringify({ type: 'game_state_sync', gameId: 'g1', phase: 'seeking', zones: [], endGameActive: false }),
       });
     });
-    expect(screen.getByText(/seeking/i)).toBeInTheDocument();
+    // The header reads "Phase: seeking" — the prominent phase banner also
+    // mentions "Seeking Period" so query the small header strong tag directly
+    // to avoid a multi-match ambiguity.
+    const headerPhase = screen.getAllByText(/seeking/i)
+      .find((el) => el.tagName === 'STRONG');
+    expect(headerPhase).toBeInTheDocument();
   });
 
   it('game_state_sync updates locked-zone state without throwing', async () => {

@@ -1148,6 +1148,73 @@ describe('POST /internal/games/:gameId/start', () => {
     expect(body.error).toBe('insufficient_players');
   });
 
+  // Task 202 — when a DB-backed store is wired, validate hider/seeker counts
+  // against Postgres rather than the in-memory WS state. At the moment the
+  // host clicks Start, NOBODY is WS-connected yet, so the in-memory check
+  // would always fail with 400 insufficient_players.
+  it('prefers store.dbGetGamePlayerCounts over in-memory counts (DB-backed validation)', async () => {
+    const dbCounts = vi.fn().mockResolvedValue({ hiderCount: 1, seekerCount: 1 });
+    const store = {
+      dbGetGamePlayerCounts: dbCounts,
+      dbUpdateGameStatus:    vi.fn().mockResolvedValue(undefined),
+      dbExpireStaleQuestions: vi.fn().mockResolvedValue([]),
+    };
+    server = createServer({ tickInterval: 5000, store });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+    // Deliberately do NOT seed any in-memory players — confirms the in-memory
+    // check is bypassed in favour of the DB-backed counts.
+
+    const res = await fetch(`http://localhost:${port}/internal/games/db-start/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    expect(res.status).toBe(204);
+    expect(dbCounts).toHaveBeenCalledWith({ gameId: 'db-start' });
+    expect(server.gameLoopManager.getPhase('db-start')).toBe('hiding');
+  });
+
+  it('returns 400 insufficient_players when DB-backed counts are short of one role', async () => {
+    const store = {
+      dbGetGamePlayerCounts: vi.fn().mockResolvedValue({ hiderCount: 0, seekerCount: 2 }),
+      dbUpdateGameStatus:    vi.fn().mockResolvedValue(undefined),
+      dbExpireStaleQuestions: vi.fn().mockResolvedValue([]),
+    };
+    server = createServer({ tickInterval: 5000, store });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/db-short/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('insufficient_players');
+  });
+
+  it('returns 500 when DB-backed count lookup throws', async () => {
+    const store = {
+      dbGetGamePlayerCounts: vi.fn().mockRejectedValue(new Error('connection reset')),
+      dbUpdateGameStatus:    vi.fn().mockResolvedValue(undefined),
+      dbExpireStaleQuestions: vi.fn().mockResolvedValue([]),
+    };
+    server = createServer({ tickInterval: 5000, store });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/db-err/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'small' }),
+    });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('player_count_lookup_failed');
+  });
+
   // Task 195 — no pre-start hider-zone requirement (RULES.md §Hiding Rules rule 2).
   it('returns 204 when hider+seeker are present even with no zones registered', async () => {
     server = createServer({ tickInterval: 5000 });

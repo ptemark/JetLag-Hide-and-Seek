@@ -596,6 +596,30 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     return () => clearInterval(id);
   }, [player.playerId, game.gameId]);
 
+  // Phase banner: prominent, top-of-page indicator so both teams immediately
+  // understand whether the hiding period is still in progress or seeking has
+  // begun. Distinct from the in-line timer below the header — the banner
+  // states the phase, the timer states "ends in HH:MM:SS".
+  // See DESIGN.md §19a "Phase banner contract".
+  const phaseBannerCopy = (() => {
+    if (phase === 'hiding') {
+      return player.role === 'hider'
+        ? 'Hiding Period — find your hiding spot before seekers begin.'
+        : 'Hiding Period — questions unlock when seeking begins.';
+    }
+    if (phase === 'seeking') {
+      return player.role === 'hider'
+        ? 'Seeking Period — stay in your hiding zone.'
+        : 'Seeking Period — ask questions to locate the hider.';
+    }
+    if (phase === 'finished') return 'Game Over';
+    return null;
+  })();
+  const phaseBannerClass =
+    phase === 'hiding'   ? styles.phaseBannerHiding  :
+    phase === 'seeking'  ? styles.phaseBannerSeeking :
+    phase === 'finished' ? styles.phaseBannerFinished : null;
+
   return (
     <div aria-label="Game map">
       <div className={styles.gameHeader}>
@@ -606,6 +630,18 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           {player.name} ({player.role}){myTeam ? ` · Team ${myTeam}` : ''}
         </span>
       </div>
+
+      {phaseBannerCopy && (
+        <p
+          role="status"
+          aria-live="polite"
+          data-testid="phase-banner"
+          data-phase={phase}
+          className={`${styles.phaseBanner} ${phaseBannerClass ?? ''}`.trim()}
+        >
+          {phaseBannerCopy}
+        </p>
+      )}
 
       {wsStatus === 'reconnecting' && (
         <p role="status" data-testid="reconnecting-banner" className={styles.reconnectingBanner}>
@@ -805,7 +841,7 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
 
       {player.role === 'seeker' && (
         <>
-          <QuestionPanel player={player} game={game} teamId={myTeam} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} hiderId={hiderId} />
+          <QuestionPanel player={player} game={game} teamId={myTeam} qaRefresh={qaRefresh} curseEndsAt={curseEndsAt} hiderId={hiderId} phase={phase} />
           <Suspense fallback={null}>
             <SeekerNotes gameId={game.gameId} />
           </Suspense>

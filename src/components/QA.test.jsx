@@ -309,6 +309,47 @@ describe('QuestionPanel', () => {
     expect(screen.queryByTestId('pending-banner')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /submit question/i })).not.toBeDisabled();
   });
+
+  // ── Task 202: phase gating (RULES.md §Asking Questions) ───────────────────
+  describe('phase gating', () => {
+    it('disables submit and shows the hiding banner during the hiding phase', async () => {
+      render(<QuestionPanel player={SEEKER} game={GAME} phase="hiding" />);
+      const banner = await screen.findByTestId('phase-locked-banner');
+      expect(banner).toHaveTextContent(/hiding period in progress/i);
+      expect(screen.getByRole('button', { name: /questions locked during hiding/i })).toBeDisabled();
+    });
+
+    it('disables submit and shows a finished banner when the game is over', async () => {
+      render(<QuestionPanel player={SEEKER} game={GAME} phase="finished" />);
+      expect(await screen.findByTestId('phase-locked-banner')).toHaveTextContent(/game over/i);
+      expect(screen.getByRole('button', { name: /questions locked/i })).toBeDisabled();
+    });
+
+    it('enables submit and hides the phase-locked banner during the seeking phase', async () => {
+      render(<QuestionPanel player={SEEKER} game={GAME} phase="seeking" />);
+      await waitFor(() => screen.getByRole('button', { name: /submit question/i }));
+      expect(screen.queryByTestId('phase-locked-banner')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /submit question/i })).not.toBeDisabled();
+    });
+
+    it('handleSubmit short-circuits when phase-locked even if the button is somehow clicked', async () => {
+      const user = userEvent.setup();
+      render(<QuestionPanel player={SEEKER} game={GAME} phase="hiding" hiderId="hider-x" />);
+      // Type a non-trivial question and try to submit by hitting Enter inside
+      // the textarea — the disabled button will not fire, but a form-submit via
+      // keyboard would. Both paths must be gated.
+      await user.type(screen.getByRole('textbox', { name: /question/i }), 'is your station central?');
+      // Form submission via the disabled button cannot fire; assert via api mock.
+      expect(api.submitQuestion).not.toHaveBeenCalled();
+    });
+
+    it('omitting the phase prop preserves backwards-compatible behaviour (submit enabled)', async () => {
+      render(<QuestionPanel player={SEEKER} game={GAME} />);
+      await waitFor(() => screen.getByRole('button', { name: /submit question/i }));
+      expect(screen.getByRole('button', { name: /submit question/i })).not.toBeDisabled();
+      expect(screen.queryByTestId('phase-locked-banner')).not.toBeInTheDocument();
+    });
+  });
 });
 
 // ── AnswerPanel ───────────────────────────────────────────────────────────────

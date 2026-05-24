@@ -384,6 +384,14 @@ write every transition (`hiding`, `seeking`, `finished`) to Postgres via
 `store.dbUpdateGameStatus` — not just `'finished'`. If any transition is missed, every
 non-host player is permanently stuck on the lobby screen even though the game is running.
 
+**Managed server must be wired with a DB-backed `store`.** `server/start.js` builds a
+`store` from `DATABASE_URL` via `server/store.js`'s `createStore(pool)` and passes it to
+`createServer({ store })`. Without this wiring, every `store?.dbUpdateGameStatus`,
+`store?.dbSubmitScore`, and `store?.dbExpireStaleQuestions` call in `server/index.js` is a
+silent no-op — including the phase-transition write above. Task 202 found that an unwired
+`store` was the actual root cause of "non-host players stuck on waiting"; the in-memory
+WS state cannot be the source of truth for any cross-tier signal.
+
 **Lobby visibility (player list).** While in the lobby, every connected client (host and
 non-host) periodically polls `GET /api/games/:id` and renders the returned `players` array.
 The list shows each player's name, role, optional team letter, and a host badge for the
@@ -400,6 +408,16 @@ before the game starts; there is no WebSocket connection during the waiting phas
 The host's "Start Game" button is disabled until all three conditions hold. Non-host clients
 do not render a Start button at all. The serverless `handleStartGame` re-validates 1–3 and
 returns 400 `insufficient_players` if violated.
+
+**Player counts must come from Postgres at the managed server too.** `POST
+/internal/games/:gameId/start` MUST validate player counts via
+`store.dbGetGamePlayerCounts({ gameId })` when a store is wired, falling back to
+`gameStateManager.getPlayerCounts(gameId)` only when no DB is available (unit tests). At
+the moment the host clicks Start NOBODY is WS-connected (every player is still in the
+lobby screen and the WS connection is only opened by `GameMap`), so the in-memory check
+returns `{0, 0}` and rejects the start. The serverless layer has already validated against
+the DB by this point; the managed server's re-check exists for defence in depth but must
+read from the same source of truth.
 
 **No pre-start hider-zone requirement.** `RULES.md §Hiding Rules` rule 2 says the hiding zone
 is centered on the final transit station the hider reaches *during* the hiding period. Zone
@@ -423,6 +441,30 @@ server calls `gameLoopManager.startGame(gameId, opts)` followed by
 `gameLoopManager.beginHiding(gameId)` in the same request handler. The hider's countdown
 starts from `Date.now()` at that moment; both teams see identical `phaseEndsAt` values
 because they are derived server-side from the same `phaseStartedAt`.
+
+**Phase banner contract.** `GameMap.jsx` renders a prominent `data-testid="phase-banner"`
+element immediately below the header for both teams, so it is obvious at a glance whether
+the hiding period is still in progress or seeking has begun. The banner copy is
+role-specific (e.g. hider during hiding sees "Hiding Period — find your hiding spot",
+seeker during hiding sees "Hiding Period — questions unlock when seeking begins") and is
+styled with phase-specific colours (`--color-sunset-1` for hiding, `--color-accent` for
+seeking, `--color-surface-2` for finished). The banner is distinct from the in-line
+countdown timer (`data-testid="timer-banner"`): the banner states *what phase* the game is
+in; the timer states *how much time is left*. Both are visible simultaneously.
+
+**Questions are locked outside the seeking phase.** Per RULES.md §Asking Questions, seekers
+may only submit questions during the seeking phase. Both layers enforce this:
+
+- Frontend: `QuestionPanel` accepts a `phase` prop; when `phase !== 'seeking'` the submit
+  button is disabled, `handleSubmit` short-circuits, and a `data-testid="phase-locked-banner"`
+  explains why ("Hiding period in progress — questions unlock when seeking begins" or
+  "Game over — questions are closed").
+- Backend: `functions/questions.js` `submitQuestion` calls `dbGetGame` first when a pool is
+  provided; if `game.status !== 'seeking'` it returns 409 `{ error: 'questions_locked',
+  gameStatus, message }`. 404 is returned for unknown gameId.
+
+Allowing questions during hiding would let seekers locate the hider before the hider has
+selected a hiding zone (RULES.md §Hiding Rules rule 2), breaking the basic game loop.
 
 ---
 
@@ -459,6 +501,7 @@ because they are derived server-side from the same `phaseStartedAt`.
 | `server/monitoring.js` | `MetricsCollector` + `RateTracker`; stdout JSON-line sink |
 | `server/alerting.js` | `AlertManager`: webhook alerts for crashes, DB errors, stalls |
 | `server/logger.js` | Levelled logger with injectable sink; `nullLogger` for tests |
+| `server/store.js` | `createStore(pool)` — wraps `db/gameStore.js` helpers into the single-argument shape `createServer({ store })` expects. Wired in `server/start.js` when `DATABASE_URL` is present. |
 
 ### Persistence
 

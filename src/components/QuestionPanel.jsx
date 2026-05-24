@@ -13,6 +13,18 @@ const PENDING_SUBMIT_LABEL = 'Waiting for hider…';
 /** Accessible label prefix for the pending-question countdown banner. */
 const PENDING_BANNER_LABEL = 'Waiting for hider to answer';
 
+/**
+ * Button label shown during the hiding phase, before questions are unlocked.
+ * RULES.md §Asking Questions — questions are only valid during seeking.
+ */
+const HIDING_SUBMIT_LABEL = 'Questions locked during hiding';
+
+/** Banner text shown to seekers during the hiding phase. */
+const HIDING_BANNER_LABEL = 'Hiding period in progress — questions unlock when seeking begins.';
+
+/** Banner text shown when the game has finished. */
+const FINISHED_BANNER_LABEL = 'Game over — questions are closed.';
+
 const CATEGORIES = ['matching', 'measuring', 'transit', 'thermometer', 'photo', 'tentacle'];
 
 const MATCHING_FEATURE_TYPES = ['airport', 'train_station', 'bus_station', 'ferry_terminal', 'university', 'hospital'];
@@ -45,11 +57,15 @@ const CATEGORY_HINTS = {
  *                 game_state_sync. When provided the targetId field is pre-populated
  *                 and shown read-only so seekers cannot accidentally ask the wrong
  *                 player. Optional — falls back to free-text input when null.
+ *   phase       — 'waiting' | 'hiding' | 'seeking' | 'finished'; the current game
+ *                 phase. Questions are only allowed during 'seeking' per RULES.md
+ *                 §Asking Questions. When omitted (legacy / tests) the gate is
+ *                 disabled so existing callers continue to work.
  *
  * Maintains a local list of submitted questions (optimistic) merged with the
  * server-side Q&A history fetched on mount and on each qaRefresh change.
  */
-export default function QuestionPanel({ player, game, teamId = null, qaRefresh = 0, curseEndsAt = null, hiderId = null }) {
+export default function QuestionPanel({ player, game, teamId = null, qaRefresh = 0, curseEndsAt = null, hiderId = null, phase = null }) {
   const [targetId, setTargetId] = useState(hiderId ?? '');
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [text, setText] = useState('');
@@ -84,6 +100,16 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
   const isCurseActive = curseEndsAt != null && new Date(curseEndsAt) > new Date();
   const curseCountdown = isCurseActive ? formatCountdown(curseEndsAt) : null;
 
+  // Questions are only valid during 'seeking'. When phase is null (no prop
+  // supplied — older callers / tests) the gate is disabled so behaviour is
+  // backwards-compatible.
+  const isPhaseLocked = phase !== null && phase !== 'seeking';
+  const phaseLockBanner = phase === 'hiding'
+    ? HIDING_BANNER_LABEL
+    : phase === 'finished'
+      ? FINISHED_BANNER_LABEL
+      : null;
+
   // Fetch full Q&A history for the game on mount and whenever qaRefresh changes.
   useEffect(() => {
     setHistoryError(null);
@@ -114,6 +140,10 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (isPhaseLocked) {
+      setError(phaseLockBanner ?? 'Questions are not allowed in this phase');
+      return;
+    }
     if (!targetId.trim()) { setError('Target player ID is required'); return; }
     if (!text.trim())     { setError('Question text is required'); return; }
     setError(null);
@@ -165,6 +195,11 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
   return (
     <section aria-label="Question panel">
       <h3>Ask a Question</h3>
+      {isPhaseLocked && phaseLockBanner && (
+        <p role="status" data-testid="phase-locked-banner" className={styles.pendingBanner}>
+          {phaseLockBanner}
+        </p>
+      )}
       {isCurseActive && (
         <p role="status" data-testid="curse-banner" className={styles.curseBanner}>
           Questions blocked by curse — {curseCountdown} remaining
@@ -289,8 +324,14 @@ export default function QuestionPanel({ player, game, teamId = null, qaRefresh =
           </label>
         )}
 
-        <button type="submit" disabled={submitting || isCurseActive || !!pendingQuestion}>
-          {submitting ? 'Sending…' : pendingQuestion ? PENDING_SUBMIT_LABEL : 'Submit question'}
+        <button type="submit" disabled={submitting || isCurseActive || !!pendingQuestion || isPhaseLocked}>
+          {submitting
+            ? 'Sending…'
+            : isPhaseLocked
+              ? HIDING_SUBMIT_LABEL
+              : pendingQuestion
+                ? PENDING_SUBMIT_LABEL
+                : 'Submit question'}
         </button>
       </form>
 

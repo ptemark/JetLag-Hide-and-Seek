@@ -306,7 +306,7 @@ export function createServer({
     if (startMatch) {
       let body = '';
       req.on('data', (chunk) => { body += chunk; });
-      req.on('end', () => {
+      req.on('end', async () => {
         let scale, hidingDurationMs, seekingDurationMs;
         try { ({ scale, hidingDurationMs, seekingDurationMs } = JSON.parse(body)); } catch { /* use default durations */ }
 
@@ -332,7 +332,24 @@ export function createServer({
         const { gameId } = startMatch.groups;
 
         // Validate minimum player requirements before starting.
-        const { hiderCount, seekerCount } = gameStateManager.getPlayerCounts(gameId);
+        // Prefer DB-backed counts when a store is wired: at the moment the
+        // host clicks Start, NOBODY has WS-connected (all players are still
+        // in WaitingRoom), so the in-memory `gameStateManager` is empty.
+        // Falling back to in-memory only when no DB is available keeps
+        // existing unit tests (mock-free) working.
+        let hiderCount, seekerCount;
+        if (store?.dbGetGamePlayerCounts) {
+          try {
+            ({ hiderCount, seekerCount } = await store.dbGetGamePlayerCounts({ gameId }));
+          } catch (err) {
+            logger.error(LogCategory.ERROR, 'start_player_count_db_error', { gameId, error: err?.message });
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'player_count_lookup_failed' }));
+            return;
+          }
+        } else {
+          ({ hiderCount, seekerCount } = gameStateManager.getPlayerCounts(gameId));
+        }
         if (hiderCount < 1 || seekerCount < 1) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({

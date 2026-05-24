@@ -2,6 +2,7 @@ import { registerPlayer }             from '../functions/players.js';
 import { handleCreateGame, joinGame } from '../functions/games.js';
 import { lockHiderZone }              from '../functions/gameZone.js';
 import { submitQuestion }             from '../functions/questions.js';
+import { dbUpdateGameStatus }         from '../db/gameStore.js';
 
 /**
  * Create a player via the real registerPlayer handler.
@@ -91,6 +92,10 @@ export async function makeZone(pool, gameId, opts = {}) {
  * @returns {Promise<unknown>}
  */
 export async function makeQuestion(pool, { gameId, askerId, targetId, category = 'thermometer' } = {}) {
+  // Task 202: submitQuestion requires game.status === 'seeking'. The helper
+  // is used by suites that just want a question created, so flip the status
+  // here (idempotent) rather than forcing every caller to remember.
+  await dbUpdateGameStatus(pool, { gameId, status: 'seeking' });
   const res = await submitQuestion(
     { method: 'POST', body: { gameId, askerId, targetId, category, text: 'Test question' } },
     pool, '', null, null, // gameServerUrl, fetchFn, adminApiKey

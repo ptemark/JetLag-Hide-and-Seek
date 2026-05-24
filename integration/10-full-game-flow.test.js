@@ -9,6 +9,7 @@ import {
 import { submitQuestion, submitAnswer }                 from '../functions/questions.js';
 import { getCards, playCard }                           from '../functions/cards.js';
 import { submitScore, getLeaderboard }                  from '../functions/scores.js';
+import { dbUpdateGameStatus }                           from '../db/gameStore.js';
 
 // Task 189 — end-to-end happy-path integration test exercising every serverless
 // handler involved in a full game in one sequential describe.  Each step shares
@@ -99,6 +100,11 @@ describe.skipIf(!process.env.DATABASE_URL)('full game flow', () => {
   });
 
   it('(07) seeker submits a thermometer question targeting the hider', async () => {
+    // Task 202: submitQuestion requires game.status === 'seeking'. The
+    // serverless handleStartGame above does NOT update DB status (the
+    // managed server is what flips it in production); advance it manually
+    // for this DB-only integration flow.
+    await dbUpdateGameStatus(pool, { gameId: state.game.gameId, status: 'seeking' });
     const res = await submitQuestion(
       {
         method: 'POST',

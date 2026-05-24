@@ -87,6 +87,7 @@ describe.skipIf(!process.env.DATABASE_URL)('questions', () => {
     const game = await makeGame(pool, { size: 'medium' });
     await makeJoin(pool, game.gameId, hider.playerId,  'hider');
     await makeJoin(pool, game.gameId, seeker.playerId, 'seeker');
+    await dbUpdateGameStatus(pool, { gameId: game.gameId, status: 'seeking' });
 
     // Submit non-photo question first.
     const nonPhotoRes = await submitQuestion(
@@ -148,6 +149,7 @@ describe.skipIf(!process.env.DATABASE_URL)('questions', () => {
     const game = await makeGame(pool);
     await makeJoin(pool, game.gameId, hider.playerId,  'hider');
     await makeJoin(pool, game.gameId, seeker.playerId, 'seeker');
+    await dbUpdateGameStatus(pool, { gameId: game.gameId, status: 'seeking' });
 
     // First question — should succeed.
     const first = await submitQuestion(

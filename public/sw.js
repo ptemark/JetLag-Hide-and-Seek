@@ -1,8 +1,27 @@
-const CACHE_NAME = 'jetlag-v1';
+// Bump CACHE_NAME whenever the fetch strategy changes so existing clients
+// drop their old cache on the next page load. v2 (Task 201) excludes /api/*
+// from cache-first; v1 had cached lobby polls indefinitely, freezing the
+// ready counter and player list at their first-seen values.
+const CACHE_NAME = 'jetlag-v2';
 
 // App shell: index + manifest are cached on install.
 // Hashed JS/CSS bundles are cached at runtime on first fetch.
 const APP_SHELL = ['/', '/manifest.json'];
+
+/**
+ * Returns true for requests that must always hit the network.
+ * Dynamic API responses (game state, ready counts, player lists, scores,
+ * questions, …) MUST NOT be cached: cache-first behaviour froze the lobby
+ * poll on its first response, so the ready counter snapped back to a stale
+ * value 3 s after every user action and the Start button never enabled
+ * (Task 201).
+ */
+function isDynamicRequest(request) {
+  if (request.method !== 'GET') return true;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return true;
+  return url.pathname.startsWith('/api/');
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -28,6 +47,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(event.request).catch(() => caches.match('/'))
     );
+    return;
+  }
+
+  // Dynamic requests (API, non-GET, cross-origin): always go to the network.
+  if (isDynamicRequest(event.request)) {
     return;
   }
 

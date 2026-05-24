@@ -4,6 +4,7 @@ import {
   handleCreateGame,
   getGame,
   handleStartGame,
+  handleCancelGame,
   VALID_SIZES,
   SCALE_DURATION_RANGES,
   _getStore,
@@ -241,16 +242,31 @@ describe('handleStartGame', () => {
     expect(mockFetch).toHaveBeenCalledOnce();
   });
 
-  // Task 74 — configurable hiding duration
-  it('returns 400 when hidingDurationMin is below scale minimum', async () => {
+  // Task 74 / 203 — configurable hiding duration. The lower bound is now 1
+  // minute across all scales (test-friendly games); 0 must still reject.
+  it('returns 400 when hidingDurationMin is below the per-scale minimum', async () => {
     const res = await handleStartGame(
-      makePostReq({ gameId: 'g1' }, { scale: 'small', hidingDurationMin: 10 }),
+      makePostReq({ gameId: 'g1' }, { scale: 'small', hidingDurationMin: 0 }),
       null,
       undefined,
       vi.fn(),
     );
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/out of range/i);
+  });
+
+  it('returns 204 when hidingDurationMin is exactly 1 (allowed for short test games)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small', hidingDurationMin: 1 }),
+      null,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(204);
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const payload = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(payload.hidingDurationMs).toBe(60_000);
   });
 
   it('returns 400 when hidingDurationMin exceeds scale maximum', async () => {
@@ -290,9 +306,12 @@ describe('handleStartGame', () => {
   });
 
   it('SCALE_DURATION_RANGES exports correct bounds for each scale', () => {
-    expect(SCALE_DURATION_RANGES.small).toEqual({ min: 30, max: 60 });
-    expect(SCALE_DURATION_RANGES.medium).toEqual({ min: 60, max: 180 });
-    expect(SCALE_DURATION_RANGES.large).toEqual({ min: 180, max: 360 });
+    // Task 203 lowered the per-scale minimum to 1 minute across the board
+    // (test-friendly short games); per-scale maxes remain anchored to
+    // RULES.md scale intent.
+    expect(SCALE_DURATION_RANGES.small).toEqual({ min: 1, max: 60 });
+    expect(SCALE_DURATION_RANGES.medium).toEqual({ min: 1, max: 180 });
+    expect(SCALE_DURATION_RANGES.large).toEqual({ min: 1, max: 360 });
   });
 
   // Task 98 — minimum player count validation
@@ -367,6 +386,106 @@ describe('handleStartGame', () => {
     );
     expect(res.status).toBe(204);
     expect(mockFetch).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleCancelGame (Task 203 — host-only cancel)
+// ---------------------------------------------------------------------------
+
+describe('handleCancelGame', () => {
+  /**
+   * Build a pool that returns a stub game row whose hostPlayerId matches
+   * the supplied value, plus an empty players row set. Subsequent queries
+   * (the UPDATE in dbUpdateGameStatus) return `{ rows: [{}] }` so the
+   * promise resolves.
+   */
+  function makePool(hostPlayerId) {
+    return {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{
+          id: 'g1', size: 'small', bounds: {}, status: 'hiding',
+          seeker_teams: 0, host_player_id: hostPlayerId,
+          created_at: new Date(),
+        }] })                                              // dbGetGame — games
+        .mockResolvedValueOnce({ rows: [] })               // dbGetGame — players join
+        .mockResolvedValueOnce({ rows: [{ id: 'g1', status: 'finished' }] }), // dbUpdateGameStatus
+    };
+  }
+
+  function makeCancelReq({ playerId = 'host-1' } = {}) {
+    return { method: 'POST', params: { gameId: 'g1' }, body: { playerId } };
+  }
+
+  it('returns 405 for non-POST', async () => {
+    const res = await handleCancelGame({ method: 'GET', params: { gameId: 'g1' }, body: {} }, null);
+    expect(res.status).toBe(405);
+  });
+
+  it('returns 400 when gameId is missing', async () => {
+    const res = await handleCancelGame({ method: 'POST', params: {}, body: { playerId: 'p1' } }, null);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when playerId is missing', async () => {
+    const res = await handleCancelGame({ method: 'POST', params: { gameId: 'g1' }, body: {} }, null);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when the game does not exist', async () => {
+    const pool = { query: vi.fn().mockResolvedValueOnce({ rows: [] }) }; // dbGetGame — empty
+    const res = await handleCancelGame(makeCancelReq(), pool, '', vi.fn());
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 403 only_host_can_cancel when caller is not the host', async () => {
+    const pool = makePool('different-host');
+    const res = await handleCancelGame(makeCancelReq({ playerId: 'someone-else' }), pool, '', vi.fn());
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('only_host_can_cancel');
+  });
+
+  it('returns 204 and writes status=finished when the host cancels', async () => {
+    const pool = makePool('host-1');
+    const res = await handleCancelGame(makeCancelReq({ playerId: 'host-1' }), pool, '', vi.fn());
+    expect(res.status).toBe(204);
+    // The third query is the UPDATE — verify the SQL + params.
+    const updateCall = pool.query.mock.calls[2];
+    expect(updateCall[0]).toMatch(/UPDATE games SET status/);
+    expect(updateCall[1]).toEqual(['finished', 'g1']);
+  });
+
+  it('fires notifyGameCancel against the managed server when a URL + fetch are supplied', async () => {
+    const pool = makePool('host-1');
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    const res = await handleCancelGame(
+      makeCancelReq({ playerId: 'host-1' }),
+      pool,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(204);
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://game-server/internal/games/g1/cancel',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('still returns 204 when the managed server is unreachable', async () => {
+    const pool = makePool('host-1');
+    const mockFetch = vi.fn().mockRejectedValue(new Error('connection refused'));
+    const res = await handleCancelGame(
+      makeCancelReq({ playerId: 'host-1' }),
+      pool,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(204);
+  });
+
+  it('returns 204 without a pool (in-process / local dev path)', async () => {
+    const res = await handleCancelGame(makeCancelReq(), null, '', vi.fn());
+    expect(res.status).toBe(204);
   });
 });
 

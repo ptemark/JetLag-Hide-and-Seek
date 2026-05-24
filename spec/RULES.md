@@ -54,6 +54,21 @@ Goal:
 
 ---
 
+## Cancelling a Game
+
+The **host** (the player who created the game) may cancel an ongoing game at
+any phase via the **Cancel Game** button. The game ends for everyone
+immediately; no winner is declared and no scores are recorded for the
+cancelled game.
+
+Only the host can cancel. Other players cannot end the game prematurely;
+they may choose not to participate by closing the app, but the game itself
+remains active for the remaining players (subject to the standard min-
+hider / min-seeker rules; if either drops to zero, the game's normal
+finish/timeout rules apply).
+
+---
+
 ## Hiding Rules
 
 1. Hider moves using public transit and/or walking.

@@ -211,19 +211,49 @@ describe('WaitingRoom duration picker', () => {
     expect(screen.queryByLabelText(/hiding duration/i)).not.toBeInTheDocument();
   });
 
-  it('input min/max reflect the medium scale range (60–180)', () => {
+  // Task 203 — per-scale min lowered to 1 for short test games; max unchanged.
+  it('input min/max reflect the medium scale range (1–180)', () => {
     render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
     const input = screen.getByLabelText(/hiding duration/i);
-    expect(Number(input.min)).toBe(60);
+    expect(Number(input.min)).toBe(1);
     expect(Number(input.max)).toBe(180);
   });
 
-  it('input min/max reflect the small scale range (30–60)', () => {
+  it('input min/max reflect the small scale range (1–60)', () => {
     const smallGame = { ...GAME, size: 'small' };
     render(<WaitingRoom game={smallGame} player={PLAYER} onStart={() => {}} />);
     const input = screen.getByLabelText(/hiding duration/i);
-    expect(Number(input.min)).toBe(30);
+    expect(Number(input.min)).toBe(1);
     expect(Number(input.max)).toBe(60);
+  });
+
+  it('input default value uses the scale-appropriate default (medium → 60)', () => {
+    render(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+    const input = screen.getByLabelText(/hiding duration/i);
+    expect(Number(input.value)).toBe(60);
+  });
+
+  it('input default value uses the scale-appropriate default (small → 30)', () => {
+    const smallGame = { ...GAME, size: 'small' };
+    render(<WaitingRoom game={smallGame} player={PLAYER} onStart={() => {}} />);
+    const input = screen.getByLabelText(/hiding duration/i);
+    expect(Number(input.value)).toBe(30);
+  });
+
+  it('allows submitting hidingDurationMin=1 (short test game)', async () => {
+    const user = userEvent.setup();
+    api.startGame.mockResolvedValue(undefined);
+    await renderAndPopulate(<WaitingRoom game={GAME} player={PLAYER} onStart={() => {}} />);
+
+    const input = screen.getByLabelText(/hiding duration/i);
+    await user.clear(input);
+    await user.type(input, '1');
+
+    await user.click(screen.getByRole('button', { name: /start game/i }));
+
+    await waitFor(() =>
+      expect(api.startGame).toHaveBeenCalledWith({ gameId: 'g1', scale: 'medium', hidingDurationMin: 1 })
+    );
   });
 
   it('passes the user-selected hidingDurationMin to startGame', async () => {

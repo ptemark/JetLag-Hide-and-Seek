@@ -16,6 +16,7 @@ vi.mock('../api.js', () => ({
   lockZone:       vi.fn(),
   submitScore:    vi.fn().mockResolvedValue({}),
   listZones:      vi.fn().mockResolvedValue([]),
+  cancelGame:     vi.fn().mockResolvedValue(undefined),
 }));
 
 // ── Hoist mock objects so they're available inside vi.mock factory ─────────────
@@ -193,6 +194,94 @@ describe('GameMap', () => {
     const banner = screen.getByTestId('phase-banner');
     expect(banner).toHaveAttribute('data-phase', 'seeking');
     expect(banner).toHaveTextContent(/seeking period/i);
+  });
+
+  // ── Task 203 — host-only Cancel Game ────────────────────────────────────
+  describe('cancel game (host only)', () => {
+    const hostPlayer  = { playerId: 'p1', name: 'Alice', role: 'hider' };
+    const guestPlayer = { playerId: 'p2', name: 'Bob',   role: 'seeker' };
+    const hostedGame  = { ...game, hostPlayerId: 'p1' };
+
+    afterEach(() => {
+      // Restore the default mock so subsequent suites get clean confirm/onPlayAgain.
+      vi.unstubAllGlobals();
+    });
+
+    it('renders the Cancel Game button when the player is the host', () => {
+      render(<GameMap player={hostPlayer} game={hostedGame} zones={[]} serverUrl={serverUrl} />);
+      expect(screen.getByTestId('cancel-game-btn')).toBeInTheDocument();
+    });
+
+    it('does not render Cancel Game for non-host players', () => {
+      render(<GameMap player={guestPlayer} game={hostedGame} zones={[]} serverUrl={serverUrl} />);
+      expect(screen.queryByTestId('cancel-game-btn')).not.toBeInTheDocument();
+    });
+
+    it('does not render Cancel Game when the game has no hostPlayerId', () => {
+      const headlessGame = { ...game, hostPlayerId: null };
+      render(<GameMap player={hostPlayer} game={headlessGame} zones={[]} serverUrl={serverUrl} />);
+      expect(screen.queryByTestId('cancel-game-btn')).not.toBeInTheDocument();
+    });
+
+    it('does not render Cancel Game once phase is finished', async () => {
+      const finishedGame = { ...hostedGame, status: 'finished' };
+      render(<GameMap player={hostPlayer} game={finishedGame} zones={[]} serverUrl={serverUrl} />);
+      expect(screen.queryByTestId('cancel-game-btn')).not.toBeInTheDocument();
+    });
+
+    it('calls cancelGame and onPlayAgain after a confirmed click', async () => {
+      vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+      const onPlayAgain = vi.fn();
+      api.cancelGame.mockResolvedValueOnce(undefined);
+      render(<GameMap player={hostPlayer} game={hostedGame} zones={[]} serverUrl={serverUrl} onPlayAgain={onPlayAgain} />);
+
+      await act(async () => {
+        screen.getByTestId('cancel-game-btn').click();
+      });
+
+      await waitFor(() => {
+        expect(api.cancelGame).toHaveBeenCalledWith({ gameId: 'g1', playerId: 'p1' });
+        expect(onPlayAgain).toHaveBeenCalledOnce();
+      });
+    });
+
+    it('aborts when the host declines the confirmation dialog', async () => {
+      vi.stubGlobal('confirm', vi.fn().mockReturnValue(false));
+      const onPlayAgain = vi.fn();
+      render(<GameMap player={hostPlayer} game={hostedGame} zones={[]} serverUrl={serverUrl} onPlayAgain={onPlayAgain} />);
+
+      await act(async () => { screen.getByTestId('cancel-game-btn').click(); });
+
+      expect(api.cancelGame).not.toHaveBeenCalled();
+      expect(onPlayAgain).not.toHaveBeenCalled();
+    });
+
+    it('surfaces the error message and does not exit when cancelGame rejects', async () => {
+      vi.stubGlobal('confirm', vi.fn().mockReturnValue(true));
+      const onPlayAgain = vi.fn();
+      api.cancelGame.mockRejectedValueOnce(new Error('only_host_can_cancel'));
+      render(<GameMap player={hostPlayer} game={hostedGame} zones={[]} serverUrl={serverUrl} onPlayAgain={onPlayAgain} />);
+
+      await act(async () => { screen.getByTestId('cancel-game-btn').click(); });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('cancel-error')).toHaveTextContent(/only_host_can_cancel/i);
+      });
+      expect(onPlayAgain).not.toHaveBeenCalled();
+    });
+
+    it('returns the player to the lobby when a game_cancelled WS message arrives', async () => {
+      const onPlayAgain = vi.fn();
+      render(<GameMap player={guestPlayer} game={hostedGame} zones={[]} serverUrl={serverUrl} onPlayAgain={onPlayAgain} />);
+
+      await act(async () => {
+        MockWebSocket.last.onmessage?.({
+          data: JSON.stringify({ type: 'game_cancelled', gameId: 'g1' }),
+        });
+      });
+
+      expect(onPlayAgain).toHaveBeenCalledOnce();
+    });
   });
 
   it('shows seekers win alert on capture message', async () => {

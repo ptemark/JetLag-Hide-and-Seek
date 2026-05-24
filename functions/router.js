@@ -17,6 +17,7 @@
  *   POST   /games                → handleCreateGame
  *   GET    /games/:id            → getGame
  *   POST   /games/:gameId/start  → handleStartGame
+ *   POST   /games/:gameId/cancel → handleCancelGame  (host only)
  *   POST   /games/:gameId/join   → joinGame
  *   POST   /games/cleanup        → cleanupStaleGames  (admin auth required)
  *   POST   /scores               → submitScore
@@ -37,7 +38,7 @@
  */
 
 import { registerPlayer } from './players.js';
-import { getGame, handleCreateGame, handleStartGame, cleanupStaleGames, joinGame, markReady, getReadyStatus } from './games.js';
+import { getGame, handleCreateGame, handleStartGame, handleCancelGame, cleanupStaleGames, joinGame, markReady, getReadyStatus } from './games.js';
 import { submitScore, getLeaderboard } from './scores.js';
 import { initiateSession, terminateSession } from './sessions.js';
 import { getLiveState } from './liveState.js';
@@ -83,6 +84,7 @@ const ROUTES = [
   { method: 'POST',   pattern: /^\/games$/, handler: handleCreateGame },
   { method: 'GET',    pattern: /^\/games\/(?<id>[^/]+)$/, handler: getGame },
   { method: 'POST',   pattern: /^\/games\/(?<gameId>[^/]+)\/start$/, handler: handleStartGame },
+  { method: 'POST',   pattern: /^\/games\/(?<gameId>[^/]+)\/cancel$/, handler: handleCancelGame },
   { method: 'POST',   pattern: /^\/games\/(?<gameId>[^/]+)\/join$/, handler: joinGame },
   { method: 'POST',   pattern: /^\/games\/(?<gameId>[^/]+)\/ready$/, handler: markReady },
   { method: 'GET',    pattern: /^\/games\/(?<gameId>[^/]+)\/ready$/, handler: getReadyStatus },

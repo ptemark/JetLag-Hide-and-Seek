@@ -1053,7 +1053,10 @@ describe('POST /internal/games/:gameId/start', () => {
     expect(server.gameLoopManager.getGameDuration('custom-game', 'seeking')).toBe(45 * 60_000);
   });
 
-  it('returns 400 when hidingDurationMs is below the scale minimum', async () => {
+  it('returns 400 when hidingDurationMs is below the scale minimum (0 min)', async () => {
+    // Task 203 lowered the per-scale floor to 1 min; 0 is still rejected.
+    // Duration validation runs before the player-count check so no seeding
+    // is required.
     server = createServer({ tickInterval: 5000 });
     await server.start(0);
     const port = server.httpServer.address().port;
@@ -1061,11 +1064,28 @@ describe('POST /internal/games/:gameId/start', () => {
     const res = await fetch(`http://localhost:${port}/internal/games/low-game/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scale: 'small', hidingDurationMs: 10 * 60_000 }),
+      body: JSON.stringify({ scale: 'small', hidingDurationMs: 0 }),
     });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/out of range/i);
+  });
+
+  it('accepts hidingDurationMs at the new 1-minute floor', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+    server.gameStateManager.createGame('one-min-game');
+    server.gameStateManager.addPlayerToGame('one-min-game', 'h', 'hider');
+    server.gameStateManager.addPlayerToGame('one-min-game', 's', 'seeker');
+
+    const res = await fetch(`http://localhost:${port}/internal/games/one-min-game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scale: 'medium', hidingDurationMs: 60_000, seekingDurationMs: 60_000 }),
+    });
+    expect(res.status).toBe(204);
+    expect(server.gameLoopManager.getGameDuration('one-min-game', 'hiding')).toBe(60_000);
   });
 
   it('returns 400 when hidingDurationMs exceeds the scale maximum', async () => {
@@ -2629,5 +2649,68 @@ describe('GET /internal/games/:gameId/matching', () => {
     expect(body.hiderLon).toBeNull();
     expect(body.seekerLat).toBeNull();
     expect(body.seekerLon).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /internal/games/:gameId/cancel — host-initiated cancel (Task 203)
+// ---------------------------------------------------------------------------
+
+describe('POST /internal/games/:gameId/cancel', () => {
+  let server;
+
+  afterEach(async () => {
+    if (server) { await server.stop(); server = null; }
+  });
+
+  it('responds 204 and stops a running game loop', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+    server.gameStateManager.createGame('cancel-game');
+    server.gameStateManager.addPlayerToGame('cancel-game', 'h', 'hider');
+    server.gameStateManager.addPlayerToGame('cancel-game', 's', 'seeker');
+    server.gameLoopManager.startGame('cancel-game');
+    expect(server.gameLoopManager.getPhase('cancel-game')).not.toBeNull();
+
+    const res = await fetch(`http://localhost:${port}/internal/games/cancel-game/cancel`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(204);
+    expect(server.gameLoopManager.getPhase('cancel-game')).toBeNull();
+  });
+
+  it('broadcasts a game_cancelled message to every connected client in the game', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    // Attach two mock WS clients to the same game via the wsHandler internals.
+    const ws1 = createMockWs(); const ws2 = createMockWs();
+    server.wsHandler.gameClients.set('broadcast-game', new Map([
+      ['p1', ws1], ['p2', ws2],
+    ]));
+
+    const res = await fetch(`http://localhost:${port}/internal/games/broadcast-game/cancel`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(204);
+
+    const payloads = [ws1, ws2].map((w) => w.send.mock.calls[0]?.[0]).map(JSON.parse);
+    for (const p of payloads) {
+      expect(p.type).toBe('game_cancelled');
+      expect(p.gameId).toBe('broadcast-game');
+    }
+  });
+
+  it('responds 204 even when the game was never started (no-op stopGame)', async () => {
+    server = createServer({ tickInterval: 5000 });
+    await server.start(0);
+    const port = server.httpServer.address().port;
+
+    const res = await fetch(`http://localhost:${port}/internal/games/never-started/cancel`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(204);
   });
 });

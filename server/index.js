@@ -383,6 +383,28 @@ export function createServer({
       return;
     }
 
+    // POST /internal/games/:gameId/cancel — host-initiated cancel (Task 203).
+    // Stops the per-game tick loop and broadcasts a `game_cancelled` WS event
+    // so connected clients can return to the lobby immediately. The serverless
+    // layer is responsible for the DB status write (status='finished') before
+    // calling this; the managed server's only job here is in-memory + WS.
+    const cancelMatch = req.method === 'POST'
+      && urlPath.match(/^\/internal\/games\/(?<gameId>[^/]+)\/cancel$/);
+    if (cancelMatch) {
+      const { gameId } = cancelMatch.groups;
+      try {
+        wsHandler.broadcastToGame(gameId, { type: 'game_cancelled', gameId });
+      } catch (err) {
+        logger.error(LogCategory.ERROR, 'cancel_broadcast_error', { gameId, error: err?.message });
+      }
+      // Stop the tick loop and clear the game from the in-memory map. Safe
+      // even when the game was never started (no-op).
+      gameLoopManager.stopGame(gameId);
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
     // POST /internal/notify — receive a fire-and-forget broadcast request from
     // a serverless function (e.g. after an answer is submitted) and relay it
     // to all connected players in the target game via WebSocket.

@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbCleanupStaleGames, dbJoinGame, dbSetReady, dbGetReadyCounts } from '../db/gameStore.js';
+import { dbCreateGame, dbGetGame, dbGetGamePlayerCounts, dbCleanupStaleGames, dbJoinGame, dbSetReady, dbGetReadyCounts, dbUpdateGameStatus } from '../db/gameStore.js';
 import { checkAdminAuth } from './auth.js';
 import { SCALE_DURATION_RANGES } from '../config/gameRules.js';
 export { SCALE_DURATION_RANGES };
@@ -238,6 +238,74 @@ export async function handleStartGame(req, pool = null, gameServerUrl, fetchFn =
   } catch {
     return { status: 503, body: { error: 'game_server_unavailable', message: 'Game server could not be reached. Please try again.' } };
   }
+
+  return { status: 204, body: {} };
+}
+
+/**
+ * Notify the managed server to stop a game and broadcast a cancellation
+ * to all connected players. Fire-and-forget; the response is immediate.
+ *
+ * @param {{ gameId: string }} options
+ * @param {string|undefined} gameServerUrl
+ * @param {typeof fetch} fetchFn
+ * @returns {Promise<void>}
+ */
+async function notifyGameCancel({ gameId }, gameServerUrl, fetchFn) {
+  const serverUrl = gameServerUrl ?? process.env.GAME_SERVER_URL;
+  if (!serverUrl || !fetchFn) return;
+  await fetchFn(
+    `${serverUrl}/internal/games/${encodeURIComponent(gameId)}/cancel`,
+    { method: 'POST' },
+  );
+}
+
+/**
+ * HTTP handler: host-initiated cancel of an ongoing game.
+ *
+ * POST /games/:gameId/cancel  { playerId }  → 204
+ *
+ * Only the host (game.hostPlayerId === playerId) may cancel. The handler
+ * writes status='finished' to Postgres so non-host pollers see the change
+ * and (best-effort) notifies the managed server to stop the game loop and
+ * broadcast a `game_cancelled` WS message to connected clients.
+ *
+ * Without a pool, returns 204 — no DB to update; this path is exercised
+ * only by unit tests and local dev.
+ *
+ * @param {{ method: string, params: { gameId: string }, body: unknown }} req
+ * @param {import('pg').Pool|null} [pool]
+ * @param {string} [gameServerUrl]
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<{ status: number, body: object }>}
+ */
+export async function handleCancelGame(req, pool = null, gameServerUrl, fetchFn = globalThis.fetch) {
+  if (req.method !== 'POST') return { status: 405, body: { error: 'Method Not Allowed' } };
+
+  const { gameId } = req.params ?? {};
+  const { playerId } = req.body ?? {};
+  if (!gameId)   return { status: 400, body: { error: 'gameId is required' } };
+  if (!playerId) return { status: 400, body: { error: 'playerId is required' } };
+
+  if (!pool) {
+    // No DB: nothing to persist; let the managed-server notify happen if wired.
+    await notifyGameCancel({ gameId }, gameServerUrl, fetchFn).catch(() => {});
+    return { status: 204, body: {} };
+  }
+
+  const game = await dbGetGame(pool, gameId);
+  if (!game) return { status: 404, body: { error: 'game not found' } };
+  if (game.hostPlayerId !== playerId) {
+    return { status: 403, body: { error: 'only_host_can_cancel', message: 'Only the game host can cancel.' } };
+  }
+
+  await dbUpdateGameStatus(pool, { gameId, status: 'finished' });
+
+  // Notify managed server (best-effort): broadcast WS cancel + stop loop.
+  // We deliberately don't fail the request if the managed server is down —
+  // the DB status flip is enough for non-host pollers to exit the lobby /
+  // GameMap, and the loop's auto-shutdown handles eventual cleanup.
+  await notifyGameCancel({ gameId }, gameServerUrl, fetchFn).catch(() => {});
 
   return { status: 204, body: {} };
 }

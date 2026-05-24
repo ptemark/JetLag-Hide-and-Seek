@@ -9,12 +9,14 @@
 
 /**
  * Valid hiding/seeking duration ranges per scale (RULES.md §Game Scales).
- * All values in minutes.
+ * All values in minutes. The 1-minute floor enables short test/playtest
+ * games at any scale without bypassing the per-scale upper bound. The upper
+ * bounds remain anchored to RULES.md scale intent.
  */
 export const SCALE_DURATION_RANGES = Object.freeze({
-  small:  Object.freeze({ min: 30,  max: 60  }),
-  medium: Object.freeze({ min: 60,  max: 180 }),
-  large:  Object.freeze({ min: 180, max: 360 }),
+  small:  Object.freeze({ min: 1, max: 60  }),
+  medium: Object.freeze({ min: 1, max: 180 }),
+  large:  Object.freeze({ min: 1, max: 360 }),
 });
 
 /**
@@ -26,6 +28,18 @@ export const SCALE_DURATIONS = Object.freeze({
   small:  30  * 60_000,
   medium: 60  * 60_000,
   large:  180 * 60_000,
+});
+
+/**
+ * Default value (minutes) the WaitingRoom hiding-duration input pre-fills
+ * with. Distinct from `SCALE_DURATION_RANGES.<scale>.min` so we can keep
+ * sensible defaults for real play while allowing test-friendly 1-minute
+ * games via manual override.
+ */
+export const SCALE_DEFAULT_HIDING_MIN = Object.freeze({
+  small:  30,
+  medium: 60,
+  large:  180,
 });
 
 /**

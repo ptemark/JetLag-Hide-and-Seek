@@ -452,6 +452,28 @@ seeking, `--color-surface-2` for finished). The banner is distinct from the in-l
 countdown timer (`data-testid="timer-banner"`): the banner states *what phase* the game is
 in; the timer states *how much time is left*. Both are visible simultaneously.
 
+**Host-initiated cancel.** The host (player whose `playerId === game.hostPlayerId`)
+may cancel an ongoing game at any time via `POST /api/games/:gameId/cancel { playerId }`.
+The serverless handler validates the host, writes `status='finished'` to Postgres, and
+fire-and-forget notifies the managed server at `POST /internal/games/:gameId/cancel`. The
+managed server stops the per-game tick loop and broadcasts a `game_cancelled` WS message
+to every connected client. Each `GameMap` instance receiving this message calls
+`onPlayAgain()` and returns to the lobby without rendering the `ResultsScreen` (a
+cancelled game has no winner). Non-host clients that are still in the lobby pick up the
+status change via their existing 3 s poll (`GET /api/games/:id` → status `finished`) and
+exit the lobby on the same path the host-Start flow uses. Non-host attempts to call the
+cancel endpoint return 403 `only_host_can_cancel`; the UI never renders a Cancel button
+for non-hosts in the first place.
+
+**Hiding duration floor is 1 minute.** Per-scale upper bounds in `SCALE_DURATION_RANGES`
+remain anchored to RULES.md scale intent (60 / 180 / 360 min for small / medium / large),
+but the per-scale `min` is `1` across the board so short test/playtest games are
+possible at any scale. The WaitingRoom's hiding-duration input pre-fills with
+`SCALE_DEFAULT_HIDING_MIN[scale]` (30 / 60 / 180) — the previous min values — so normal
+games still get sensible defaults. Both the serverless `handleStartGame` and the managed
+server `/internal/games/:gameId/start` enforce `min ≤ hidingDurationMin ≤ max` before
+starting the loop.
+
 **Questions are locked outside the seeking phase.** Per RULES.md §Asking Questions, seekers
 may only submit questions during the seeking phase. Both layers enforce this:
 

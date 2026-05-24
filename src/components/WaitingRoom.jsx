@@ -10,7 +10,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { startGame, lookupGame, markPlayerReady, fetchReadyStatus } from '../api.js';
-import { SCALE_DURATION_RANGES } from '../../config/gameRules.js';
+import { SCALE_DURATION_RANGES, SCALE_DEFAULT_HIDING_MIN } from '../../config/gameRules.js';
 import Alert from './Alert.jsx';
 import styles from './WaitingRoom.module.css';
 
@@ -22,8 +22,9 @@ const CLIPBOARD_RESET_MS = 2_000;
 
 export default function WaitingRoom({ game, player, onStart, onGameStarted }) {
   const [error, setError] = useState('');
-  const range = SCALE_DURATION_RANGES[game.size] ?? { min: 30, max: 360 };
-  const [hidingDurationMin, setHidingDurationMin] = useState(range.min);
+  const range = SCALE_DURATION_RANGES[game.size] ?? { min: 1, max: 360 };
+  const defaultMin = SCALE_DEFAULT_HIDING_MIN[game.size] ?? range.min;
+  const [hidingDurationMin, setHidingDurationMin] = useState(defaultMin);
   const [copied, setCopied] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [readyCount, setReadyCount] = useState(0);

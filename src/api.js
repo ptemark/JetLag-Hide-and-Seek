@@ -252,7 +252,30 @@ export async function startGame({ gameId, scale, hidingDurationMin }) {
   if (!res.ok) {
     let body;
     try { body = await res.json(); } catch { /* ignore parse errors */ }
-    throw new Error(body?.message || `startGame failed: ${res.status}`);
+    throw new Error(body?.message || body?.error || `startGame failed: ${res.status}`);
+  }
+}
+
+/**
+ * Host-initiated cancel of an ongoing game.
+ * POST /api/games/:gameId/cancel  { playerId }  → 204
+ *
+ * 403 `only_host_can_cancel` is returned to non-hosts; the UI never invokes
+ * this for non-host players (the Cancel button is host-only).
+ *
+ * @param {{ gameId: string, playerId: string }} options
+ * @returns {Promise<void>}
+ */
+export async function cancelGame({ gameId, playerId }) {
+  const res = await fetchWithTimeout(`${BASE_URL}/api/games/${encodeURIComponent(gameId)}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId }),
+  });
+  if (!res.ok) {
+    let body;
+    try { body = await res.json(); } catch { /* ignore parse errors */ }
+    throw new Error(body?.message || body?.error || `cancelGame failed: ${res.status}`);
   }
 }
 

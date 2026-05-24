@@ -8,7 +8,7 @@ const CardPanel = lazy(() => import('./CardPanel.jsx'));
 const ResultsScreen = lazy(() => import('./ResultsScreen.jsx'));
 const SeekerNotes = lazy(() => import('./SeekerNotes.jsx'));
 import ZoneSelector from './ZoneSelector.jsx';
-import { submitScore, listZones } from '../api.js';
+import { submitScore, listZones, cancelGame } from '../api.js';
 import { formatCountdown, formatDuration, haversineDistanceM, CARD_LABELS, CARD_DESCRIPTIONS } from './gameUtils.js';
 import styles from './GameMap.module.css';
 
@@ -124,6 +124,9 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
   const [hiderId, setHiderId] = useState(null);                    // playerId of the hider in this game
   const [myLocation, setMyLocation] = useState(null);              // hider's own latest GPS fix { lat, lon }
   const lockedZoneLayerRef = useRef(null);                         // L.circle for the hider's locked zone
+  const [cancelError, setCancelError] = useState(null);            // host-cancel API failure message
+  const [cancelling, setCancelling] = useState(false);             // true while cancel request in flight
+  const isHost = game.hostPlayerId != null && player.playerId === game.hostPlayerId;
 
   // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
@@ -404,6 +407,12 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
             setScoreError(err?.message ?? 'Score could not be saved. Please check your connection.');
           });
         }
+      } else if (msg.type === 'game_cancelled') {
+        // Host cancelled the game (Task 203). Skip the ResultsScreen and
+        // return everyone to the lobby. The serverless write of
+        // status='finished' has already happened; this just unmounts the
+        // GameMap and clears local state via the parent's onPlayAgain.
+        onPlayAgain?.();
       } else if (msg.type === 'capture') {
         captureWinnerRef.current = msg.winner ?? 'seekers';
         captureTeamRef.current = msg.captureTeam ?? null;
@@ -596,6 +605,29 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
     return () => clearInterval(id);
   }, [player.playerId, game.gameId]);
 
+  // Host-initiated cancel of the ongoing game (Task 203). Confirmation is
+  // required because the action is destructive and visible to every player.
+  // On success the parent's onPlayAgain handler returns this client to the
+  // lobby; remote clients receive the `game_cancelled` WS broadcast above
+  // and do the same.
+  async function handleCancel() {
+    if (!isHost) return; // defence in depth — button should already be hidden
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      const ok = window.confirm('Cancel this game for everyone? This cannot be undone.');
+      if (!ok) return;
+    }
+    setCancelError(null);
+    setCancelling(true);
+    try {
+      await cancelGame({ gameId: game.gameId, playerId: player.playerId });
+      onPlayAgain?.();
+    } catch (err) {
+      setCancelError(err?.message ?? 'Failed to cancel game');
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   // Phase banner: prominent, top-of-page indicator so both teams immediately
   // understand whether the hiding period is still in progress or seeking has
   // begun. Distinct from the in-line timer below the header — the banner
@@ -630,6 +662,26 @@ export default function GameMap({ player, game, zones = [], serverUrl, onPlayAga
           {player.name} ({player.role}){myTeam ? ` · Team ${myTeam}` : ''}
         </span>
       </div>
+
+      {isHost && phase !== 'finished' && (
+        <div className={styles.cancelRow}>
+          <button
+            type="button"
+            data-testid="cancel-game-btn"
+            className={styles.cancelBtn}
+            onClick={handleCancel}
+            disabled={cancelling}
+            aria-label="Cancel game for everyone"
+          >
+            {cancelling ? 'Cancelling…' : 'Cancel Game'}
+          </button>
+          {cancelError && (
+            <p role="alert" data-testid="cancel-error" className={styles.alertBanner}>
+              {cancelError}
+            </p>
+          )}
+        </div>
+      )}
 
       {phaseBannerCopy && (
         <p

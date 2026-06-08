@@ -82,9 +82,9 @@ describe.skipIf(!process.env.DATABASE_URL)('full game flow', () => {
     expect(res.status).toBe(200);
   });
 
-  // Task 195 — no pre-start hider-zone requirement.  The serverless function
-  // also does NOT update the DB status — that is the managed server's job.
-  it('(06) handleStartGame → 204; DB status remains "waiting"', async () => {
+  // Task 195 — no pre-start hider-zone requirement.
+  // Task 204 — serverless layer now authoritatively flips status='hiding'.
+  it('(06) handleStartGame → 204; DB status becomes "hiding"', async () => {
     const startRes = await handleStartGame(
       { method: 'POST', params: { gameId: state.game.gameId }, body: {} },
       pool, '', null,
@@ -96,14 +96,14 @@ describe.skipIf(!process.env.DATABASE_URL)('full game flow', () => {
       pool,
     );
     expect(gameRes.status).toBe(200);
-    expect(gameRes.body.status).toBe('waiting');
+    expect(gameRes.body.status).toBe('hiding');
   });
 
   it('(07) seeker submits a thermometer question targeting the hider', async () => {
-    // Task 202: submitQuestion requires game.status === 'seeking'. The
-    // serverless handleStartGame above does NOT update DB status (the
-    // managed server is what flips it in production); advance it manually
-    // for this DB-only integration flow.
+    // submitQuestion requires game.status === 'seeking'. After Task 204,
+    // handleStartGame above flips status to 'hiding'; advance to 'seeking'
+    // for this DB-only integration flow (in production the managed server's
+    // tick loop handles the hiding → seeking transition).
     await dbUpdateGameStatus(pool, { gameId: state.game.gameId, status: 'seeking' });
     const res = await submitQuestion(
       {

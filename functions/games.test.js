@@ -348,7 +348,8 @@ describe('handleStartGame', () => {
   it('returns 204 and fires notify when pool confirms hider and seeker present (no pre-start zone required)', async () => {
     const pool = { query: vi.fn() };
     pool.query
-      .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 2 }] });
+      .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'g1', status: 'hiding' }] }); // dbUpdateGameStatus (Task 204)
     const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small' }),
@@ -364,7 +365,8 @@ describe('handleStartGame', () => {
   it('returns 204 even when no zone is registered (zone is locked during hiding phase)', async () => {
     const pool = { query: vi.fn() };
     pool.query
-      .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 1 }] });
+      .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'g1', status: 'hiding' }] }); // dbUpdateGameStatus (Task 204)
     const mockFetch = vi.fn().mockResolvedValue({ ok: true });
     const res = await handleStartGame(
       makePostReq({ gameId: 'g1' }, { scale: 'small' }),
@@ -374,6 +376,62 @@ describe('handleStartGame', () => {
     );
     expect(res.status).toBe(204);
     expect(mockFetch).toHaveBeenCalledOnce();
+  });
+
+  // Task 204 — serverless writes status='hiding' as authoritative source.
+  it('writes status=hiding to the DB after a successful managed-server notify', async () => {
+    const pool = { query: vi.fn() };
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'g1', status: 'hiding' }] });
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small' }),
+      pool,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(204);
+    // Two queries: dbGetGamePlayerCounts then dbUpdateGameStatus.
+    expect(pool.query).toHaveBeenCalledTimes(2);
+    const [updateSql, updateParams] = pool.query.mock.calls[1];
+    expect(updateSql).toMatch(/UPDATE games SET status/);
+    expect(updateParams).toEqual(['hiding', 'g1']);
+  });
+
+  it('does not write to the DB when the managed-server notify fails (returns 503 first)', async () => {
+    const pool = { query: vi.fn() };
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 1 }] });
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small' }),
+      pool,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(503);
+    // Only the player-count query fired; the status update was skipped
+    // because the managed server rejected the start.
+    expect(pool.query).toHaveBeenCalledTimes(1);
+  });
+
+  it('still returns 204 when the DB status update itself rejects (host already advanced)', async () => {
+    const pool = { query: vi.fn() };
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ role: 'hider', count: 1 }, { role: 'seeker', count: 1 }] })
+      .mockRejectedValueOnce(new Error('connection reset'));
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+
+    const res = await handleStartGame(
+      makePostReq({ gameId: 'g1' }, { scale: 'small' }),
+      pool,
+      'http://game-server',
+      mockFetch,
+    );
+    expect(res.status).toBe(204);
   });
 
   it('returns 204 with no pool and no zone (in-process branch)', async () => {

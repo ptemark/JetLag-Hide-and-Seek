@@ -48,6 +48,16 @@ if (process.env.DATABASE_URL) {
   store = createStore(pool);
 }
 
+// Make store-wiring status loud at boot so an operator scanning startup logs
+// can immediately diagnose "non-host stuck on waiting" — the symptom of a
+// missing DATABASE_URL in the managed server's runtime env. See DESIGN.md
+// §19a "Managed server must be wired with a DB-backed store".
+logger.info(
+  LogCategory.LOOP,
+  store ? 'managed_server_store_wired' : 'managed_server_store_unwired',
+  { databaseUrlPresent: !!process.env.DATABASE_URL },
+);
+
 const server   = createServer({ logger, store });
 const shutdown = new ShutdownManager({
   stopFn:      () => server.stop(),

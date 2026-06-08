@@ -39,7 +39,11 @@
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST \"$STAGING_URL/api/games/test-id/join\" -H \"Content-Type: application/json\" -d '{}')",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" -X POST \"$STAGING_URL/api/games/test-id/start\" -H \"Content-Type: application/json\" -d '{}')",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"$STAGING_URL/api/live/test-id\")",
-      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"$STAGING_URL/api/zones?bounds=0,0,1,1&scale=small\")"
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"$STAGING_URL/api/zones?bounds=0,0,1,1&scale=small\")",
+      "Bash(DATABASE_URL=postgresql://petermark@localhost:5432/jetlag_test npm run test:integration)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }

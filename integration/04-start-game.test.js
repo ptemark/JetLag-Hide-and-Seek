@@ -7,7 +7,7 @@ describe.skipIf(!process.env.DATABASE_URL)('handleStartGame', () => {
   beforeAll(async () => { pool = await setup(); });
   afterAll(async ()  => { await teardown(pool); });
 
-  it('(a) happy path — hider + seeker → 204; DB status stays waiting', async () => {
+  it('(a) happy path — hider + seeker → 204; DB status flips to hiding', async () => {
     const hider  = await makePlayer(pool, { name: 'Hider Alice', role: 'hider' });
     const seeker = await makePlayer(pool, { name: 'Seeker Bob',  role: 'seeker' });
     const game   = await makeGame(pool);
@@ -22,14 +22,17 @@ describe.skipIf(!process.env.DATABASE_URL)('handleStartGame', () => {
 
     expect(res.status).toBe(204);
 
-    // The serverless function does NOT update the DB status — that is the
-    // managed server's job. The game must still read as 'waiting'.
+    // Task 204: the serverless layer now authoritatively writes
+    // status='hiding' after a successful managed-server notify so the
+    // non-host's lobby poll picks up the transition even when the
+    // managed server's `store` is unwired. The managed server still
+    // attempts the same write in parallel (idempotent).
     const gameRes = await getGame(
       { method: 'GET', params: { id: game.gameId } },
       pool,
     );
     expect(gameRes.status).toBe(200);
-    expect(gameRes.body.status).toBe('waiting');
+    expect(gameRes.body.status).toBe('hiding');
   });
 
   it('(b) game with seeker but no hider → 400 insufficient_players', async () => {

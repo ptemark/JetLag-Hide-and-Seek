@@ -239,6 +239,28 @@ export async function handleStartGame(req, pool = null, gameServerUrl, fetchFn =
     return { status: 503, body: { error: 'game_server_unavailable', message: 'Game server could not be reached. Please try again.' } };
   }
 
+  // Authoritatively flip status to 'hiding' in Postgres from the serverless
+  // layer so the non-host's 3 s WaitingRoom poll (GET /api/games/:id) sees
+  // the transition regardless of whether the managed server's onPhaseChange
+  // write succeeded. The managed server's write is still attempted in
+  // parallel (defence in depth) and is idempotent — hiding → hiding is a
+  // no-op UPDATE. Without this serverless write, a managed server whose
+  // `store` is null (e.g. DATABASE_URL missing in the Docker runtime env)
+  // leaves DB.status='waiting' forever and the hider stays stuck on the
+  // lobby. See DESIGN.md §19a "Authority of games.status".
+  if (pool) {
+    try {
+      await dbUpdateGameStatus(pool, { gameId, status: 'hiding' });
+    } catch {
+      // Swallowing here is intentional: the managed server has already
+      // accepted the start and is broadcasting WS phase_change to the
+      // host. Returning 500 to the host now would be misleading. The
+      // managed server's own write will still attempt the flip; the
+      // non-host poll will retry every 3 s and pick it up if either
+      // write eventually succeeds.
+    }
+  }
+
   return { status: 204, body: {} };
 }
 

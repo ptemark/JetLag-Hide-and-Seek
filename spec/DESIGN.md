@@ -390,7 +390,21 @@ non-host player is permanently stuck on the lobby screen even though the game is
 `store?.dbSubmitScore`, and `store?.dbExpireStaleQuestions` call in `server/index.js` is a
 silent no-op — including the phase-transition write above. Task 202 found that an unwired
 `store` was the actual root cause of "non-host players stuck on waiting"; the in-memory
-WS state cannot be the source of truth for any cross-tier signal.
+WS state cannot be the source of truth for any cross-tier signal. `server/start.js` logs
+`managed_server_store_wired` or `managed_server_store_unwired` at boot so this state is
+immediately visible to anyone scanning startup logs.
+
+**Serverless writes status='hiding' authoritatively.** Even with the managed server's
+store wired, the serverless `handleStartGame` writes `status='hiding'` to Postgres itself
+after a successful `notifyGameStart`. This makes the serverless layer — the one tier
+guaranteed to have a working DB pool in production — the authoritative source for the
+lobby-exit signal that non-host pollers consume. The managed server's own write still
+happens in parallel and is idempotent (a redundant `UPDATE` to the same status is a
+no-op). Task 204 found that without this serverless write, a single missing
+`DATABASE_URL` in the Docker container's runtime env was enough to wedge the hider on
+`'waiting'` indefinitely. If the serverless DB write itself fails the response still
+returns 204 — the host has already been told the game started and the managed server's
+write or a retry of the non-host poll will eventually pick up the transition.
 
 **Lobby visibility (player list).** While in the lobby, every connected client (host and
 non-host) periodically polls `GET /api/games/:id` and renders the returned `players` array.
